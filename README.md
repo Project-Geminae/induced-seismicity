@@ -24,6 +24,14 @@ The causal model shows
   4. Direct path W → S
   5. Indirect path W → P → S
 
+Data download 
+
+"swd_data.csv"
+https://drive.google.com/file/d/1QYwV9Ipusmmi1W1mJ81enCOzsAzGdNSN/view?usp=sharing
+
+"texnet_events.csv"
+https://drive.google.com/file/d/1Dj2nuojqne9Jz49spTu2nE8QsALd9_zw/view?usp=sharing
+
 STEP 0 · ENVIRONMENT & CONSTANTS
 ───────────────────────────────────────────────────────────────────
 | Parameter                    | Value                            |
