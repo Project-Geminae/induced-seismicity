@@ -40,7 +40,7 @@ https://drive.google.com/file/d/1QYwV9Ipusmmi1W1mJ81enCOzsAzGdNSN/view?usp=shari
 https://drive.google.com/file/d/1Dj2nuojqne9Jz49spTu2nE8QsALd9_zw/view?usp=sharing
 
 STEP 0 · ENVIRONMENT & CONSTANTS
-───────────────────────────────────────────────────────────────────
+
 | Parameter                    | Value                            |
 |------------------------------|----------------------------------|
 | Geographic CRS               | EPSG 4326  (WGS-84)              |
@@ -108,7 +108,7 @@ New columns added
 For these wells, the most recent injection date before the event is identified, with second script replacing their EventID prefix from "texnet" to "faknet" before merging them with active wells.
 
 STEP 4 · FAULT-PROXIMITY FEATURES
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 | Script                                               | Output                                 | Rows (example)    |
 |------------------------------------------------------|-----------------------------------------|------------------|
 | add_geoscience_to_event_well_links_with_injection.py | event_well_links_with_faults_<R>km.csv  | 333,474 (20km)   |
@@ -139,10 +139,11 @@ Magnitude statistics were preserved across processing (no data loss):
   • 20km radius: 64.9% of rows have non-zero magnitude (216,440/333,474)
 
 STEP 5 · MULTI-RADIUS CAUSAL SENSITIVITY ANALYSIS
-─────────────────────────────────────────────────
+
 Primary script : dowhy_simple_all.py   (DoWhy 0.12)
+
 Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
-─────────────────────────────────────────────────────────────────────────────────────
+
 | Radius | Total Effect   | Direct Effect   | Indirect Effect  | % Mediated | R²    |
 |--------|----------------|-----------------|------------------|------------|-------|
 | 1 km   | +6.33 × 10⁻⁶   | -3.36 × 10⁻⁶    | +9.69 × 10⁻⁶     | 153.0%     | 0.040 |
@@ -187,17 +188,23 @@ Radius Sensitivity Summary
   • Refutation tests confirm robustness of the causal estimates
 
 Plain-English interpretation
+
   • Near-field effects (1-5km): Both direct mechanical influence and pressure-mediated effects
+  
   • Mid-field effects (6-10km): Pressure transmission becomes primary mechanism
+  
   • Far-field effects (15-20km): Pressure diffusion completely mediates the relationship
+  
   • Direct effects become negative at large distances, suggesting offsetting mechanisms
+  
   • The radius analysis reveals different physical mechanisms operating at different spatial scales
 
 STEP 6 · MULTI-RADIUS EVENT-LEVEL CAUSAL ANALYSIS
-─────────────────────────────────────────────────────────────
+
 Primary script : dowhy_simple_all_aggregate.py   (DoWhy 0.12)
+
 Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 | Radius | n_events | avg_well_count | Total Effect   | Direct Effect   | Indirect Effect  | % Mediated | p-value | R²   |
 |--------|----------|----------------|----------------|-----------------|------------------|------------|---------|-------|
 | 1 km   | 1,028    | 1.11           | +5.76 × 10⁻⁶   | -7.37 × 10⁻⁷    | +6.50 × 10⁻⁶     | 112.8%     | 1.6e-02 | 0.132 |
