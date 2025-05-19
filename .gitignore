@@ -1,3 +1,10 @@
 
-
 *.png
+*.shx
+*.csv
+*.mp4
+.idea
+
+# exceptions
+!swd_data.csv
+!texnet_events.csv
