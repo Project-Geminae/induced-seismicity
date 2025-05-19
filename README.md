@@ -124,7 +124,7 @@ Magnitude statistics were preserved across processing (no data loss):
   • 20km radius: 64.9% of rows have non-zero magnitude (216,440/333,474)
 
 STEP 5 · MULTI-RADIUS CAUSAL SENSITIVITY ANALYSIS
-─────────────────────────────────────────────────────────────────────────────────────
+─────────────────────────────────────────────────
 Primary script : dowhy_simple_all.py   (DoWhy 0.12)
 Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
 ─────────────────────────────────────────────────────────────────────────────────────
@@ -167,11 +167,11 @@ Plain-English interpretation
   • The radius analysis reveals different physical mechanisms operating at different spatial scales
 
 STEP 6 · MULTI-RADIUS EVENT-LEVEL CAUSAL ANALYSIS
-─────────────────────────────────────────────────────────────────────────────────────────────────
+─────────────────────────────────────────────────────────────
 Primary script : dowhy_simple_all_aggregate.py   (DoWhy 0.12)
 Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-| Radius | n_events | avg_well_count | Total Effect   | Direct Effect   | Indirect Effect  | % Mediated | p-value | R²    |
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+| Radius | n_events | avg_well_count | Total Effect   | Direct Effect   | Indirect Effect  | % Mediated | p-value | R²   |
 |--------|----------|----------------|----------------|-----------------|------------------|------------|---------|-------|
 | 1 km   | 1,028    | 1.11           | +5.76 × 10⁻⁶   | -7.37 × 10⁻⁷    | +6.50 × 10⁻⁶     | 112.8%     | 1.6e-02 | 0.132 |
 | 2 km   | 3,067    | 1.51           | +1.73 × 10⁻⁵   | +2.52 × 10⁻⁶    | +1.48 × 10⁻⁵     | 85.5%      | 1.1e-21 | 0.289 |
