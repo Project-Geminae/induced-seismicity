@@ -10,11 +10,17 @@ G₁ --------> P ---> S <------ G₂
 
 Legend
 ------
+
 G₁ : Nearest Fault Distance
+
 G₂ : Fault Segments
+
 W  : Volume Injected
+
 P  : Injection Pressure
+
 S  : Local Magnitude
+
 (→ : Causal connection)
 
 The causal model shows
