@@ -24,6 +24,7 @@ S  : Local Magnitude
 (→ : Causal connection)
 
 The causal model shows
+
   1. Geology factors (G₁, G₂) influence all variables
   2. Injection Volume (W) affects Pressure (P) and Magnitude (S)
   3. Injection Pressure (P) directly affects Magnitude (S)
@@ -50,7 +51,7 @@ STEP 0 · ENVIRONMENT & CONSTANTS
 | Random seed (DoWhy)          | 42                               |
 
 STEP 1 · IMPORT & FILTER RAW TABLES
-──────────────────────────────────────────────────────────────────────────────────────
+
 | Script                     | Purpose                | Output                       |
 |----------------------------|------------------------|------------------------------|
 | swd_data_import.py         | Subset SWD records     | swd_data_filtered.csv        |
@@ -59,7 +60,7 @@ STEP 1 · IMPORT & FILTER RAW TABLES
 |                            |                        | (  6,064 rows × 7 cols )     |
 
 STEP 2 · SPATIAL JOIN (WELLS ↔ EVENTS)
-──────────────────────────────────────────────────────────────────────────────────────────────
+
 | Script                  | Output                      | Rows (per radius)                  |
 |-------------------------|-----------------------------|------------------------------------|
 | merge_seismic_swd.py	  | event_well_links_1km.csv	| 1,145 (radius = 1 km)              |
@@ -79,7 +80,7 @@ STEP 2 · SPATIAL JOIN (WELLS ↔ EVENTS)
 Columns retained → event metadata · well metadata · Distance_from_Well_to_Event
 
 STEP 3 · SAME-DAY & N-DAY INJECTION LOOKBACK
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 | Script                                   | Output                                       | Rows (example)  |
 |------------------------------------------|--------------------------------------------- |-----------------|
 | filter_active_wells_before_events.py     | event_well_links_with_injection_<R>km.csv    | 216,440 (20km)  |
@@ -89,16 +90,22 @@ STEP 3 · SAME-DAY & N-DAY INJECTION LOOKBACK
 |                                          |                                              |                 |
 
 New columns added
+
   • Volume Injected (BBLs) – same day
+  
   • Injection Pressure Average PSIG – same day
+  
   • Injection Pressure Max PSIG – same day
+  
   • Vol Prev N (BBLs)      – 30-day total before event
+  
   • Avg Press Prev N (PSIG) – 30-day mean before event
+  
   • Max Press Prev N (PSIG) – 30-day max before event
 
 "Innocent wells" are those linked to events but not actively injecting on the event day (magnitude set to 0).
-For these wells, the most recent injection date before the event is identified, with second script
-replacing their EventID prefix from "texnet" to "faknet" before merging them with active wells.
+
+For these wells, the most recent injection date before the event is identified, with second script replacing their EventID prefix from "texnet" to "faknet" before merging them with active wells.
 
 STEP 4 · FAULT-PROXIMITY FEATURES
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -110,17 +117,25 @@ STEP 4 · FAULT-PROXIMITY FEATURES
 |                                                      | wells_no_fault_match_<R>km.csv          |                  |
 
 Added columns
+
   • Nearest Fault Dist (km) - distance to closest fault segment
+  
   • Fault Segments ≤ R km (count) - number of ~1km fault segments within radius R
 
 Process details:
+
   • Preserves ALL rows including those with missing coordinates
+  
   • Fault shapefile auto-detection for coordinate reference system (CRS)
+  
   • All wells were successfully matched to ≥1 fault in the example run
+  
   • Wells with missing/invalid coordinates are identified but retained
+  
   • Generates visual diagnostics of wells vs. fault lines (only for first radius processed)
 
 Magnitude statistics were preserved across processing (no data loss):
+
   • 20km radius: 64.9% of rows have non-zero magnitude (216,440/333,474)
 
 STEP 5 · MULTI-RADIUS CAUSAL SENSITIVITY ANALYSIS
@@ -144,19 +159,31 @@ Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
 | 20 km  | +4.14 × 10⁻⁶   | -4.49 × 10⁻⁷    | +4.59 × 10⁻⁶     | 110.9%     | 0.197 |
 
 DAG Structure
+
   • Treatment (W): Volume Injected (BBLs)
+  
   • Mediator (P): Injection Pressure Average PSIG
+  
   • Outcome (S): Local Magnitude
+  
   • Confounders: Nearest Fault Dist (km), Fault Segments ≤R km
 
 Radius Sensitivity Summary
+
   • Strongest total effect observed at 4km radius (3.19 × 10⁻⁵)
+  
   • Pronounced shift in causal pathways with increasing radius:
+  
     - Small radii (1-5km): Mixed direct and indirect effects
+    
     - Medium radii (6-10km): Strong pressure mediation (75-95%)
+    
     - Large radii (15-20km): Complete mediation with pressure (>100%)
+    
   • Direct effect changes from positive to negative at larger distances
+  
   • All results are statistically significant with p-values near zero
+  
   • Refutation tests confirm robustness of the causal estimates
 
 Plain-English interpretation
@@ -267,28 +294,4 @@ Plain-English interpretation
   • Different physical mechanisms appear to operate at different spatial scales
 
 
-Raw yearly counts
-MagBin    M2   M3  M4  M5
-Year
-2017     271   26   0   0
-2018     602   55   2   0
-2019     847   52   3   0
-2020    1110   93   5   0
-2021    1971  199  17   0
-2022    2392  202  19   2
-2023    2286  201  11   1
-2024    1855  175  11   2
-2025     565   27   5   2
 
-YoY % change (rule: standard)
-MagBin     M2     M3     M4     M5
-Year
-2017      NaN    NaN    NaN    NaN
-2018    122.1  111.5    NaN    NaN
-2019     40.7   -5.5   50.0    NaN
-2020     31.1   78.8   66.7    NaN
-2021     77.6  114.0  240.0    NaN
-2022     21.4    1.5   11.8    NaN
-2023     -4.4   -0.5  -42.1  -50.0
-2024    -18.9  -12.9    0.0  100.0
-2025    -69.5  -84.6  -54.5    0.0
