@@ -187,48 +187,83 @@ Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
 | 20 km  | 10,388   | 32.10          | +1.01 × 10⁻⁶   | +1.93 × 10⁻⁷    | +8.19 × 10⁻⁷     | 80.9%      | 6.5e-54 | 0.451 |
 
 Event-Level Aggregation Method
+
   • Group by EventID and compute:
+  
     - Sum of Volume Injected (BBLs) across all wells within radius
+    
     - Median Injection Pressure Average across all wells
+    
     - Minimum Nearest Fault Distance across all wells
+    
     - Sum of Fault Segments within radius
+    
     - Count of wells within radius (added as control variable)
 
 Amplification factors compared to 20 km radius:
+
   • 1 km:  5.7×
+  
   • 2 km: 17.1×
+  
   • 3 km: 20.9× (strongest)
+  
   • 4 km: 17.6×
+  
   • 5 km: 12.2×
+  
   • 6 km:  6.2×
+  
   • 7 km:  5.3×
+  
   • 8 km:  2.3×
+  
   • 9 km:  1.9×
+  
   • 10 km: 1.9×
+  
   • 15 km: 0.9×sl
 
 Additional Outputs:
+
   • Earthquake probability curves for 20km radius (as PNG and CSV)
+  
   • DAG images for each radius (when graphviz available)
 
 Radius Sensitivity Summary
+
   • Strongest total effect observed at 3km radius (2.12 × 10⁻⁵)
+  
   • Predictive performance (R²) increases with radius until peaking at 6-7km (R² ≈ 0.55)
+  
   • Clear transition in causal mechanisms:
+  
     - Near-field (1-2 km): High pressure mediation (85-113%)
+    
     - Mid-field (3-5 km): Balanced direct and indirect effects (44-55% mediation)
+    
     - Far-field (6-10 km): Predominantly pressure-mediated (70-90%)
+    
     - Ultra-far (15 km): Complete mediation through pressure (100.8%)
+    
   • Direct effect becomes statistically insignificant at 8-10km (p > 0.1) and negligible at 15km
+  
   • All total effects remain highly statistically significant (p < 10⁻²⁵) except at 1km (p = 0.016)
 
 Plain-English interpretation
+
   • Proximity matters greatly: injection wells within 3-5 km have 12-21× stronger effects than distant wells
+  
   • Strongest effect radius (3km) and best predictive model radius (7km) are different
+  
   • Pressure is the dominant mechanism in all cases, but direct mechanical effects are substantial at 3-5km
+  
   • Wells beyond 10km have minimal direct effects but still contribute through pressure pathways
+  
   • The 5-7km radius offers optimal balance of effect size and model performance (R² > 0.5)
+  
   • These findings support spatially-targeted regulation focused on wells within 5-7km of faults
+  
   • Different physical mechanisms appear to operate at different spatial scales
 
 
