@@ -6,5 +6,5 @@
 .idea
 
 # exceptions
-!swd_data.csv
-!texnet_events.csv
+#!swd_data.csv
+#!texnet_events.csv
