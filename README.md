@@ -9,15 +9,23 @@
 G₁ --------> P ---> S <------ G₂
 
 Legend
+
 ------
+
 G₁ : Nearest Fault Distance
+
 G₂ : Fault Segments
+
 W  : Volume Injected
+
 P  : Injection Pressure
+
 S  : Local Magnitude
+
 (→ : Causal connection)
 
 The causal model shows
+
   1. Geology factors (G₁, G₂) influence all variables
   2. Injection Volume (W) affects Pressure (P) and Magnitude (S)
   3. Injection Pressure (P) directly affects Magnitude (S)
@@ -75,11 +83,17 @@ STEP 3 · SAME-DAY & N-DAY INJECTION LOOKBACK
 |                                          |                                              |                 |
 
 New columns added
+
   • Volume Injected (BBLs) – same day
+  
   • Injection Pressure Average PSIG – same day
+  
   • Injection Pressure Max PSIG – same day
+  
   • Vol Prev N (BBLs)      – 30-day total before event
+  
   • Avg Press Prev N (PSIG) – 30-day mean before event
+  
   • Max Press Prev N (PSIG) – 30-day max before event
 
 "Innocent wells" are those linked to events but not actively injecting on the event day (magnitude set to 0).
@@ -96,23 +110,34 @@ STEP 4 · FAULT-PROXIMITY FEATURES
 |                                                      | wells_no_fault_match_<R>km.csv          |                  |
 
 Added columns
+
   • Nearest Fault Dist (km) - distance to closest fault segment
+  
   • Fault Segments ≤ R km (count) - number of ~1km fault segments within radius R
 
 Process details:
+
   • Preserves ALL rows including those with missing coordinates
+  
   • Fault shapefile auto-detection for coordinate reference system (CRS)
+  
   • All wells were successfully matched to ≥1 fault in the example run
+  
   • Wells with missing/invalid coordinates are identified but retained
+  
   • Generates visual diagnostics of wells vs. fault lines (only for first radius processed)
 
 Magnitude statistics were preserved across processing (no data loss):
+
   • 20km radius: 64.9% of rows have non-zero magnitude (216,440/333,474)
 
 STEP 5 · MULTI-RADIUS CAUSAL SENSITIVITY ANALYSIS
 ─────────────────────────────────────────────────────────────────────────────────────
+
 Primary script : dowhy_simple_all.py   (DoWhy 0.12)
+
 Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
+
 ─────────────────────────────────────────────────────────────────────────────────────
 | Radius | Total Effect   | Direct Effect   | Indirect Effect  | % Mediated | R²    |
 |--------|----------------|-----------------|------------------|------------|-------|
@@ -130,32 +155,52 @@ Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
 | 20 km  | +4.14 × 10⁻⁶   | -4.49 × 10⁻⁷    | +4.59 × 10⁻⁶     | 110.9%     | 0.197 |
 
 DAG Structure
+
   • Treatment (W): Volume Injected (BBLs)
+  
   • Mediator (P): Injection Pressure Average PSIG
+  
   • Outcome (S): Local Magnitude
+  
   • Confounders: Nearest Fault Dist (km), Fault Segments ≤R km
 
 Radius Sensitivity Summary
+
   • Strongest total effect observed at 4km radius (3.19 × 10⁻⁵)
+  
   • Pronounced shift in causal pathways with increasing radius:
+  
     - Small radii (1-5km): Mixed direct and indirect effects
+    
     - Medium radii (6-10km): Strong pressure mediation (75-95%)
+    
     - Large radii (15-20km): Complete mediation with pressure (>100%)
+    
   • Direct effect changes from positive to negative at larger distances
+  
   • All results are statistically significant with p-values near zero
+  
   • Refutation tests confirm robustness of the causal estimates
 
 Plain-English interpretation
+
   • Near-field effects (1-5km): Both direct mechanical influence and pressure-mediated effects
+
   • Mid-field effects (6-10km): Pressure transmission becomes primary mechanism
+  
   • Far-field effects (15-20km): Pressure diffusion completely mediates the relationship
+  
   • Direct effects become negative at large distances, suggesting offsetting mechanisms
+  
   • The radius analysis reveals different physical mechanisms operating at different spatial scales
 
 STEP 6 · MULTI-RADIUS EVENT-LEVEL CAUSAL ANALYSIS
 ─────────────────────────────────────────────────────────────────────────────────────────────────
+
 Primary script : dowhy_simple_all_aggregate.py   (DoWhy 0.12)
+
 Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
+
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 | Radius | n_events | avg_well_count | Total Effect   | Direct Effect   | Indirect Effect  | % Mediated | p-value | R²    |
 |--------|----------|----------------|----------------|-----------------|------------------|------------|---------|-------|
@@ -173,55 +218,95 @@ Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
 | 20 km  | 10,388   | 32.10          | +1.01 × 10⁻⁶   | +1.93 × 10⁻⁷    | +8.19 × 10⁻⁷     | 80.9%      | 6.5e-54 | 0.451 |
 
 Event-Level Aggregation Method
+
   • Group by EventID and compute:
+  
     - Sum of Volume Injected (BBLs) across all wells within radius
+    
     - Median Injection Pressure Average across all wells
+    
     - Minimum Nearest Fault Distance across all wells
+    
     - Sum of Fault Segments within radius
+    
     - Count of wells within radius (added as control variable)
 
 Amplification factors compared to 20 km radius:
+
   • 1 km:  5.7×
+  
   • 2 km: 17.1×
+  
   • 3 km: 20.9× (strongest)
+  
   • 4 km: 17.6×
+  
   • 5 km: 12.2×
+  
   • 6 km:  6.2×
+  
   • 7 km:  5.3×
+  
   • 8 km:  2.3×
+  
   • 9 km:  1.9×
+  
   • 10 km: 1.9×
+  
   • 15 km: 0.9×sl
 
 Additional Outputs:
+
   • Earthquake probability curves for 20km radius (as PNG and CSV)
+  
   • DAG images for each radius (when graphviz available)
 
 Radius Sensitivity Summary
+
   • Strongest total effect observed at 3km radius (2.12 × 10⁻⁵)
+  
   • Predictive performance (R²) increases with radius until peaking at 6-7km (R² ≈ 0.55)
+  
   • Clear transition in causal mechanisms:
+  
     - Near-field (1-2 km): High pressure mediation (85-113%)
+    
     - Mid-field (3-5 km): Balanced direct and indirect effects (44-55% mediation)
+    
     - Far-field (6-10 km): Predominantly pressure-mediated (70-90%)
+    
     - Ultra-far (15 km): Complete mediation through pressure (100.8%)
+    
   • Direct effect becomes statistically insignificant at 8-10km (p > 0.1) and negligible at 15km
+  
   • All total effects remain highly statistically significant (p < 10⁻²⁵) except at 1km (p = 0.016)
 
 Plain-English interpretation
+
   • Proximity matters greatly: injection wells within 3-5 km have 12-21× stronger effects than distant wells
+  
   • Strongest effect radius (3km) and best predictive model radius (7km) are different
+  
   • Pressure is the dominant mechanism in all cases, but direct mechanical effects are substantial at 3-5km
+  
   • Wells beyond 10km have minimal direct effects but still contribute through pressure pathways
+  
   • The 5-7km radius offers optimal balance of effect size and model performance (R² > 0.5)
+  
   • These findings support spatially-targeted regulation focused on wells within 5-7km of faults
+  
   • Different physical mechanisms appear to operate at different spatial scales
 
 STEP 7 · ENHANCED WELL-LEVEL DOWHY ANALYSIS WITH BOOTSTRAP CI
+
 ─────────────────────────────────────────────────────────────────────────────────────────────────
+
 Primary script : dowhy_ci.py   (DoWhy 0.12)
+
 Bootstrap iterations : 50
+
 Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
+
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 | Radius |  n_rows  | Total Effect   | 95% CI                       | Direct Effect  | 95% CI                       | Indirect Effect | % Mediated | p-value    | Bootstrap | VIF  | Refute  |
 |--------|----------|----------------|------------------------------|----------------|------------------------------|-----------------|------------|------------|-----------|------|---------|
@@ -239,24 +324,39 @@ Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
 | 20 km  | 333,474  | +4.139e-06     | [+3.52e-06,+4.90e-06]        | -4.494e-07     | [-6.37e-07,-1.59e-07]        | +4.59e-06       | 110.9%     | 0.00e+00   | 100.0%    | 3.85 | ✅ PASS |
 
 Quality Control Metrics
+
   • 100% bootstrap success rate across all radii
+  
   • All refutation tests passed (placebo effects ≈ 0, subset effects stable)
+  
   • VIF values range 1.79-3.85 indicating acceptable multicollinearity
+  
   • Confidence intervals exclude zero for total effects (except 1km lower bound)
+  
   • Near-field mediation: 83.3% average (≤5km)
+  
   • Far-field mediation: 103.7% average (≥10km)
 
 Key Statistical Insights
+
   • Bootstrap confidence intervals provide robust uncertainty quantification
+  
   • Direct effects become non-significant (CIs include zero) at 8-9km radius
+  
   • Indirect effects consistently positive and significant across all radii
+  
   • Strongest causal identification at 4km radius with tightest confidence intervals
 
 STEP 8 · ENHANCED EVENT-LEVEL DOWHY ANALYSIS WITH BOOTSTRAP CI
+
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
 Primary script : dowhy_ci_aggregated.py   (DoWhy 0.12)
+
 Bootstrap iterations : 50
+
 Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
+
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 | Radius | n_events | avg_wells | Total Effect   | 95% CI                       | Direct Effect  | 95% CI                       | Indirect Effect | % Mediated | p-value    | Bootstrap | VIF  | Refute     |
 |--------|----------|-----------|----------------|------------------------------|----------------|------------------------------|-----------------|------------|------------|-----------|------|------------|
@@ -274,57 +374,52 @@ Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
 | 20 km  | 10,388   | 32.1      | +1.011e-06     | [+8.08e-07,+1.30e-06]        | +1.928e-07     | [+9.97e-08,+3.43e-07]        | +8.19e-07       | 80.9%      | 6.49e-54   | 100.0%    | 6.48 | ✅ PASS     |
 
 Event-Level Aggregation Benefits
-  • Eliminates duplicate magnitude measurements from multiple wells per event
-  • Accounts for cumulative injection effects from multiple wells
-  • Better signal-to-noise ratio through aggregation
-  • Well count included as additional confounder control
-  • Higher predictive R² values (0.44-0.56) vs well-level analysis
 
+  • Eliminates duplicate magnitude measurements from multiple wells per event
+  
+  • Accounts for cumulative injection effects from multiple wells
+  
+  • Better signal-to-noise ratio through aggregation
+  
+  • Well count included as additional confounder control
+  
+  • Higher predictive R² values (0.44-0.56) vs well-level analysis
+  
 Quality Control Metrics
+
   • 100% bootstrap success rate across all radii
+  
   • 91.7% refutation test pass rate (11/12 analyses)
+  
   • VIF values range 2.45-6.48 indicating acceptable to moderate multicollinearity
+  
   • Confidence intervals provide precise effect estimates
+  
   • Near-field mediation: 69.7% average (≤5km)
+  
   • Far-field mediation: 90.4% average (≥10km)
 
 Enhanced Statistical Insights
+
   • Event-level aggregation yields more stable causal estimates
+  
   • Bootstrap confidence intervals narrower than well-level analysis
+  
   • Direct effects become non-significant (CIs include zero) at 8-10km radius
+  
   • Random confounder refutation tests validate causal model specification
+  
   • Optimal predictive performance achieved at 6-7km radius (R² ≈ 0.55)
 
 Methodological Validation
+
   • DoWhy framework with explicit DAG specification ensures valid causal inference
+  
   • Multiple refutation tests confirm robustness of causal claims
+  
   • Bootstrap resampling provides non-parametric uncertainty quantification
+  
   • VIF monitoring prevents spurious results from multicollinearity
+  
   • Event-level aggregation superior to traditional well-level approaches
 
-
-Raw yearly counts
-MagBin    M2   M3  M4  M5
-Year
-2017     271   26   0   0
-2018     602   55   2   0
-2019     847   52   3   0
-2020    1110   93   5   0
-2021    1971  199  17   0
-2022    2392  202  19   2
-2023    2286  201  11   1
-2024    1855  175  11   2
-2025     565   27   5   2
-
-YoY % change (rule: standard)
-MagBin     M2     M3     M4     M5
-Year
-2017      NaN    NaN    NaN    NaN
-2018    122.1  111.5    NaN    NaN
-2019     40.7   -5.5   50.0    NaN
-2020     31.1   78.8   66.7    NaN
-2021     77.6  114.0  240.0    NaN
-2022     21.4    1.5   11.8    NaN
-2023     -4.4   -0.5  -42.1  -50.0
-2024    -18.9  -12.9    0.0  100.0
-2025    -69.5  -84.6  -54.5    0.0
