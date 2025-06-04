@@ -358,9 +358,6 @@ Methodological Validation
   • VIF monitoring prevents spurious results from multicollinearity
   • Event-level aggregation superior to traditional well-level approaches
 
-<<<<<<< HEAD
-## Using run_all.py
-=======
-Using run_all.py
->>>>>>> 73bf8d4 (Added sensitivity analysis. Still need to update swd_data.csv and texnet_events.csv)
+======
+
 ## TOTAL PIPELINE RUNTIME: 27 minutes 53 seconds
