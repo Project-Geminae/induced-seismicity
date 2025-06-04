@@ -47,6 +47,9 @@ STEP 0 · ENVIRONMENT & CONSTANTS
 | Injection look-back window   | 30 days                          |
 | Random seed (DoWhy)          | 42                               |
 
+swd_data.csv = https://drive.google.com/file/d/1O2a61OQI9iMkuLjLC39GHHqYesjYhqg3/view?usp=sharing
+texnet_events.csv = https://drive.google.com/file/d/1vaky_Tk-brHWi_Mxd8e090BR6JgAdz1E/view?usp=sharing
+
 STEP 1 · IMPORT & FILTER RAW TABLES
 ──────────────────────────────────────────────────────────────────────────────────────
 | Script                     | Purpose                | Output                       |
