@@ -2,7 +2,7 @@
 """
 Batch version
 ─────────────
-For each radius R in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20} km:
+For each radius R in {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0} km:
 
 1. Read innocent_wells_<R>km.csv
 2. Replace the `EventID` prefix  texnet → faknet
@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 
 # ── file templates ─────────────────────────────────────────────────────────
-RADII = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20]  # km
+RADII = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]  # km
 
 INNOCENT_FMT   = "innocent_wells_{R}km.csv"
 PATCHED_FMT    = "innocent_wells_with_fakeids_{R}km.csv"

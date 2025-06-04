@@ -1,0 +1,27 @@
+DoWhy Event-Level Mediation Analysis - Methodology Notes
+============================================================
+
+DATA AGGREGATION:
+- Raw data aggregated by EventID (earthquake events)
+- Injection volumes: summed across wells per event
+- Injection pressure: median across wells per event
+- Fault distance: minimum across wells per event
+- Fault segments: summed across wells per event
+- Well count: number of wells per event (added as confounder)
+
+CAUSAL MODEL:
+- Treatment (W): Total injection volume per event
+- Mediator (P): Median injection pressure per event
+- Outcome (S): Earthquake magnitude
+- Confounders: G1 (fault distance), G2 (fault segments), well_count
+
+DOWHY FRAMEWORK:
+- Explicit causal DAG with backdoor adjustment
+- Bootstrap confidence intervals (50 iterations)
+- Refutation tests: placebo, subset, random confounder
+- Dual R² metrics: causal (linear) and predictive (log-transformed)
+
+QUALITY METRICS:
+- Average bootstrap success rate: 100.0%
+- Average VIF (multicollinearity): 3.72
+- Refutation tests passed: 19/20 (95.0%)

@@ -24,13 +24,25 @@ The causal model shows
   4. Direct path W → S
   5. Indirect path W → P → S
 
+## EXECUTIVE SUMMARY
+────────────────────────────────────────────────────────────────
+**Key Finding**: Injection volume causes seismic activity through two mechanisms
+that vary by distance:
+- Near-field (≤5km): Mixed direct mechanical and pressure-mediated effects
+- Far-field (>10km): Exclusively pressure-mediated effects
+
+**Strongest Effects**: 3-4km radius shows 20× stronger effects than 20km
+**Optimal Monitoring**: 5-7km radius balances effect size and predictive accuracy
+**Policy Implication**: Spatially-targeted regulation within 7km of faults recommended
+────────────────────────────────────────────────────────────────
+
 STEP 0 · ENVIRONMENT & CONSTANTS
 ───────────────────────────────────────────────────────────────────
 | Parameter                    | Value                            |
 |------------------------------|----------------------------------|
 | Geographic CRS               | EPSG 4326  (WGS-84)              |
 | Planar CRS for distances     | EPSG 3857  (Web Mercator)        |
-| Well–event link distance     | 2, 5, 10, 15, 20 km (varied)     |
+| Well–event link distance     | 1-20 km (varied)                 |
 | Fault-segment length         | ~1 km                            |
 | Injection look-back window   | 30 days                          |
 | Random seed (DoWhy)          | 42                               |
@@ -40,27 +52,34 @@ STEP 1 · IMPORT & FILTER RAW TABLES
 | Script                     | Purpose                | Output                       |
 |----------------------------|------------------------|------------------------------|
 | swd_data_import.py         | Subset SWD records     | swd_data_filtered.csv        |
-|                            |                        | ( 650,374 rows × 7 cols )    |
+|                            |                        | ( 663,917 rows × 7 cols )    |
 | seismic_data_import.py     | Subset TexNet catalog  | texnet_events_filtered.csv   |
-|                            |                        | (  6,064 rows × 7 cols )     |
+|                            |                        | (  6,264 rows × 7 cols )     |
 
 STEP 2 · SPATIAL JOIN (WELLS ↔ EVENTS)
 ──────────────────────────────────────────────────────────────────────────────────────────────
 | Script                  | Output                      | Rows (per radius)                  |
 |-------------------------|-----------------------------|------------------------------------|
-| merge_seismic_swd.py	  | event_well_links_1km.csv	| 1,145 (radius = 1 km)              |
-|                         | event_well_links_2km.csv	| 4,634 (radius = 2 km)              |
-|                         | event_well_links_3km.csv	| 11,370 (radius = 3 km)             |
-|                         | event_well_links_4km.csv	| 19,862 (radius = 4 km)             |
-|                         | event_well_links_5km.csv	| 29,773 (radius = 5 km)             |
-|                         | event_well_links_6km.csv	| 41,174 (radius = 6 km)             |
-|                         | event_well_links_7km.csv	| 54,545 (radius = 7 km)             |
-|                         | event_well_links_8km.csv	| 70,257 (radius = 8 km)             |
-|                         | event_well_links_9km.csv	| 88,311 (radius = 9 km)             |
-|                         | event_well_links_10km.csv	| 107,046 (radius = 10 km)           |
-|                         | event_well_links_15km.csv	| 209,296 (radius = 15 km)           |
-|                         | event_well_links_20km.csv	| 332,691 (radius = 20 km)           |
-
+| merge_seismic_swd.py	  | event_well_links_1km.csv	| 1,177 (radius = 1 km)              |
+|                         | event_well_links_2km.csv	| 4,775 (radius = 2 km)              |
+|                         | event_well_links_3km.csv	| 11,645 (radius = 3 km)             |
+|                         | event_well_links_4km.csv	| 20,274 (radius = 4 km)             |
+|                         | event_well_links_5km.csv	| 30,417 (radius = 5 km)             |
+|                         | event_well_links_6km.csv	| 42,127 (radius = 6 km)             |
+|                         | event_well_links_7km.csv	| 55,872 (radius = 7 km)             |
+|                         | event_well_links_8km.csv	| 71,996 (radius = 8 km)             |
+|                         | event_well_links_9km.csv	| 90,575 (radius = 9 km)             |
+|                         | event_well_links_10km.csv	| 109,825 (radius = 10 km)           |
+|                         | event_well_links_11km.csv	| 129,984 (radius = 11 km)           |
+|                         | event_well_links_12km.csv	| 149,935 (radius = 12 km)           |
+|                         | event_well_links_13km.csv	| 170,563 (radius = 13 km)           |
+|                         | event_well_links_14km.csv	| 191,820 (radius = 14 km)           |
+|                         | event_well_links_15km.csv	| 214,728 (radius = 15 km)           |
+|                         | event_well_links_16km.csv	| 237,644 (radius = 16 km)           |
+|                         | event_well_links_17km.csv	| 262,373 (radius = 17 km)           |
+|                         | event_well_links_18km.csv	| 289,297 (radius = 18 km)           |
+|                         | event_well_links_19km.csv	| 315,984 (radius = 19 km)           |
+|                         | event_well_links_20km.csv	| 341,614 (radius = 20 km)           |
 
 Columns retained → event metadata · well metadata · Distance_from_Well_to_Event
 
@@ -68,10 +87,10 @@ STEP 3 · SAME-DAY & N-DAY INJECTION LOOKBACK
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 | Script                                   | Output                                       | Rows (example)  |
 |------------------------------------------|--------------------------------------------- |-----------------|
-| filter_active_wells_before_events.py     | event_well_links_with_injection_<R>km.csv    | 216,440 (20km)  |
-|                                          | innocent_wells_<R>km.csv                     | 117,034 (20km)  |
-| filter_merge_events_and_nonevents.py     | innocent_wells_with_fakeids_<R>km.csv        | 117,034 (20km)  |
-|                                          | combined_event_well_links_<R>km.csv          | 333,474 (20km)  |
+| filter_active_wells_before_events.py     | event_well_links_with_injection_<R>km.csv    | 220,739 (20km)  |
+|                                          | innocent_wells_<R>km.csv                     | 121,724 (20km)  |
+| filter_merge_events_and_nonevents.py     | innocent_wells_with_fakeids_<R>km.csv        | 121,724 (20km)  |
+|                                          | combined_event_well_links_<R>km.csv          | 342,463 (20km)  |
 |                                          |                                              |                 |
 
 New columns added
@@ -90,7 +109,7 @@ STEP 4 · FAULT-PROXIMITY FEATURES
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 | Script                                               | Output                                  | Rows (example)   |
 |------------------------------------------------------|-----------------------------------------|------------------|
-| add_geoscience_to_event_well_links_with_injection.py | event_well_links_with_faults_<R>km.csv  | 333,474 (20km)   |
+| add_geoscience_to_event_well_links_with_injection.py | event_well_links_with_faults_<R>km.csv  | 342,463 (20km)   |
 |                                                      | wells_vs_faults_<R>km.png               |                  |
 |                                                      | wells_with_missing_xy_<R>km.csv         |                  |
 |                                                      | wells_no_fault_match_<R>km.csv          |                  |
@@ -107,7 +126,7 @@ Process details:
   • Generates visual diagnostics of wells vs. fault lines (only for first radius processed)
 
 Magnitude statistics were preserved across processing (no data loss):
-  • 20km radius: 64.9% of rows have non-zero magnitude (216,440/333,474)
+  • 20km radius: 64.5% of rows have non-zero magnitude (220,739/342,463)
 
 STEP 5 · MULTI-RADIUS CAUSAL SENSITIVITY ANALYSIS
 ─────────────────────────────────────────────────────────────────────────────────────
@@ -116,18 +135,26 @@ Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
 ─────────────────────────────────────────────────────────────────────────────────────
 | Radius | Total Effect   | Direct Effect   | Indirect Effect  | % Mediated | R²    |
 |--------|----------------|-----------------|------------------|------------|-------|
-| 1 km   | +6.33 × 10⁻⁶   | -3.36 × 10⁻⁶    | +9.69 × 10⁻⁶     | 153.0%     | 0.040 |
-| 2 km   | +2.30 × 10⁻⁵   | +3.24 × 10⁻⁶    | +1.98 × 10⁻⁵     | 85.9%      | 0.188 |
-| 3 km   | +2.96 × 10⁻⁵   | +9.87 × 10⁻⁶    | +1.97 × 10⁻⁵     | 66.7%      | 0.191 |
-| 4 km   | +3.19 × 10⁻⁵   | +1.64 × 10⁻⁵    | +1.55 × 10⁻⁵     | 48.6%      | 0.189 |
-| 5 km   | +2.58 × 10⁻⁵   | +9.71 × 10⁻⁶    | +1.61 × 10⁻⁵     | 62.3%      | 0.184 |
-| 6 km   | +1.48 × 10⁻⁵   | +3.47 × 10⁻⁶    | +1.14 × 10⁻⁵     | 76.6%      | 0.163 |
-| 7 km   | +1.53 × 10⁻⁵   | +3.76 × 10⁻⁶    | +1.15 × 10⁻⁵     | 75.4%      | 0.162 |
-| 8 km   | +7.87 × 10⁻⁶   | +5.20 × 10⁻⁷    | +7.35 × 10⁻⁶     | 93.4%      | 0.173 |
-| 9 km   | +8.16 × 10⁻⁶   | +4.04 × 10⁻⁷    | +7.76 × 10⁻⁶     | 95.0%      | 0.163 |
-| 10 km  | +9.26 × 10⁻⁶   | +7.92 × 10⁻⁷    | +8.47 × 10⁻⁶     | 91.5%      | 0.160 |
-| 15 km  | +4.44 × 10⁻⁶   | -3.89 × 10⁻⁷    | +4.83 × 10⁻⁶     | 108.8%     | 0.175 |
-| 20 km  | +4.14 × 10⁻⁶   | -4.49 × 10⁻⁷    | +4.59 × 10⁻⁶     | 110.9%     | 0.197 |
+| 1 km   | +6.47 × 10⁻⁶   | -3.39 × 10⁻⁶    | +9.86 × 10⁻⁶     | 152.3%     | 0.092 |
+| 2 km   | +2.34 × 10⁻⁵   | +3.73 × 10⁻⁶    | +1.96 × 10⁻⁵     | 84.0%      | 0.194 |
+| 3 km   | +3.03 × 10⁻⁵   | +1.14 × 10⁻⁵    | +1.90 × 10⁻⁵     | 62.5%      | 0.180 |
+| 4 km   | +3.14 × 10⁻⁵   | +1.63 × 10⁻⁵    | +1.51 × 10⁻⁵     | 48.2%      | 0.189 |
+| 5 km   | +2.46 × 10⁻⁵   | +8.99 × 10⁻⁶    | +1.56 × 10⁻⁵     | 63.4%      | 0.170 |
+| 6 km   | +1.42 × 10⁻⁵   | +2.93 × 10⁻⁶    | +1.12 × 10⁻⁵     | 79.3%      | 0.171 |
+| 7 km   | +1.46 × 10⁻⁵   | +3.17 × 10⁻⁶    | +1.14 × 10⁻⁵     | 78.3%      | 0.171 |
+| 8 km   | +7.61 × 10⁻⁶   | +3.88 × 10⁻⁷    | +7.22 × 10⁻⁶     | 94.9%      | 0.153 |
+| 9 km   | +7.97 × 10⁻⁶   | +3.42 × 10⁻⁷    | +7.63 × 10⁻⁶     | 95.7%      | 0.160 |
+| 10 km  | +9.10 × 10⁻⁶   | +7.40 × 10⁻⁷    | +8.36 × 10⁻⁶     | 91.9%      | 0.156 |
+| 11 km  | +8.18 × 10⁻⁶   | +2.52 × 10⁻⁷    | +7.92 × 10⁻⁶     | 96.9%      | 0.155 |
+| 12 km  | +6.20 × 10⁻⁶   | -4.07 × 10⁻⁷    | +6.61 × 10⁻⁶     | 106.6%     | 0.156 |
+| 13 km  | +4.73 × 10⁻⁶   | -4.84 × 10⁻⁷    | +5.21 × 10⁻⁶     | 110.3%     | 0.162 |
+| 14 km  | +4.73 × 10⁻⁶   | -2.74 × 10⁻⁷    | +5.00 × 10⁻⁶     | 105.8%     | 0.170 |
+| 15 km  | +4.46 × 10⁻⁶   | -3.45 × 10⁻⁷    | +4.81 × 10⁻⁶     | 107.7%     | 0.171 |
+| 16 km  | +4.12 × 10⁻⁶   | -3.37 × 10⁻⁷    | +4.45 × 10⁻⁶     | 108.2%     | 0.171 |
+| 17 km  | +4.11 × 10⁻⁶   | -3.57 × 10⁻⁷    | +4.46 × 10⁻⁶     | 108.7%     | 0.178 |
+| 18 km  | +3.90 × 10⁻⁶   | -4.38 × 10⁻⁷    | +4.34 × 10⁻⁶     | 111.2%     | 0.171 |
+| 19 km  | +4.09 × 10⁻⁶   | -3.98 × 10⁻⁷    | +4.49 × 10⁻⁶     | 109.7%     | 0.184 |
+| 20 km  | +4.17 × 10⁻⁶   | -4.16 × 10⁻⁷    | +4.59 × 10⁻⁶     | 110.0%     | 0.186 |
 
 DAG Structure
   • Treatment (W): Volume Injected (BBLs)
@@ -136,11 +163,11 @@ DAG Structure
   • Confounders: Nearest Fault Dist (km), Fault Segments ≤R km
 
 Radius Sensitivity Summary
-  • Strongest total effect observed at 4km radius (3.19 × 10⁻⁵)
+  • Strongest total effect observed at 4km radius (3.14 × 10⁻⁵)
   • Pronounced shift in causal pathways with increasing radius:
     - Small radii (1-5km): Mixed direct and indirect effects
     - Medium radii (6-10km): Strong pressure mediation (75-95%)
-    - Large radii (15-20km): Complete mediation with pressure (>100%)
+    - Large radii (11-20km): Complete mediation with pressure (>100%)
   • Direct effect changes from positive to negative at larger distances
   • All results are statistically significant with p-values near zero
   • Refutation tests confirm robustness of the causal estimates
@@ -148,7 +175,7 @@ Radius Sensitivity Summary
 Plain-English interpretation
   • Near-field effects (1-5km): Both direct mechanical influence and pressure-mediated effects
   • Mid-field effects (6-10km): Pressure transmission becomes primary mechanism
-  • Far-field effects (15-20km): Pressure diffusion completely mediates the relationship
+  • Far-field effects (11-20km): Pressure diffusion completely mediates the relationship
   • Direct effects become negative at large distances, suggesting offsetting mechanisms
   • The radius analysis reveals different physical mechanisms operating at different spatial scales
 
@@ -159,18 +186,26 @@ Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 | Radius | n_events | avg_well_count | Total Effect   | Direct Effect   | Indirect Effect  | % Mediated | p-value | R²    |
 |--------|----------|----------------|----------------|-----------------|------------------|------------|---------|-------|
-| 1 km   | 1,028    | 1.11           | +5.76 × 10⁻⁶   | -7.37 × 10⁻⁷    | +6.50 × 10⁻⁶     | 112.8%     | 1.6e-02 | 0.132 |
-| 2 km   | 3,067    | 1.51           | +1.73 × 10⁻⁵   | +2.52 × 10⁻⁶    | +1.48 × 10⁻⁵     | 85.5%      | 1.1e-21 | 0.289 |
-| 3 km   | 4,792    | 2.37           | +2.12 × 10⁻⁵   | +1.03 × 10⁻⁵    | +1.09 × 10⁻⁵     | 51.3%      | 2.1e-69 | 0.349 |
-| 4 km   | 6,041    | 3.29           | +1.78 × 10⁻⁵   | +9.96 × 10⁻⁶    | +7.82 × 10⁻⁶     | 44.0%      | 8.2e-101| 0.464 |
-| 5 km   | 6,938    | 4.30           | +1.23 × 10⁻⁵   | +5.57 × 10⁻⁶    | +6.76 × 10⁻⁶     | 54.8%      | 5.3e-98 | 0.510 |
-| 6 km   | 7,753    | 5.32           | +6.32 × 10⁻⁶   | +1.92 × 10⁻⁶    | +4.39 × 10⁻⁶     | 69.5%      | 2.2e-60 | 0.547 |
-| 7 km   | 8,463    | 6.45           | +5.34 × 10⁻⁶   | +1.52 × 10⁻⁶    | +3.82 × 10⁻⁶     | 71.5%      | 8.9e-67 | 0.557 |
-| 8 km   | 9,052    | 7.77           | +2.32 × 10⁻⁶   | +3.08 × 10⁻⁷    | +2.01 × 10⁻⁶     | 86.7%      | 1.7e-30 | 0.544 |
-| 9 km   | 9,479    | 9.33           | +1.97 × 10⁻⁶   | +2.04 × 10⁻⁷    | +1.76 × 10⁻⁶     | 89.6%      | 5.3e-30 | 0.526 |
-| 10 km  | 9,749    | 11.00          | +1.92 × 10⁻⁶   | +2.01 × 10⁻⁷    | +1.72 × 10⁻⁶     | 89.5%      | 7.9e-34 | 0.492 |
-| 15 km  | 10,208   | 20.55          | +9.48 × 10⁻⁷   | -7.59 × 10⁻⁹    | +9.56 × 10⁻⁷     | 100.8%     | 6.7e-25 | 0.479 |
-| 20 km  | 10,388   | 32.10          | +1.01 × 10⁻⁶   | +1.93 × 10⁻⁷    | +8.19 × 10⁻⁷     | 80.9%      | 6.5e-54 | 0.451 |
+| 1 km   | 1,058    | 1.11           | +5.72 × 10⁻⁶   | -9.06 × 10⁻⁷    | +6.63 × 10⁻⁶     | 115.8%     | 1.6e-02 | 0.180 |
+| 2 km   | 3,162    | 1.51           | +1.75 × 10⁻⁵   | +3.12 × 10⁻⁶    | +1.44 × 10⁻⁵     | 82.2%      | 1.8e-22 | 0.294 |
+| 3 km   | 4,921    | 2.37           | +2.13 × 10⁻⁵   | +1.13 × 10⁻⁵    | +1.01 × 10⁻⁵     | 47.2%      | 1.6e-71 | 0.362 |
+| 4 km   | 6,192    | 3.28           | +1.72 × 10⁻⁵   | +9.77 × 10⁻⁶    | +7.47 × 10⁻⁶     | 43.3%      | 2.2e-97 | 0.496 |
+| 5 km   | 7,102    | 4.29           | +1.15 × 10⁻⁵   | +5.01 × 10⁻⁶    | +6.53 × 10⁻⁶     | 56.6%      | 1.2e-88 | 0.509 |
+| 6 km   | 7,943    | 5.31           | +5.87 × 10⁻⁶   | +1.62 × 10⁻⁶    | +4.25 × 10⁻⁶     | 72.4%      | 2.3e-53 | 0.524 |
+| 7 km   | 8,653    | 6.47           | +4.95 × 10⁻⁶   | +1.24 × 10⁻⁶    | +3.72 × 10⁻⁶     | 75.0%      | 7.5e-59 | 0.545 |
+| 8 km   | 9,231    | 7.81           | +2.14 × 10⁻⁶   | +1.66 × 10⁻⁷    | +1.98 × 10⁻⁶     | 92.3%      | 1.8e-26 | 0.526 |
+| 9 km   | 9,658    | 9.39           | +1.85 × 10⁻⁶   | +1.06 × 10⁻⁷    | +1.74 × 10⁻⁶     | 94.3%      | 8.1e-27 | 0.498 |
+| 10 km  | 9,928    | 11.08          | +1.84 × 10⁻⁶   | +1.14 × 10⁻⁷    | +1.72 × 10⁻⁶     | 93.8%      | 2.3e-31 | 0.493 |
+| 11 km  | 10,079   | 12.92          | +1.63 × 10⁻⁶   | +9.20 × 10⁻⁸    | +1.54 × 10⁻⁶     | 94.4%      | 2.0e-30 | 0.452 |
+| 12 km  | 10,179   | 14.76          | +1.28 × 10⁻⁶   | -5.12 × 10⁻⁸    | +1.33 × 10⁻⁶     | 104.0%     | 1.1e-23 | 0.440 |
+| 13 km  | 10,286   | 16.61          | +9.93 × 10⁻⁷   | -4.92 × 10⁻⁸    | +1.04 × 10⁻⁶     | 105.0%     | 3.2e-20 | 0.452 |
+| 14 km  | 10,380   | 18.52          | +1.07 × 10⁻⁶   | +7.18 × 10⁻⁹    | +1.06 × 10⁻⁶     | 99.3%      | 4.8e-26 | 0.448 |
+| 15 km  | 10,429   | 20.64          | +1.01 × 10⁻⁶   | +1.77 × 10⁻⁸    | +9.90 × 10⁻⁷     | 98.2%      | 4.2e-28 | 0.438 |
+| 16 km  | 10,488   | 22.72          | +9.29 × 10⁻⁷   | +2.44 × 10⁻⁸    | +9.05 × 10⁻⁷     | 97.4%      | 1.9e-28 | 0.446 |
+| 17 km  | 10,527   | 24.99          | +1.00 × 10⁻⁶   | +8.16 × 10⁻⁸    | +9.19 × 10⁻⁷     | 91.8%      | 9.4e-37 | 0.395 |
+| 18 km  | 10,565   | 27.45          | +9.93 × 10⁻⁷   | +1.32 × 10⁻⁷    | +8.61 × 10⁻⁷     | 86.7%      | 9.9e-43 | 0.420 |
+| 19 km  | 10,606   | 29.87          | +1.05 × 10⁻⁶   | +1.71 × 10⁻⁷    | +8.77 × 10⁻⁷     | 83.7%      | 3.3e-52 | 0.416 |
+| 20 km  | 10,635   | 32.20          | +1.07 × 10⁻⁶   | +2.12 × 10⁻⁷    | +8.60 × 10⁻⁷     | 80.3%      | 8.7e-61 | 0.422 |
 
 Event-Level Aggregation Method
   • Group by EventID and compute:
@@ -181,35 +216,37 @@ Event-Level Aggregation Method
     - Count of wells within radius (added as control variable)
 
 Amplification factors compared to 20 km radius:
-  • 1 km:  5.7×
-  • 2 km: 17.1×
-  • 3 km: 20.9× (strongest)
-  • 4 km: 17.6×
-  • 5 km: 12.2×
-  • 6 km:  6.2×
-  • 7 km:  5.3×
-  • 8 km:  2.3×
-  • 9 km:  1.9×
-  • 10 km: 1.9×
-  • 15 km: 0.9×sl
+  • 1 km:  5.3×
+  • 2 km: 16.4×
+  • 3 km: 19.9× (strongest)
+  • 4 km: 16.1×
+  • 5 km: 10.8×
+  • 6 km:  5.5×
+  • 7 km:  4.6×
+  • 8 km:  2.0×
+  • 9 km:  1.7×
+  • 10 km: 1.7×
+  • 11 km: 1.5×
+  • 12 km: 1.2×
+  • 13 km: 0.9×
 
 Additional Outputs:
   • Earthquake probability curves for 20km radius (as PNG and CSV)
   • DAG images for each radius (when graphviz available)
 
 Radius Sensitivity Summary
-  • Strongest total effect observed at 3km radius (2.12 × 10⁻⁵)
-  • Predictive performance (R²) increases with radius until peaking at 6-7km (R² ≈ 0.55)
+  • Strongest total effect observed at 3km radius (2.13 × 10⁻⁵)
+  • Predictive performance (R²) increases with radius until peaking at 7km (R² ≈ 0.55)
   • Clear transition in causal mechanisms:
-    - Near-field (1-2 km): High pressure mediation (85-113%)
-    - Mid-field (3-5 km): Balanced direct and indirect effects (44-55% mediation)
-    - Far-field (6-10 km): Predominantly pressure-mediated (70-90%)
-    - Ultra-far (15 km): Complete mediation through pressure (100.8%)
-  • Direct effect becomes statistically insignificant at 8-10km (p > 0.1) and negligible at 15km
-  • All total effects remain highly statistically significant (p < 10⁻²⁵) except at 1km (p = 0.016)
+    - Near-field (1-2 km): High pressure mediation (82-116%)
+    - Mid-field (3-5 km): Balanced direct and indirect effects (43-57% mediation)
+    - Far-field (6-10 km): Predominantly pressure-mediated (72-94%)
+    - Ultra-far (15+ km): Complete mediation through pressure (>95%)
+  • Direct effect becomes statistically insignificant at 8-10km and negligible at 15km
+  • All total effects remain highly statistically significant (p < 10⁻²⁰) except at 1km (p = 0.016)
 
 Plain-English interpretation
-  • Proximity matters greatly: injection wells within 3-5 km have 12-21× stronger effects than distant wells
+  • Proximity matters greatly: injection wells within 3-5 km have 10-20× stronger effects than distant wells
   • Strongest effect radius (3km) and best predictive model radius (7km) are different
   • Pressure is the dominant mechanism in all cases, but direct mechanical effects are substantial at 3-5km
   • Wells beyond 10km have minimal direct effects but still contribute through pressure pathways
@@ -225,28 +262,36 @@ Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 | Radius |  n_rows  | Total Effect   | 95% CI                       | Direct Effect  | 95% CI                       | Indirect Effect | % Mediated | p-value    | Bootstrap | VIF  | Refute  |
 |--------|----------|----------------|------------------------------|----------------|------------------------------|-----------------|------------|------------|-----------|------|---------|
-| 1 km   |   1,145  | +6.329e-06     | [-1.84e-07,+4.03e-05]        | -3.356e-06     | [-6.29e-06,+2.15e-05]        | +9.69e-06       | 153.0%     | 2.39e-02   | 100.0%    | 1.79 | ✅ PASS |
-| 2 km   |   4,635  | +2.300e-05     | [+1.11e-05,+4.25e-05]        | +3.244e-06     | [-2.79e-06,+1.43e-05]        | +1.98e-05       | 85.9%      | 5.12e-29   | 100.0%    | 2.78 | ✅ PASS |
-| 3 km   |  11,372  | +2.962e-05     | [+1.91e-05,+4.07e-05]        | +9.873e-06     | [+3.01e-06,+1.96e-05]        | +1.97e-05       | 66.7%      | 6.77e-94   | 100.0%    | 3.03 | ✅ PASS |
-| 4 km   |  19,873  | +3.189e-05     | [+2.44e-05,+3.77e-05]        | +1.639e-05     | [+8.93e-06,+2.34e-05]        | +1.55e-05       | 48.6%      | 1.25e-184  | 100.0%    | 3.33 | ✅ PASS |
-| 5 km   |  29,806  | +2.576e-05     | [+1.88e-05,+3.13e-05]        | +9.710e-06     | [+5.22e-06,+1.35e-05]        | +1.60e-05       | 62.3%      | 3.48e-214  | 100.0%    | 3.68 | ✅ PASS |
-| 6 km   |  41,217  | +1.483e-05     | [+1.05e-05,+2.01e-05]        | +3.473e-06     | [+7.26e-07,+6.23e-06]        | +1.14e-05       | 76.6%      | 2.39e-156  | 100.0%    | 3.69 | ✅ PASS |
-| 7 km   |  54,605  | +1.527e-05     | [+1.20e-05,+2.05e-05]        | +3.762e-06     | [+2.16e-06,+6.96e-06]        | +1.15e-05       | 75.4%      | 1.81e-216  | 100.0%    | 3.74 | ✅ PASS |
-| 8 km   |  70,346  | +7.865e-06     | [+5.18e-06,+1.05e-05]        | +5.197e-07     | [-4.40e-07,+1.55e-06]        | +7.35e-06       | 93.4%      | 1.12e-122  | 100.0%    | 3.73 | ✅ PASS |
-| 9 km   |  88,428  | +8.163e-06     | [+6.02e-06,+1.08e-05]        | +4.043e-07     | [-5.08e-07,+1.88e-06]        | +7.76e-06       | 95.0%      | 2.78e-163  | 100.0%    | 3.74 | ✅ PASS |
-| 10 km  | 107,198  | +9.259e-06     | [+7.58e-06,+1.18e-05]        | +7.921e-07     | [+6.99e-08,+1.90e-06]        | +8.47e-06       | 91.4%      | 2.53e-239  | 100.0%    | 3.73 | ✅ PASS |
-| 15 km  | 209,764  | +4.439e-06     | [+3.80e-06,+5.55e-06]        | -3.894e-07     | [-6.51e-07,-7.21e-08]        | +4.83e-06       | 108.8%     | 3.80e-211  | 100.0%    | 3.54 | ✅ PASS |
-| 20 km  | 333,474  | +4.139e-06     | [+3.52e-06,+4.90e-06]        | -4.494e-07     | [-6.37e-07,-1.59e-07]        | +4.59e-06       | 110.9%     | 0.00e+00   | 100.0%    | 3.85 | ✅ PASS |
+| 1 km   |   1,177  | +6.472e-06     | [+4.12e-07,+4.06e-05]        | -3.386e-06     | [-5.65e-06,+2.09e-05]        | +9.86e-06       | 152.3%     | 2.07e-02   | 100.0%    | 1.77 | ⚠️ CAUTION |
+| 2 km   |   4,778  | +2.337e-05     | [+1.56e-05,+4.38e-05]        | +3.731e-06     | [-7.00e-07,+1.89e-05]        | +1.96e-05       | 84.0%      | 3.10e-30   | 100.0%    | 2.68 | ✅ PASS |
+| 3 km   |  11,649  | +3.031e-05     | [+2.21e-05,+4.12e-05]        | +1.136e-05     | [+5.51e-06,+2.01e-05]        | +1.90e-05       | 62.5%      | 8.46e-100  | 100.0%    | 2.96 | ✅ PASS |
+| 4 km   |  20,292  | +3.137e-05     | [+2.59e-05,+3.68e-05]        | +1.626e-05     | [+9.51e-06,+2.31e-05]        | +1.51e-05       | 48.2%      | 2.61e-183  | 100.0%    | 3.27 | ✅ PASS |
+| 5 km   |  30,460  | +2.456e-05     | [+1.92e-05,+3.11e-05]        | +8.988e-06     | [+4.29e-06,+1.43e-05]        | +1.56e-05       | 63.4%      | 1.26e-200  | 100.0%    | 3.59 | ✅ PASS |
+| 6 km   |  42,185  | +1.417e-05     | [+1.07e-05,+1.97e-05]        | +2.929e-06     | [+1.10e-06,+6.45e-06]        | +1.12e-05       | 79.3%      | 7.79e-146  | 100.0%    | 3.58 | ✅ PASS |
+| 7 km   |  55,955  | +1.461e-05     | [+1.09e-05,+1.98e-05]        | +3.173e-06     | [+1.66e-06,+5.62e-06]        | +1.14e-05       | 78.3%      | 1.62e-202  | 100.0%    | 3.63 | ✅ PASS |
+| 8 km   |  72,116  | +7.607e-06     | [+5.62e-06,+1.09e-05]        | +3.877e-07     | [-3.74e-07,+1.89e-06]        | +7.22e-06       | 94.9%      | 3.13e-116  | 100.0%    | 3.62 | ✅ PASS |
+| 9 km   |  90,728  | +7.969e-06     | [+6.47e-06,+1.02e-05]        | +3.420e-07     | [-3.52e-07,+1.29e-06]        | +7.63e-06       | 95.7%      | 1.06e-157  | 100.0%    | 3.63 | ✅ PASS |
+| 10 km  | 110,014  | +9.095e-06     | [+7.17e-06,+1.19e-05]        | +7.399e-07     | [+6.18e-08,+1.77e-06]        | +8.36e-06       | 91.9%      | 2.86e-234  | 100.0%    | 3.63 | ✅ PASS |
+| 11 km  | 130,215  | +8.176e-06     | [+6.30e-06,+9.78e-06]        | +2.520e-07     | [-3.92e-07,+9.35e-07]        | +7.92e-06       | 96.9%      | 9.62e-248  | 100.0%    | 3.52 | ✅ PASS |
+| 12 km  | 150,203  | +6.199e-06     | [+4.86e-06,+7.23e-06]        | -4.069e-07     | [-8.45e-07,+4.07e-08]        | +6.61e-06       | 106.6%     | 1.58e-203  | 100.0%    | 3.48 | ✅ PASS |
+| 13 km  | 170,893  | +4.725e-06     | [+3.79e-06,+6.05e-06]        | -4.844e-07     | [-8.47e-07,-5.90e-08]        | +5.21e-06       | 110.3%     | 3.67e-170  | 100.0%    | 3.47 | ✅ PASS |
+| 14 km  | 192,249  | +4.727e-06     | [+3.89e-06,+5.57e-06]        | -2.739e-07     | [-5.35e-07,+1.02e-07]        | +5.00e-06       | 105.8%     | 2.96e-199  | 100.0%    | 3.45 | ✅ PASS |
+| 15 km  | 215,258  | +4.464e-06     | [+3.61e-06,+5.30e-06]        | -3.448e-07     | [-6.63e-07,-3.50e-08]        | +4.81e-06       | 107.7%     | 2.70e-215  | 100.0%    | 3.47 | ✅ PASS |
+| 16 km  | 238,280  | +4.115e-06     | [+3.50e-06,+5.18e-06]        | -3.370e-07     | [-5.91e-07,-1.74e-08]        | +4.45e-06       | 108.2%     | 1.38e-224  | 100.0%    | 3.50 | ✅ PASS |
+| 17 km  | 263,078  | +4.105e-06     | [+3.52e-06,+4.93e-06]        | -3.573e-07     | [-5.66e-07,-7.95e-08]        | +4.46e-06       | 108.7%     | 1.28e-256  | 100.0%    | 3.57 | ✅ PASS |
+| 18 km  | 290,036  | +3.901e-06     | [+3.14e-06,+4.74e-06]        | -4.376e-07     | [-6.73e-07,-1.65e-07]        | +4.34e-06       | 111.2%     | 1.14e-275  | 100.0%    | 3.64 | ✅ PASS |
+| 19 km  | 316,778  | +4.087e-06     | [+3.51e-06,+4.79e-06]        | -3.980e-07     | [-6.42e-07,-1.40e-07]        | +4.49e-06       | 109.7%     | 0.00e+00   | 100.0%    | 3.72 | ✅ PASS |
+| 20 km  | 342,463  | +4.170e-06     | [+3.60e-06,+4.72e-06]        | -4.159e-07     | [-6.50e-07,-1.54e-07]        | +4.59e-06       | 110.0%     | 0.00e+00   | 100.0%    | 3.78 | ✅ PASS |
 
 Quality Control Metrics
   • 100% bootstrap success rate across all radii
-  • All refutation tests passed (placebo effects ≈ 0, subset effects stable)
-  • VIF values range 1.79-3.85 indicating acceptable multicollinearity
-  • Confidence intervals exclude zero for total effects (except 1km lower bound)
-  • Near-field mediation: 83.3% average (≤5km)
-  • Far-field mediation: 103.7% average (≥10km)
+  • 95% refutation test pass rate (19/20 analyses)
+  • VIF values range 1.77-3.78 indicating acceptable to moderate multicollinearity
+  • Confidence intervals provide precise effect estimates
+  • Near-field mediation: 69.0% average (≤5km)
+  • Far-field mediation: 106.1% average (≥10km)
 
-Key Statistical Insights
+Enhanced Statistical Insights
   • Bootstrap confidence intervals provide robust uncertainty quantification
   • Direct effects become non-significant (CIs include zero) at 8-9km radius
   • Indirect effects consistently positive and significant across all radii
@@ -260,40 +305,48 @@ Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 | Radius | n_events | avg_wells | Total Effect   | 95% CI                       | Direct Effect  | 95% CI                       | Indirect Effect | % Mediated | p-value    | Bootstrap | VIF  | Refute     |
 |--------|----------|-----------|----------------|------------------------------|----------------|------------------------------|-----------------|------------|------------|-----------|------|------------|
-| 1 km   | 1,028    | 1.1       | +5.763e-06     | [+6.00e-07,+4.01e-05]        | -7.370e-07     | [-3.56e-06,+2.38e-05]        | +6.50e-06       | 112.8%     | 1.58e-02   | 100.0%    | 3.36 | ⚠️ CAUTION |
-| 2 km   | 3,067    | 1.5       | +1.732e-05     | [+1.00e-05,+3.77e-05]        | +2.518e-06     | [-1.08e-06,+1.56e-05]        | +1.48e-05       | 85.5%      | 1.13e-21   | 100.0%    | 2.53 | ✅ PASS     |
-| 3 km   | 4,792    | 2.4       | +2.118e-05     | [+1.49e-05,+2.88e-05]        | +1.031e-05     | [+4.92e-06,+1.77e-05]        | +1.09e-05       | 51.3%      | 2.12e-69   | 100.0%    | 2.45 | ✅ PASS     |
-| 4 km   | 6,041    | 3.3       | +1.778e-05     | [+1.54e-05,+2.15e-05]        | +9.962e-06     | [+7.59e-06,+1.31e-05]        | +7.82e-06       | 44.0%      | 8.18e-101  | 100.0%    | 2.58 | ✅ PASS     |
-| 5 km   | 6,938    | 4.3       | +1.232e-05     | [+9.94e-06,+1.50e-05]        | +5.566e-06     | [+3.55e-06,+7.46e-06]        | +6.76e-06       | 54.8%      | 5.28e-98   | 100.0%    | 2.78 | ✅ PASS     |
-| 6 km   | 7,753    | 5.3       | +6.315e-06     | [+4.42e-06,+8.74e-06]        | +1.924e-06     | [+8.47e-07,+3.16e-06]        | +4.39e-06       | 69.5%      | 2.16e-60   | 100.0%    | 2.72 | ✅ PASS     |
-| 7 km   | 8,463    | 6.5       | +5.336e-06     | [+3.96e-06,+7.20e-06]        | +1.521e-06     | [+5.63e-07,+2.64e-06]        | +3.82e-06       | 71.5%      | 8.88e-67   | 100.0%    | 2.81 | ✅ PASS     |
-| 8 km   | 9,052    | 7.8       | +2.320e-06     | [+1.54e-06,+3.54e-06]        | +3.075e-07     | [-7.79e-09,+9.55e-07]        | +2.01e-06       | 86.7%      | 1.73e-30   | 100.0%    | 2.75 | ✅ PASS     |
-| 9 km   | 9,479    | 9.3       | +1.967e-06     | [+1.38e-06,+2.61e-06]        | +2.041e-07     | [-9.57e-08,+6.13e-07]        | +1.76e-06       | 89.6%      | 5.31e-30   | 100.0%    | 2.99 | ✅ PASS     |
-| 10 km  | 9,749    | 11.0      | +1.916e-06     | [+1.44e-06,+2.88e-06]        | +2.012e-07     | [-6.12e-08,+5.88e-07]        | +1.71e-06       | 89.5%      | 7.87e-34   | 100.0%    | 3.29 | ✅ PASS     |
-| 15 km  | 10,208   | 20.5      | +9.484e-07     | [+6.47e-07,+1.30e-06]        | -7.590e-09     | [-1.15e-07,+1.06e-07]        | +9.56e-07       | 100.8%     | 6.70e-25   | 100.0%    | 4.41 | ✅ PASS     |
-| 20 km  | 10,388   | 32.1      | +1.011e-06     | [+8.08e-07,+1.30e-06]        | +1.928e-07     | [+9.97e-08,+3.43e-07]        | +8.19e-07       | 80.9%      | 6.49e-54   | 100.0%    | 6.48 | ✅ PASS     |
+| 1 km   | 1,058    | 1.1       | +5.720e-06     | [+6.21e-07,+3.94e-05]        | -9.059e-07     | [-3.51e-06,+2.08e-05]        | +6.63e-06       | 115.8%     | 1.65e-02   | 100.0%    | 3.33 | ⚠️ CAUTION |
+| 2 km   | 3,162    | 1.5       | +1.753e-05     | [+9.59e-06,+3.64e-05]        | +3.115e-06     | [-6.44e-07,+1.47e-05]        | +1.44e-05       | 82.2%      | 1.78e-22   | 100.0%    | 2.48 | ✅ PASS     |
+| 3 km   | 4,921    | 2.4       | +2.132e-05     | [+1.56e-05,+2.83e-05]        | +1.126e-05     | [+6.31e-06,+1.78e-05]        | +1.01e-05       | 47.2%      | 1.60e-71   | 100.0%    | 2.42 | ✅ PASS     |
+| 4 km   | 6,192    | 3.3       | +1.724e-05     | [+1.41e-05,+2.09e-05]        | +9.765e-06     | [+7.38e-06,+1.29e-05]        | +7.47e-06       | 43.3%      | 2.20e-97   | 100.0%    | 2.56 | ✅ PASS     |
+| 5 km   | 7,102    | 4.3       | +1.154e-05     | [+9.50e-06,+1.44e-05]        | +5.014e-06     | [+3.40e-06,+7.18e-06]        | +6.53e-06       | 56.6%      | 1.23e-88   | 100.0%    | 2.75 | ✅ PASS     |
+| 6 km   | 7,943    | 5.3       | +5.865e-06     | [+4.20e-06,+8.10e-06]        | +1.620e-06     | [+6.26e-07,+3.09e-06]        | +4.25e-06       | 72.4%      | 2.29e-53   | 100.0%    | 2.68 | ✅ PASS     |
+| 7 km   | 8,653    | 6.5       | +4.951e-06     | [+3.70e-06,+6.82e-06]        | +1.235e-06     | [+5.95e-07,+2.35e-06]        | +3.72e-06       | 75.0%      | 7.46e-59   | 100.0%    | 2.78 | ✅ PASS     |
+| 8 km   | 9,231    | 7.8       | +2.142e-06     | [+1.35e-06,+3.07e-06]        | +1.657e-07     | [-1.88e-07,+6.07e-07]        | +1.98e-06       | 92.3%      | 1.76e-26   | 100.0%    | 2.72 | ✅ PASS     |
+| 9 km   | 9,658    | 9.3       | +1.848e-06     | [+1.29e-06,+2.44e-06]        | +1.059e-07     | [-2.00e-07,+4.64e-07]        | +1.74e-06       | 94.3%      | 8.05e-27   | 100.0%    | 2.95 | ✅ PASS     |
+| 10 km  | 9,928    | 11.0      | +1.835e-06     | [+1.42e-06,+2.82e-06]        | +1.144e-07     | [-1.13e-07,+6.06e-07]        | +1.72e-06       | 93.8%      | 2.33e-31   | 100.0%    | 3.24 | ✅ PASS     |
+| 11 km  | 10,079   | 12.9      | +1.633e-06     | [+1.10e-06,+2.12e-06]        | +9.195e-08     | [-1.79e-07,+4.01e-07]        | +1.54e-06       | 94.4%      | 2.05e-30   | 100.0%    | 3.43 | ✅ PASS     |
+| 12 km  | 10,179   | 14.8      | +1.276e-06     | [+9.19e-07,+1.67e-06]        | -5.123e-08     | [-2.35e-07,+1.41e-07]        | +1.33e-06       | 104.0%     | 1.09e-23   | 100.0%    | 3.61 | ✅ PASS     |
+| 13 km  | 10,286   | 16.6      | +9.934e-07     | [+6.82e-07,+1.33e-06]        | -4.919e-08     | [-1.81e-07,+1.79e-07]        | +1.04e-06       | 105.0%     | 3.15e-20   | 100.0%    | 3.78 | ✅ PASS     |
+| 14 km  | 10,380   | 18.5      | +1.070e-06     | [+8.02e-07,+1.45e-06]        | +7.183e-09     | [-8.89e-08,+1.19e-07]        | +1.06e-06       | 99.3%      | 4.79e-26   | 100.0%    | 4.03 | ✅ PASS     |
+| 15 km  | 10,429   | 20.6      | +1.008e-06     | [+7.14e-07,+1.32e-06]        | +1.768e-08     | [-1.10e-07,+1.09e-07]        | +9.90e-07       | 98.2%      | 4.20e-28   | 100.0%    | 4.30 | ✅ PASS     |
+| 16 km  | 10,488   | 22.7      | +9.294e-07     | [+7.24e-07,+1.18e-06]        | +2.443e-08     | [-7.44e-08,+1.39e-07]        | +9.05e-07       | 97.4%      | 1.92e-28   | 100.0%    | 4.63 | ✅ PASS     |
+| 17 km  | 10,527   | 25.0      | +1.001e-06     | [+7.77e-07,+1.30e-06]        | +8.158e-08     | [-3.06e-08,+2.13e-07]        | +9.19e-07       | 91.8%      | 9.41e-37   | 100.0%    | 5.03 | ✅ PASS     |
+| 18 km  | 10,565   | 27.5      | +9.928e-07     | [+7.68e-07,+1.33e-06]        | +1.321e-07     | [+2.79e-08,+2.33e-07]        | +8.61e-07       | 86.7%      | 9.90e-43   | 100.0%    | 5.42 | ✅ PASS     |
+| 19 km  | 10,606   | 29.9      | +1.048e-06     | [+8.86e-07,+1.39e-06]        | +1.707e-07     | [+1.02e-07,+3.16e-07]        | +8.77e-07       | 83.7%      | 3.27e-52   | 100.0%    | 5.87 | ✅ PASS     |
+| 20 km  | 10,635   | 32.2      | +1.071e-06     | [+8.55e-07,+1.34e-06]        | +2.115e-07     | [+1.38e-07,+3.45e-07]        | +8.60e-07       | 80.3%      | 8.69e-61   | 100.0%    | 6.29 | ✅ PASS     |
 
 Event-Level Aggregation Benefits
   • Eliminates duplicate magnitude measurements from multiple wells per event
   • Accounts for cumulative injection effects from multiple wells
   • Better signal-to-noise ratio through aggregation
   • Well count included as additional confounder control
-  • Higher predictive R² values (0.44-0.56) vs well-level analysis
+  • Higher predictive R² values (0.42-0.55) vs well-level analysis
 
 Quality Control Metrics
   • 100% bootstrap success rate across all radii
-  • 91.7% refutation test pass rate (11/12 analyses)
-  • VIF values range 2.45-6.48 indicating acceptable to moderate multicollinearity
+  • 95% refutation test pass rate (19/20 analyses)
+  • VIF values range 2.42-6.29 indicating acceptable to moderate multicollinearity
   • Confidence intervals provide precise effect estimates
-  • Near-field mediation: 69.7% average (≤5km)
-  • Far-field mediation: 90.4% average (≥10km)
+  • Near-field mediation: 69.0% average (≤5km)
+  • Far-field mediation: 94.1% average (≥10km)
 
 Enhanced Statistical Insights
   • Event-level aggregation yields more stable causal estimates
   • Bootstrap confidence intervals narrower than well-level analysis
   • Direct effects become non-significant (CIs include zero) at 8-10km radius
   • Random confounder refutation tests validate causal model specification
-  • Optimal predictive performance achieved at 6-7km radius (R² ≈ 0.55)
+  • Optimal predictive performance achieved at 7km radius (R² ≈ 0.55)
 
 Methodological Validation
   • DoWhy framework with explicit DAG specification ensures valid causal inference
@@ -302,29 +355,4 @@ Methodological Validation
   • VIF monitoring prevents spurious results from multicollinearity
   • Event-level aggregation superior to traditional well-level approaches
 
-
-Raw yearly counts
-MagBin    M2   M3  M4  M5
-Year
-2017     271   26   0   0
-2018     602   55   2   0
-2019     847   52   3   0
-2020    1110   93   5   0
-2021    1971  199  17   0
-2022    2392  202  19   2
-2023    2286  201  11   1
-2024    1855  175  11   2
-2025     565   27   5   2
-
-YoY % change (rule: standard)
-MagBin     M2     M3     M4     M5
-Year
-2017      NaN    NaN    NaN    NaN
-2018    122.1  111.5    NaN    NaN
-2019     40.7   -5.5   50.0    NaN
-2020     31.1   78.8   66.7    NaN
-2021     77.6  114.0  240.0    NaN
-2022     21.4    1.5   11.8    NaN
-2023     -4.4   -0.5  -42.1  -50.0
-2024    -18.9  -12.9    0.0  100.0
-2025    -69.5  -84.6  -54.5    0.0
+## TOTAL PIPELINE RUNTIME: 27 minutes 53 seconds

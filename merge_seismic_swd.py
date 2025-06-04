@@ -23,7 +23,7 @@ from tqdm import tqdm
 # ────────────────────── USER-TUNABLE CONSTANTS ──────────────────────────
 WELL_FILE   = "swd_data_filtered.csv"
 EVENT_FILE  = "texnet_events_filtered.csv"
-RADII_KM    = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 15.0, 20.0]      # NEW – list of cut-offs
+RADII_KM    = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0]      # NEW – list of cut-offs
 CHUNK_SIZE  = 50_000
 OUT_BASENAME = "event_well_links_{:.0f}km.csv"  # NEW – template for filenames
 # ─────────────────────────────────────────────────────────────────────────

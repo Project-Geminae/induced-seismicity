@@ -61,7 +61,15 @@ CSV_FILES = [
     "event_well_links_with_faults_8km.csv",
     "event_well_links_with_faults_9km.csv",
     "event_well_links_with_faults_10km.csv",
+    "event_well_links_with_faults_11km.csv",
+    "event_well_links_with_faults_12km.csv",
+    "event_well_links_with_faults_13km.csv",
+    "event_well_links_with_faults_14km.csv",
     "event_well_links_with_faults_15km.csv",
+    "event_well_links_with_faults_16km.csv",
+    "event_well_links_with_faults_17km.csv",
+    "event_well_links_with_faults_18km.csv",
+    "event_well_links_with_faults_19km.csv",
     "event_well_links_with_faults_20km.csv"
 ]
 

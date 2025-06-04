@@ -36,7 +36,15 @@ LINKS_FILES = [
     "event_well_links_8km.csv",
     "event_well_links_9km.csv",
     "event_well_links_10km.csv",
+    "event_well_links_11km.csv",
+    "event_well_links_12km.csv",
+    "event_well_links_13km.csv",
+    "event_well_links_14km.csv",
     "event_well_links_15km.csv",
+    "event_well_links_16km.csv",
+    "event_well_links_17km.csv",
+    "event_well_links_18km.csv",
+    "event_well_links_19km.csv",
     "event_well_links_20km.csv"
 ]
 

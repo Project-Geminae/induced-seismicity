@@ -1,0 +1,50 @@
+{
+  "completed_steps": [
+    "seismic_data_import",
+    "swd_data_import",
+    "filter_active_wells",
+    "spatial_join"
+  ],
+  "timestamp": "2025-06-04T11:37:46.045566",
+  "config": {
+    "radius_values": [
+      1.0,
+      2.0,
+      3.0,
+      4.0,
+      5.0,
+      6.0,
+      7.0,
+      8.0,
+      9.0,
+      10.0,
+      11.0,
+      12.0,
+      13.0,
+      14.0,
+      15.0,
+      16.0,
+      17.0,
+      18.0,
+      19.0,
+      20.0
+    ],
+    "max_retries": 3,
+    "retry_delay": 5.0,
+    "parallel_workers": 1,
+    "enable_checkpoints": true,
+    "checkpoint_dir": "checkpoints",
+    "log_level": "INFO",
+    "output_dir": "outputs",
+    "validate_data": true,
+    "monitor_resources": true,
+    "random_seed": 42,
+    "bootstrap_iterations": 50,
+    "ensure_reproducibility": true,
+    "validate_scientific_outputs": true,
+    "injection_lookback_days": 30,
+    "fault_segment_length_km": 1.0,
+    "geographic_crs": "EPSG:4326",
+    "planar_crs": "EPSG:3857"
+  }
+}

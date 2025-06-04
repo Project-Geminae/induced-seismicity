@@ -53,8 +53,16 @@ LINKAGE_FILES = [
     "combined_event_well_links_8km.csv",
     "combined_event_well_links_9km.csv",
     "combined_event_well_links_10km.csv",
+    "combined_event_well_links_11km.csv",
+    "combined_event_well_links_12km.csv",
+    "combined_event_well_links_13km.csv",
+    "combined_event_well_links_14km.csv",
     "combined_event_well_links_15km.csv",
-    "combined_event_well_links_20km.csv",
+    "combined_event_well_links_16km.csv",
+    "combined_event_well_links_17km.csv",
+    "combined_event_well_links_18km.csv",
+    "combined_event_well_links_19km.csv",
+    "combined_event_well_links_20km.csv"
 ]
 
 FAULT_SHP = "Horne_et_al._2023_MB_BSMT_FSP_V1.shp"

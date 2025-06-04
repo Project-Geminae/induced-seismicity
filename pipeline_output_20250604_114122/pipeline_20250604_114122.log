@@ -1,0 +1,11 @@
+2025-06-04 11:41:22,703 - SeismicPipeline - INFO - 
+================================================================================
+ ENHANCED SEISMIC ANALYSIS PIPELINE
+================================================================================
+Configuration: pipeline_output_20250604_114122/config.yaml
+Checkpoint: pipeline_output_20250604_114122/pipeline_checkpoint.json
+================================================================================
+        
+2025-06-04 11:41:22,703 - SeismicPipeline - INFO - Checking dependencies...
+2025-06-04 11:41:25,646 - SeismicPipeline - ERROR - Missing dependencies:
+2025-06-04 11:41:25,646 - SeismicPipeline - ERROR -   - Python package: pyyaml
