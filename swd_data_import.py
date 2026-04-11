@@ -12,7 +12,9 @@ import pandas as pd                           # 3rd-party: fast table manipulati
 FILENAME = "swd_data.csv"                     # raw input file (daily injection records, statewide)
 OUTFILE  = "swd_data_filtered.csv"            # output limited to Midland Basin records
 
-# Columns we must retain for later geospatial or causal work
+# Columns we must retain for later geospatial, depth-correction, and causal work.
+# Depth/formation columns are added so the (well, day) panel builder can compute
+# a depth-corrected BHP estimate and use formation as a categorical confounder.
 KEEP_COLS = [
     "API Number",
     "Date of Injection",
@@ -21,6 +23,18 @@ KEEP_COLS = [
     "Injection Pressure Max PSIG",
     "Surface Longitude",
     "Surface Latitude",
+    # Depth / completion (used for BHP estimate)
+    "Well Total Depth ft",
+    "Tubing Depth (ft.)",
+    "Completed Injection Interval Top",
+    "Completed Injection Interval Bottom",
+    "Injection Top Interval",
+    "Injection Bottom Interval",
+    # Formation (categorical confounder)
+    "Current Injection Formations",
+    "Well Permitted Formations",
+    # Provenance / identification
+    "Permit Number",
 ]
 
 # ──────────────────── SPATIAL BOUNDING BOX (WGS-84) ────────────────────

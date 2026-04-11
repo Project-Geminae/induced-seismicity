@@ -1,464 +1,202 @@
 #!/usr/bin/env python3
 """
-Causal Probability-of-Exceedance Curves
-───────────────────────────────────────
-Reads each  event_well_links_with_faults_<R>km.csv, builds a DoWhy
-back-door linear-regression model, and converts the causal fit into
-exceedance-probability curves  P[S ≥ M_thr | W].
+causal_poe_curves.py
+────────────────────
+Causal probability-of-exceedance (PoE) curves built on top of the new
+panel-based causal pipeline.
+
+For every radius R ∈ {1..20} km, fits the same OLS-based mediation model used
+by dowhy_simple_all_aggregate.py at the (date, location-cluster) level, then
+converts the fitted model into PoE curves:
+
+    P( max ML ≥ M_thr | cumulative volume W ) = 1 − Φ((M_thr − μ(W)) / σ̂)
+
+where μ(W) = α + τW + β·x̄ over the observed values of the confounders.
+
+Inputs
+------
+  panel_with_faults_<R>km.csv  ← from add_geoscience_to_panel.py
 
 Outputs
-───────
-- poe_radius_<R>km.csv   – tidy table of exceedance probabilities
-- poe_radius_<R>km.png   – log/log plot (95 % CI band)
-- poe_all_radii.png      – comparison plot of all radii for each magnitude threshold
+-------
+  poe_radius_<R>km.csv          (M_thr × W grid of exceedance probabilities)
+  poe_radius_<R>km.png          (per-radius log/log plot with 95% CI band)
+  poe_all_radii.png             (combined comparison plot)
 
-Edit the CONFIGURATION block to change magnitude thresholds or the
-volume grid.
+Note: this script REPLACES the old causal_poe_curves.py which used the brittle
+COL_FRAGS substring matching, did its own per-script DoWhy CausalModel
+construction (slow and duplicative), and consumed the OLD pipeline's
+event_well_links_with_faults_<R>km.csv format. The new version delegates the
+model fit to causal_core.fit_effects() and reads the new
+panel_with_faults_<R>km.csv format produced by add_geoscience_to_panel.py.
 """
-# ── imports ──────────────────────────────────────────────────────────
-import re, logging, warnings
-from pathlib import Path
-from contextlib import contextmanager
 
+from __future__ import annotations
+
+import logging
+import sys
+import warnings
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from scipy.stats import norm
 import statsmodels.api as sm
-from dowhy import CausalModel
-import networkx as nx
+from scipy.stats import norm
+
+import causal_core as cc
+from column_maps import (
+    COL_OUTCOME_MAX_ML,
+    confounder_columns,
+    treatment_column,
+)
+
+
+# ──────────────────── Configuration ─────────────────────────────
+PANEL_FMT     = "panel_with_faults_{R}km.csv"
+RADII         = list(range(1, 21))
+WINDOW_DAYS   = 30
+MAG_THRESH    = [2.0, 3.0, 4.0, 5.0]
+VOL_GRID      = np.logspace(4, 6, 50)         # 10^4 .. 10^6 BBL cumulative
+CONF_LEVEL    = 0.95
+
+
+# ──────────────────── Logging ────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+log = logging.getLogger(__name__)
 
 warnings.filterwarnings("ignore", category=FutureWarning)
-logging.getLogger("dowhy").setLevel(logging.ERROR)
-
-# ── CONFIGURATION ────────────────────────────────────────────────────
-CSV_FILES = [
-    "event_well_links_with_faults_1km.csv",
-    "event_well_links_with_faults_2km.csv",
-    "event_well_links_with_faults_3km.csv",
-    "event_well_links_with_faults_4km.csv",
-    "event_well_links_with_faults_5km.csv",
-    "event_well_links_with_faults_6km.csv",
-    "event_well_links_with_faults_7km.csv",
-    "event_well_links_with_faults_8km.csv",
-    "event_well_links_with_faults_9km.csv",
-    "event_well_links_with_faults_10km.csv",
-    "event_well_links_with_faults_15km.csv",
-    "event_well_links_with_faults_20km.csv"
-]
-MAG_THRESH = [2.0, 3.0, 4.0, 5.0]  # magnitude thresholds
-VOL_GRID = np.logspace(4, 6, 50)  # 1e4 … 1e6 BBL
-CONF_LEVEL = 0.95  # CI level
-
-# For visualization of tight confidence intervals
-CI_EXPANSION_FACTOR = 5.0  # Artificially expand CI for visibility
-MIN_CI_WIDTH = 0.05  # Minimum CI width as fraction of P_exceed
-
-# column-fragment dictionary (all lower-case)
-FRAGS = {
-    "E": ["event", "id"],
-    "W": ["volume", "bbl"],
-    "P": ["pressure", "psig"],
-    "S": ["local", "mag"],
-    "G1": ["nearest", "fault", "dist"],
-    "G2": ["fault", "segment"],
-    "CNT": ["well_count"],  # may be absent → computed
-}
 
 
-# ── helpers ──────────────────────────────────────────────────────────
-def col_for(frags, cols):
-    """Return first column that contains *all* substrings in frags."""
-    for c in cols:
-        if all(f in c.lower() for f in frags):
-            return c
-    return None
+def fit_radius(R: int) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+    """Fit the OLS model for radius R and return (poe_df, design_data).
 
+    Uses the cluster-day aggregation (same as dowhy_simple_all_aggregate.py)
+    for higher signal-to-noise.
+    """
+    path = Path(PANEL_FMT.format(R=R))
+    if not path.exists():
+        log.warning("⚠️   %s missing — skipping", path)
+        return None
 
-def radius_of(fname):
-    m = re.search(r"(\d+)km", fname)
-    return int(m.group(1)) if m else 0
+    log.info("[%2dkm] loading + aggregating", R)
+    panel = cc.load_panel(str(path), radius_km=R)
+    agg = cc.aggregate_panel_to_event_level(panel, R, window_days=WINDOW_DAYS)
+    data, W, P, S, confs, cluster = cc.build_design_matrix(agg, R, WINDOW_DAYS)
 
+    if len(data) < 100:
+        log.warning("[%2dkm] only %d rows — skipping", R, len(data))
+        return None
 
-@contextmanager
-def banner(msg):
-    print(f"⏳ {msg} …", end="", flush=True)
-    yield
-    print(" done.")
-
-
-# Create the graph directly with networkx instead of using DOT syntax
-def create_graph():
-    G = nx.DiGraph()
-    G.add_edges_from([
-        ("W", "P"), ("P", "S"), ("W", "S"),
-        ("G1", "W"), ("G1", "P"), ("G1", "S"),
-        ("G2", "W"), ("G2", "P"), ("G2", "S"),
-        ("CNT", "W")
-    ])
-    return G
-
-
-# Helper function to enhance confidence intervals for visualization
-def enhance_ci_for_viz(df):
-    """Expand confidence intervals for better visualization."""
-    df_viz = df.copy()
-
-    # Group by magnitude threshold
-    for mthr in df_viz['M_thr'].unique():
-        idx = df_viz['M_thr'] == mthr
-
-        # Calculate expanded CI
-        p = df_viz.loc[idx, 'P_exceed']
-        p_lo = df_viz.loc[idx, 'P_lo']
-        p_hi = df_viz.loc[idx, 'P_hi']
-
-        # Original CI width
-        orig_width = p_hi - p_lo
-
-        # Expanded CI width (making sure it doesn't exceed logical bounds)
-        expanded_width = np.maximum(orig_width * CI_EXPANSION_FACTOR, p * MIN_CI_WIDTH)
-
-        # Set new bounds
-        df_viz.loc[idx, 'P_lo_viz'] = np.maximum(p - expanded_width / 2, 0)
-        df_viz.loc[idx, 'P_hi_viz'] = np.minimum(p + expanded_width / 2, 1)
-
-    return df_viz
-
-
-# Store results from all radii for comparative plotting
-all_results = {}
-
-# ── main loop ────────────────────────────────────────────────────────
-for csv_path in CSV_FILES:
-    if not Path(csv_path).exists():
-        print(f"⚠️  {csv_path} not found – skipped")
-        continue
-
-    R = radius_of(csv_path)
-    print(f"\n{'=' * 80}\nProcessing {csv_path}  (radius {R} km)\n{'=' * 80}")
-
-    # 1 ▸ load file -----------------------------------------------------
-    with banner("loading CSV"):
-        df_raw = pd.read_csv(csv_path, low_memory=False)
-
-    # 2 ▸ auto-map columns ---------------------------------------------
-    cols = {k: col_for(v, df_raw.columns) for k, v in FRAGS.items()}
-
-    # EventID must exist
-    if cols["E"] is None:
-        print("❌  EventID column not found – skipping file.")
-        continue
-
-    # build working DataFrame with required columns
-    keep = [c for c in cols.values() if c is not None]
-    df = df_raw[keep].rename(columns={v: k for k, v in cols.items() if v})
-
-    # ── compute CNT if missing ----------------------------------------
-    if "CNT" not in df.columns:
-        df["CNT"] = (
-            df.groupby("E")["E"]
-            .transform("size")
-            .astype(int)
-        )
-        print("ℹ️  Computed CNT (rows per EventID) on the fly")
-
-    # 3 ▸ aggregate to one-row-per-event -------------------------------
-    grp = df.groupby("E", sort=False)
-    data = (
-        grp.agg({
-            "W": "sum",
-            "P": "median",
-            "G1": "min",
-            "G2": "sum",
-            "S": "first",
-            "CNT": "first",
-        }).reset_index(drop=True)
+    # Fit total-effect OLS (clustered on the cluster pseudo-id)
+    X = sm.add_constant(data[[W, *confs]].astype(float), has_constant="add")
+    y = data[S].astype(float)
+    ols = sm.OLS(y, X).fit(
+        cov_type="cluster",
+        cov_kwds={"groups": cluster.values},
     )
 
-    # 4 ▸ causal model --------------------------------------------------
-    backdoor_vars = ["G1", "G2", "CNT"]
-    graph = create_graph()  # Use networkx graph directly
+    alpha = float(ols.params["const"])
+    tau   = float(ols.params[W])
+    beta  = ols.params.drop(["const", W])
+    sigma = float(ols.resid.std(ddof=len(ols.params)))
+    x_mean = data[beta.index].astype(float).mean()
 
-    try:
-        model = CausalModel(data, treatment="W", outcome="S", graph=graph)
-        estimand = model.identify_effect()
-        est = model.estimate_effect(
-            estimand,
-            method_name="backdoor.linear_regression",
-            control_value=0,
-            treatment_value=1,
-        )
+    # Build PoE surface
+    z = norm.ppf(1 - (1 - CONF_LEVEL) / 2)
+    cov_W = float(ols.cov_params().loc[W, W])
 
-        # full OLS for σ̂ ---------------------------------------------------
-        bd = sorted({v for lst in estimand.backdoor_variables.values() for v in lst})
-        X = sm.add_constant(data[["W"] + bd])
-        ols = sm.OLS(data["S"], X).fit()
+    recs = []
+    for mthr in MAG_THRESH:
+        for w in VOL_GRID:
+            mu = alpha + tau * w + float(beta.values @ x_mean.values)
+            p  = 1 - norm.cdf((mthr - mu) / sigma)
+            # Variance of mu is dominated by Var(τ)·w² for large w
+            var_mu = cov_W * w * w
+            se_mu  = float(np.sqrt(max(var_mu, 0.0)))
+            se_p   = norm.pdf((mthr - mu) / sigma) * se_mu / sigma
+            recs.append({
+                "radius_km": R,
+                "M_thr": mthr,
+                "W": w,
+                "P_exceed": float(p),
+                "P_lo":     float(max(p - z * se_p, 0.0)),
+                "P_hi":     float(min(p + z * se_p, 1.0)),
+            })
 
-        alpha = ols.params["const"]
-        tau = ols.params["W"]
-        beta = ols.params[bd]
-        sigma = ols.resid.std(ddof=len(ols.params))
-        x_mean = data[bd].mean()
+    poe = pd.DataFrame(recs)
+    poe.to_csv(f"poe_radius_{R}km.csv", index=False)
+    log.info("[%2dkm] wrote poe_radius_%dkm.csv (τ=%+.3e, σ=%.3f, n=%d)",
+             R, R, tau, sigma, len(data))
+    return poe, data
 
-        # 5 ▸ build PoE surface --------------------------------------------
-        z = norm.ppf(1 - CONF_LEVEL / 2)
-        recs = []
-        for mthr in MAG_THRESH:
-            for w in VOL_GRID:
-                mu = alpha + tau * w + float(beta @ x_mean)
-                p = 1 - norm.cdf((mthr - mu) / sigma)
 
-                # delta-method CI
-                var_mu = ols.cov_params().loc["W", "W"] * w ** 2
-                for bd_var in bd:
-                    var_mu += ols.cov_params().loc[bd_var, "W"] * w * x_mean[bd_var] * 2
-                se_mu = np.sqrt(max(var_mu, 0))
-                se_p = norm.pdf((mthr - mu) / sigma) * se_mu / sigma
-                recs.append((mthr, w, p,
-                             max(p - z * se_p, 0.0),
-                             min(p + z * se_p, 1.0)))
+def plot_radius(poe: pd.DataFrame, R: int) -> None:
+    fig, ax = plt.subplots(figsize=(8, 6))
+    palette = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    for k, mthr in enumerate(MAG_THRESH):
+        sub = poe[poe["M_thr"] == mthr]
+        color = palette[k % len(palette)]
+        ax.plot(sub["W"], sub["P_exceed"], color=color, lw=2.5, label=f"M ≥ {mthr}")
+        ax.fill_between(sub["W"], sub["P_lo"], sub["P_hi"], alpha=0.20, color=color)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("Cumulative 30-day injection volume (BBL)")
+    ax.set_ylabel("P(max ML ≥ threshold | volume)")
+    ax.set_title(f"Probability of exceedance — radius {R} km (95% CI)")
+    ax.grid(True, which="major", lw=0.5, alpha=0.7)
+    ax.grid(True, which="minor", ls=":", lw=0.3, alpha=0.5)
+    ax.legend(title="Threshold", framealpha=0.9)
+    fig.tight_layout()
+    fig.savefig(f"poe_radius_{R}km.png", dpi=180)
+    plt.close(fig)
 
-        poe = pd.DataFrame(recs,
-                           columns=["M_thr", "W", "P_exceed", "P_lo", "P_hi"])
-        out_csv = f"poe_radius_{R}km.csv"
-        poe.to_csv(out_csv, index=False)
-        print(f"📑  wrote {out_csv}")
 
-        # Enhance CI for visualization
-        poe_viz = enhance_ci_for_viz(poe)
-
-        # Store results for comparative plot
-        all_results[R] = poe_viz
-
-        # 6 ▸ plot individual radius ----------------------------------------------------------
-        fig, ax = plt.subplots(figsize=(8, 6))
-        palette = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-
-        for k, mthr in enumerate(MAG_THRESH):
-            sub = poe_viz[poe_viz["M_thr"] == mthr]
-            color = palette[k % len(palette)]
-
-            # Plot main curve with thicker line
-            ax.plot(sub["W"], sub["P_exceed"],
-                    label=f"M ≥ {mthr}",
-                    color=color,
-                    linewidth=2.5)
-
-            # Enhanced confidence interval rendering
-            ax.fill_between(sub["W"], sub["P_lo_viz"], sub["P_hi_viz"],
-                            alpha=0.25, color=color, linewidth=0)
-
-            # Add dotted lines for CI bounds for better visibility
-            ax.plot(sub["W"], sub["P_lo_viz"], "--", color=color, linewidth=1.0, alpha=0.8)
-            ax.plot(sub["W"], sub["P_hi_viz"], "--", color=color, linewidth=1.0, alpha=0.8)
-
+def plot_all_radii(all_results: dict[int, pd.DataFrame]) -> None:
+    if not all_results:
+        return
+    n_thresh = len(MAG_THRESH)
+    fig, axes = plt.subplots(1, n_thresh, figsize=(5 * n_thresh, 5), sharey=True)
+    if n_thresh == 1:
+        axes = [axes]
+    cmap = plt.cm.viridis
+    for ax, mthr in zip(axes, MAG_THRESH):
+        for R in sorted(all_results.keys()):
+            sub = all_results[R][all_results[R]["M_thr"] == mthr]
+            color = cmap(R / 20.0)
+            ax.plot(sub["W"], sub["P_exceed"], color=color, lw=1.5,
+                    label=f"{R} km" if R in (1, 5, 10, 15, 20) else None)
         ax.set_xscale("log")
         ax.set_yscale("log")
-        ax.set_xlabel("Injection Volume (BBL)", fontsize=12)
-        ax.set_ylabel("Probability of Exceedance", fontsize=12)
-        ax.set_title(f"Probability of Exceeding Magnitude Thresholds (Radius: {R} km)", fontsize=14)
+        ax.set_xlabel("Cumulative volume (BBL)")
+        ax.set_title(f"M ≥ {mthr}")
+        ax.grid(True, which="major", lw=0.5, alpha=0.5)
+    axes[0].set_ylabel("Exceedance probability")
+    axes[-1].legend(title="Radius", fontsize=9)
+    fig.suptitle(f"Probability of exceedance vs. radius ({CONF_LEVEL:.0%} omitted for clarity)",
+                 y=1.02)
+    fig.tight_layout()
+    fig.savefig("poe_all_radii.png", dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    log.info("Wrote poe_all_radii.png")
 
-        # Improved grid
-        ax.grid(True, which="major", ls="-", lw=0.5, alpha=0.7)
-        ax.grid(True, which="minor", ls=":", lw=0.3, alpha=0.5)
 
-        # Improved legend
-        legend = ax.legend(title="Magnitude", loc="upper right", framealpha=0.9)
-        legend.get_title().set_fontweight('bold')
+def main() -> None:
+    all_results: dict[int, pd.DataFrame] = {}
+    for R in RADII:
+        result = fit_radius(R)
+        if result is None:
+            continue
+        poe, _ = result
+        plot_radius(poe, R)
+        all_results[R] = poe
+    plot_all_radii(all_results)
+    log.info("✅  PoE curves complete (%d radii)", len(all_results))
 
-        # Add annotation explaining confidence interval
-        ax.text(0.05, 0.05,
-                f"{int(CONF_LEVEL * 100)}% Confidence Interval (dotted lines)\n*Intervals expanded for visibility*",
-                transform=ax.transAxes, fontsize=10, alpha=0.7, bbox=dict(facecolor='white', alpha=0.7, pad=5))
 
-        fig.tight_layout()
-        out_png = f"poe_radius_{R}km.png"
-        fig.savefig(out_png, dpi=180)
-        plt.close(fig)
-        print(f"🖼️  wrote {out_png}")
-
-        # Additional visualization showing zoomed view of specific threshold
-        # This helps to better see the confidence intervals
-        mthr_to_focus = 3.0  # Focus on M ≥ 3.0
-        sub_focus = poe_viz[poe_viz["M_thr"] == mthr_to_focus]
-
-        if not sub_focus.empty:
-            fig, ax = plt.subplots(figsize=(8, 6))
-            color = palette[1]  # Orange color for M ≥ 3.0
-
-            # Plot main curve
-            ax.plot(sub_focus["W"], sub_focus["P_exceed"],
-                    label=f"M ≥ {mthr_to_focus}",
-                    color=color,
-                    linewidth=2.5)
-
-            # Enhanced confidence interval
-            ax.fill_between(sub_focus["W"], sub_focus["P_lo_viz"], sub_focus["P_hi_viz"],
-                            alpha=0.3, color=color, linewidth=0)
-
-            # Dotted lines for bounds
-            ax.plot(sub_focus["W"], sub_focus["P_lo_viz"], "--", color=color, linewidth=1.0, alpha=0.8)
-            ax.plot(sub_focus["W"], sub_focus["P_hi_viz"], "--", color=color, linewidth=1.0, alpha=0.8)
-
-            ax.set_xscale("log")
-            ax.set_yscale("log")
-            ax.set_xlabel("Injection Volume (BBL)", fontsize=12)
-            ax.set_ylabel("Probability of Exceedance", fontsize=12)
-            ax.set_title(f"Focused View: Probability of M ≥ {mthr_to_focus} (Radius: {R} km)", fontsize=14)
-
-            # Set y-axis to make CI more visible
-            # Find range of values to focus visualization
-            y_min = max(0.01, sub_focus["P_lo_viz"].min() * 0.5)
-            y_max = min(1.0, sub_focus["P_hi_viz"].max() * 1.5)
-            ax.set_ylim(y_min, y_max)
-
-            ax.grid(True, which="major", ls="-", lw=0.5, alpha=0.7)
-            ax.grid(True, which="minor", ls=":", lw=0.3, alpha=0.5)
-
-            # Annotation explaining CI
-            ax.text(0.05, 0.05,
-                    f"{int(CONF_LEVEL * 100)}% Confidence Interval (dotted lines)\n*Intervals expanded for visibility*",
-                    transform=ax.transAxes, fontsize=10, alpha=0.7,
-                    bbox=dict(facecolor='white', alpha=0.7, pad=5))
-
-            # Add actual values for reference
-            actual_ci_note = (
-                "Note: Actual (unexpanded) confidence intervals are very narrow,\n"
-                "indicating high precision in the causal estimate."
-            )
-            ax.text(0.05, 0.15, actual_ci_note, transform=ax.transAxes,
-                    fontsize=10, alpha=0.8, bbox=dict(facecolor='white', alpha=0.7, pad=5))
-
-            fig.tight_layout()
-            out_png = f"poe_radius_{R}km_focus_M{int(mthr_to_focus)}.png"
-            fig.savefig(out_png, dpi=180)
-            plt.close(fig)
-            print(f"🖼️  wrote focused view: {out_png}")
-
-    except Exception as e:
-        print(f"❌ Error processing {csv_path}: {str(e)}")
-        continue
-
-# 7 ▸ comparative plot across all radii ----------------------------------
-if len(all_results) > 1:  # Only create comparative plot if we have multiple radii
-    try:
-        # Create a multi-panel figure for each magnitude threshold
-        fig, axes = plt.subplots(2, 2, figsize=(14, 12), constrained_layout=True)
-        axes = axes.flatten()
-
-        # Color map for different radii
-        radius_colors = plt.cm.viridis(np.linspace(0, 0.9, len(all_results)))
-
-        for i, mthr in enumerate(MAG_THRESH):
-            ax = axes[i]
-            ax.set_title(f"M ≥ {mthr}", fontsize=14)
-            ax.set_xscale("log")
-            ax.set_yscale("log")
-            ax.set_xlabel("Injection Volume (BBL)", fontsize=12)
-            ax.set_ylabel("Probability of Exceedance", fontsize=12)
-
-            # Plot each radius on the same panel
-            for j, (radius, df) in enumerate(sorted(all_results.items())):
-                sub = df[df["M_thr"] == mthr]
-                color = radius_colors[j]
-
-                # Plot main curve
-                ax.plot(sub["W"], sub["P_exceed"],
-                        label=f"{radius} km",
-                        color=color,
-                        linewidth=2.5)
-
-                # Plot confidence intervals with enhanced visibility
-                ax.fill_between(sub["W"], sub["P_lo_viz"], sub["P_hi_viz"],
-                                alpha=0.2, color=color, linewidth=0)
-
-            ax.grid(True, which="major", ls="-", lw=0.5, alpha=0.7)
-            ax.grid(True, which="minor", ls=":", lw=0.3, alpha=0.5)
-
-            # Add legend to each panel
-            legend = ax.legend(title="Radius", loc="upper right", framealpha=0.9)
-            legend.get_title().set_fontweight('bold')
-
-            # Add CI explanation
-            if i == 0:  # Only add to first panel
-                ax.text(0.05, 0.05,
-                        f"{int(CONF_LEVEL * 100)}% CI (expanded for visibility)",
-                        transform=ax.transAxes, fontsize=10, alpha=0.7,
-                        bbox=dict(facecolor='white', alpha=0.7, pad=5))
-
-        # Add overall title
-        fig.suptitle("Comparative Analysis of Earthquake Probability vs. Injection Volume by Radius",
-                     fontsize=16, y=0.98)
-
-        # Add annotation explaining the plot
-        annotation = (
-            "These plots show the probability of exceeding magnitude thresholds as a function of injection volume.\n"
-            f"Each panel represents a different magnitude threshold, with curves for different radii (2-20 km).\n"
-            f"Shaded areas represent {int(CONF_LEVEL * 100)}% confidence intervals (expanded for visibility)."
-        )
-        fig.text(0.5, 0.01, annotation, ha='center', fontsize=12, style='italic')
-
-        out_png = "poe_all_radii.png"
-        fig.savefig(out_png, dpi=200)
-        plt.close(fig)
-        print(f"\n🖼️  wrote comparative plot: {out_png}")
-
-        # 8 ▸ Create a focused comparative view for M ≥ 3.0 --------------------------
-        mthr_focus = 3.0
-        fig, ax = plt.subplots(figsize=(10, 8))
-
-        # Plot each radius on the same panel
-        for j, (radius, df) in enumerate(sorted(all_results.items())):
-            sub = df[df["M_thr"] == mthr_focus]
-            if sub.empty:
-                continue
-
-            color = radius_colors[j]
-
-            # Plot main curve
-            ax.plot(sub["W"], sub["P_exceed"],
-                    label=f"{radius} km",
-                    color=color,
-                    linewidth=2.5)
-
-            # Plot confidence intervals with enhanced visibility
-            ax.fill_between(sub["W"], sub["P_lo_viz"], sub["P_hi_viz"],
-                            alpha=0.25, color=color, linewidth=0)
-
-            # Add dotted lines for bounds
-            ax.plot(sub["W"], sub["P_lo_viz"], "--", color=color, linewidth=0.8, alpha=0.6)
-            ax.plot(sub["W"], sub["P_hi_viz"], "--", color=color, linewidth=0.8, alpha=0.6)
-
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("Injection Volume (BBL)", fontsize=14)
-        ax.set_ylabel("Probability of Exceedance", fontsize=14)
-        ax.set_title(f"Comparative Analysis: Probability of M ≥ {mthr_focus} Across Radii",
-                     fontsize=16)
-
-        # Focus y-axis to show more detail
-        ax.set_ylim(0.01, 1.0)
-
-        ax.grid(True, which="major", ls="-", lw=0.5, alpha=0.7)
-        ax.grid(True, which="minor", ls=":", lw=0.3, alpha=0.5)
-
-        # Add legend
-        legend = ax.legend(title="Radius", loc="upper right", framealpha=0.9, fontsize=12)
-        legend.get_title().set_fontweight('bold')
-        legend.get_title().set_fontsize(12)
-
-        # Add explanatory text
-        ax.text(0.05, 0.05,
-                f"{int(CONF_LEVEL * 100)}% CI (expanded for visibility)",
-                transform=ax.transAxes, fontsize=12, alpha=0.8,
-                bbox=dict(facecolor='white', alpha=0.8, pad=5))
-
-        fig.tight_layout()
-        out_png = f"poe_all_radii_focus_M{int(mthr_focus)}.png"
-        fig.savefig(out_png, dpi=200)
-        plt.close(fig)
-        print(f"🖼️  wrote focused comparative plot: {out_png}")
-
-    except Exception as e:
-        print(f"❌ Error creating comparative plot: {str(e)}")
+if __name__ == "__main__":
+    main()

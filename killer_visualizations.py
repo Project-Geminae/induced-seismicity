@@ -1,5 +1,9 @@
+import sys
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from matplotlib.patches import Circle, Wedge
 from matplotlib.collections import PatchCollection
 import matplotlib.colors as mcolors
@@ -17,53 +21,69 @@ plt.rcParams['legend.fontsize'] = 10
 plt.rcParams['figure.dpi'] = 300
 
 # ========================================
-# DATA: Individual Well-Level vs Event-Level Aggregated
+# DATA: load latest dowhy_*_ci_*.csv outputs
 # ========================================
+# The previous version of this script hardcoded numbers from a prior run of
+# the OLD pipeline (which contained the synthetic-zero "innocent wells" bug).
+# The new version reads whichever results CSVs are most recent on disk.
 
-# Complete radius array (1-20km)
-radius = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20])
+def _latest(glob: str) -> Path | None:
+    matches = sorted(Path(".").glob(glob), key=lambda p: p.stat().st_mtime, reverse=True)
+    return matches[0] if matches else None
 
-# Individual Well-Level Data (Step 7 - Enhanced Well-Level Analysis)
-individual_total = np.array([6.472e-06, 2.337e-05, 3.031e-05, 3.137e-05, 2.456e-05, 1.417e-05,
-                             1.461e-05, 7.607e-06, 7.969e-06, 9.095e-06, 8.176e-06, 6.199e-06,
-                             4.725e-06, 4.727e-06, 4.464e-06, 4.115e-06, 4.105e-06, 3.901e-06,
-                             4.087e-06, 4.170e-06])
 
-individual_direct = np.array([-3.386e-06, 3.731e-06, 1.136e-05, 1.626e-05, 8.988e-06, 2.929e-06,
-                              3.173e-06, 3.877e-07, 3.420e-07, 7.399e-07, 2.520e-07, -4.069e-07,
-                              -4.844e-07, -2.739e-07, -3.448e-07, -3.370e-07, -3.573e-07, -4.376e-07,
-                              -3.980e-07, -4.159e-07])
+def _load_results():
+    well_path = _latest("dowhy_well_day_ci_*.csv")
+    evt_path  = _latest("dowhy_event_level_ci_*.csv")
+    if well_path is None or evt_path is None:
+        sys.exit(
+            "❌  killer_visualizations.py needs both dowhy_well_day_ci_*.csv and "
+            "dowhy_event_level_ci_*.csv on disk. Run dowhy_ci.py and "
+            "dowhy_ci_aggregated.py first."
+        )
+    print(f"📄  Loading individual: {well_path.name}")
+    print(f"📄  Loading aggregate:  {evt_path.name}")
+    well = pd.read_csv(well_path).sort_values("radius_km")
+    evt  = pd.read_csv(evt_path).sort_values("radius_km")
+    return well, evt
 
-individual_indirect = np.array([9.86e-06, 1.96e-05, 1.90e-05, 1.51e-05, 1.56e-05, 1.12e-05,
-                                1.14e-05, 7.22e-06, 7.63e-06, 8.36e-06, 7.92e-06, 6.61e-06,
-                                5.21e-06, 5.00e-06, 4.81e-06, 4.45e-06, 4.46e-06, 4.34e-06,
-                                4.49e-06, 4.59e-06])
 
-individual_mediated = np.array([152.3, 84.0, 62.5, 48.2, 63.4, 79.3, 78.3, 94.9, 95.7, 91.9,
-                                96.9, 106.6, 110.3, 105.8, 107.7, 108.2, 108.7, 111.2, 109.7, 110.0])
+_well_df, _evt_df = _load_results()
 
-# Event-Level Aggregated Data (Step 8 - Enhanced Event-Level Analysis)
-aggregate_total = np.array([5.720e-06, 1.753e-05, 2.132e-05, 1.724e-05, 1.154e-05, 5.865e-06,
-                            4.951e-06, 2.142e-06, 1.848e-06, 1.835e-06, 1.633e-06, 1.276e-06,
-                            9.934e-07, 1.070e-06, 1.008e-06, 9.294e-07, 1.001e-06, 9.928e-07,
-                            1.048e-06, 1.071e-06])
+radius              = _well_df["radius_km"].to_numpy()
 
-aggregate_direct = np.array([-9.059e-07, 3.115e-06, 1.126e-05, 9.765e-06, 5.014e-06, 1.620e-06,
-                             1.235e-06, 1.657e-07, 1.059e-07, 1.144e-07, 9.195e-08, -5.123e-08,
-                             -4.919e-08, 7.183e-09, 1.768e-08, 2.443e-08, 8.158e-08, 1.321e-07,
-                             1.707e-07, 2.115e-07])
+individual_total    = _well_df["total_effect"].to_numpy()
+individual_direct   = _well_df["direct_effect"].to_numpy()
+individual_indirect = _well_df["indirect_diff"].to_numpy()
+# Per-cent mediation. The new pipeline flags |indirect|>|total| as MISSPEC
+# rather than printing 152% — fall back to NaN there to keep plots honest.
+with np.errstate(divide="ignore", invalid="ignore"):
+    individual_mediated = np.where(
+        np.abs(individual_total) > 1e-12,
+        100.0 * individual_indirect / individual_total,
+        np.nan,
+    )
 
-aggregate_indirect = np.array([6.63e-06, 1.44e-05, 1.01e-05, 7.47e-06, 6.53e-06, 4.25e-06,
-                               3.72e-06, 1.98e-06, 1.74e-06, 1.72e-06, 1.54e-06, 1.33e-06,
-                               1.04e-06, 1.06e-06, 9.90e-07, 9.05e-07, 9.19e-07, 8.61e-07,
-                               8.77e-07, 8.60e-07])
+aggregate_total    = _evt_df["total_effect"].to_numpy()
+aggregate_direct   = _evt_df["direct_effect"].to_numpy()
+aggregate_indirect = _evt_df["indirect_diff"].to_numpy()
+with np.errstate(divide="ignore", invalid="ignore"):
+    aggregate_mediated = np.where(
+        np.abs(aggregate_total) > 1e-12,
+        100.0 * aggregate_indirect / aggregate_total,
+        np.nan,
+    )
 
-aggregate_mediated = np.array([115.8, 82.2, 47.2, 43.3, 56.6, 72.4, 75.0, 92.3, 94.3, 93.8,
-                               94.4, 104.0, 105.0, 99.3, 98.2, 97.4, 91.8, 86.7, 83.7, 80.3])
-
-# Amplification factors (aggregate vs 20km baseline)
-amplification_factors = np.array([5.3, 16.4, 19.9, 16.1, 10.8, 5.5, 4.6, 2.0, 1.7, 1.7,
-                                  1.5, 1.2, 0.9, 1.0, 0.9, 0.9, 0.9, 0.9, 1.0, 1.0])
+# Amplification factor: each radius's aggregate total effect normalized by
+# the largest-radius (20 km) baseline. The old hardcoded array baked in a
+# specific 20 km value; the new computation derives it from the data on disk.
+_baseline_idx = int(np.argmax(radius))  # 20 km
+_baseline = aggregate_total[_baseline_idx]
+amplification_factors = np.where(
+    np.abs(_baseline) > 1e-15,
+    aggregate_total / _baseline,
+    np.nan,
+)
 
 
 # ========================================
@@ -263,9 +283,13 @@ def create_enhanced_spatial_map():
     colors_individual = plt.cm.Reds(np.linspace(0.3, 1.0, len(key_radii)))
     for i, radius_val in enumerate(sorted(key_radii, reverse=True)):
         idx = np.where(radius == radius_val)[0][0]
-        intensity = individual_total[idx] / individual_total.max()
+        # Use absolute-value scaling so the spatial map still renders when
+        # the new pipeline produces near-zero or negative effects (the OLD
+        # pipeline's hardcoded array was all positive).
+        _max_abs = float(np.nanmax(np.abs(individual_total))) or 1.0
+        intensity = float(np.abs(individual_total[idx])) / _max_abs
 
-        alpha_val = 0.15 + 0.6 * intensity
+        alpha_val = float(np.clip(0.15 + 0.6 * abs(intensity), 0.0, 1.0))
         ax1.add_patch(Circle((well_pos['x'], well_pos['y']), radius_val,
                              facecolor=colors_individual[len(key_radii) - 1 - i], alpha=alpha_val,
                              edgecolor='none', zorder=1))
@@ -292,9 +316,10 @@ def create_enhanced_spatial_map():
     colors_aggregate = plt.cm.Blues(np.linspace(0.3, 1.0, len(key_radii)))
     for i, radius_val in enumerate(sorted(key_radii, reverse=True)):
         idx = np.where(radius == radius_val)[0][0]
-        intensity = aggregate_total[idx] / aggregate_total.max()
+        _max_abs = float(np.nanmax(np.abs(aggregate_total))) or 1.0
+        intensity = float(np.abs(aggregate_total[idx])) / _max_abs
 
-        alpha_val = 0.15 + 0.6 * intensity
+        alpha_val = float(np.clip(0.15 + 0.6 * abs(intensity), 0.0, 1.0))
         ax2.add_patch(Circle((well_pos['x'], well_pos['y']), radius_val,
                              facecolor=colors_aggregate[len(key_radii) - 1 - i], alpha=alpha_val,
                              edgecolor='none', zorder=1))
@@ -484,41 +509,37 @@ if __name__ == "__main__":
     fig1 = create_individual_vs_aggregate_comparison()
     plt.savefig('individual_vs_aggregate_comparison.png', dpi=300, bbox_inches='tight')
     plt.savefig('individual_vs_aggregate_comparison.pdf', dpi=300, bbox_inches='tight')
-    plt.show()
     plt.close(fig1)
 
     print("\n2. Creating Total Effect Overlay...")
     fig2 = create_total_effect_overlay()
     plt.savefig('total_effect_overlay_comparison.png', dpi=300, bbox_inches='tight')
     plt.savefig('total_effect_overlay_comparison.pdf', dpi=300, bbox_inches='tight')
-    plt.show()
     plt.close(fig2)
 
     print("\n3. Creating Mediation Mechanism Comparison...")
     fig3 = create_mediation_comparison()
     plt.savefig('mediation_mechanism_comparison.png', dpi=300, bbox_inches='tight')
     plt.savefig('mediation_mechanism_comparison.pdf', dpi=300, bbox_inches='tight')
-    plt.show()
     plt.close(fig3)
 
     print("\n4. Creating Enhanced Spatial Map...")
     fig4 = create_enhanced_spatial_map()
     plt.savefig('enhanced_spatial_risk_map.png', dpi=300, bbox_inches='tight')
     plt.savefig('enhanced_spatial_risk_map.pdf', dpi=300, bbox_inches='tight')
-    plt.show()
     plt.close(fig4)
 
     print("\n5. Creating Comprehensive Dashboard...")
     fig5 = create_comprehensive_dashboard()
     plt.savefig('comprehensive_individual_aggregate_dashboard.png', dpi=300, bbox_inches='tight')
     plt.savefig('comprehensive_individual_aggregate_dashboard.pdf', dpi=300, bbox_inches='tight')
-    plt.show()
     plt.close(fig5)
 
     print("\nAll individual vs aggregate well effect visualizations generated successfully!")
-    print("\nKey Insights:")
-    print("• Individual well analysis shows higher peak effects (31.4µ at 4km)")
-    print("• Event-level aggregation shows earlier peak (21.3µ at 3km) with smoother profile")
-    print("• Both methods show same mechanistic transitions (direct → pressure-mediated)")
-    print("• Aggregation provides better signal-to-noise ratio and higher predictive power")
-    print("• Individual analysis provides more granular view of well-specific effects")
+    # Headline numbers come from the loaded CSVs, computed live each run
+    well_peak_idx = int(np.nanargmax(np.abs(individual_total)))
+    evt_peak_idx  = int(np.nanargmax(np.abs(aggregate_total)))
+    print("\nKey Insights (from this run):")
+    print(f"• Well-day analysis peak |effect|:    {individual_total[well_peak_idx]:+.3e} at {int(radius[well_peak_idx])} km")
+    print(f"• Event-level analysis peak |effect|: {aggregate_total[evt_peak_idx]:+.3e} at {int(radius[evt_peak_idx])} km")
+    print(f"• Event-level 3 km / 20 km amplification: {amplification_factors[2]:.2f}×")

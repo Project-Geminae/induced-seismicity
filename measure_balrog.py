@@ -35,19 +35,33 @@ COLOURS = {
     "M6": "#9c27b0",   # royal violet   ← new
 }
 
+def load_event_counts(events_csv: str = "texnet_events_filtered.csv") -> pd.DataFrame:
+    """Compute the year × magnitude-bin count table directly from the catalog.
+
+    The old version of this script hardcoded a 9 × 5 table from a prior pipeline
+    run. This version derives the table from the filtered TexNet catalog so the
+    figure stays in sync with whatever quality filters are currently in force.
+    """
+    events = pd.read_csv(events_csv, low_memory=False)
+    events["Year"] = pd.to_datetime(events["Origin Date"]).dt.year
+    bin_edges = [2, 3, 4, 5, 6, 7]   # right-open: [2,3), [3,4), [4,5), [5,6), [6,7)
+    bin_labels = ["M2", "M3", "M4", "M5", "M6"]
+    events["bin"] = pd.cut(events["Local Magnitude"],
+                           bins=bin_edges, labels=bin_labels, right=False)
+    table = (
+        events.dropna(subset=["bin"])
+              .pivot_table(index="Year", columns="bin", values="EventID",
+                           aggfunc="count", fill_value=0)
+              .reindex(columns=bin_labels, fill_value=0)
+              .sort_index()
+    )
+    return table
+
+
 def main() -> None:
     # ── 1 ▸ raw data ------------------------------------------------------
-    data = {
-        "Year": [2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025],
-        "M2":   [271,  602,  847, 1110, 1971, 2392, 2286, 1855,  565],
-        "M3":   [26,    55,   52,   93,  199,  202,  201,  175,   27],
-        "M4":   [0,      2,    3,    5,   17,   19,   11,   11,    5],
-        "M5":   [0,      0,    0,    0,    0,    2,    1,    2,    2],
-        "M6":   [0,      0,    0,    0,    0,    0,    0,    0,    0],
-    }
-
-    df        = pd.DataFrame(data).set_index("Year")
-    cumul     = df.cumsum()
+    df    = load_event_counts()
+    cumul = df.cumsum()
 
     plot_bins = ["M2", "M3", "M4", "M5", "M6"]
     eps       = 0.5                                 # avoids log(0)

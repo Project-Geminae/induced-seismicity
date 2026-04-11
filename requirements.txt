@@ -1,0 +1,16 @@
+cycler==0.12.1
+dowhy==0.14
+geopandas==1.1.3
+graphviz==0.21
+matplotlib==3.10.8
+networkx==3.6.1
+numpy==2.4.4
+pandas==3.0.2
+pydot==4.0.1
+scikit-learn==1.8.0
+scipy==1.17.1
+seaborn==0.13.2
+shapely==2.1.2
+statsmodels==0.14.6
+tqdm==4.67.3
+xgboost==3.2.0

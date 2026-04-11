@@ -3,7 +3,13 @@
 *.shx
 *.csv
 *.mp4
+*.pdf
+*.log
 
 .idea
 .venv
-
+__pycache__/
+plots/
+checkpoints/
+results/
+pipeline_output_*/

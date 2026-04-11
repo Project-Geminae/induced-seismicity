@@ -20,16 +20,31 @@ PLOT_PNG = "midland_basin_events_map.png"
 
 KEEP_COLS = [
     "EventID",
+    "Evaluation Status",
     "Origin Date",
     "Local Magnitude",
     "Latitude (WGS84)",
+    "Latitude Error (km)",
     "Longitude (WGS84)",
+    "Longitude Error (km)",
     "Depth of Hypocenter (Km.  Rel to MSL)",
     "Depth of Hypocenter (Km. Rel to Ground Surface)",
+    "Depth Uncertainty (Km. Corresponds to 1 st dev)",
+    "RMS",
+    "UsedPhaseCount",
+    "UsedStationCount",
 ]
 
 MIN_LAT, MAX_LAT = 30.6, 33.4
 MIN_LON, MAX_LON = -103.2, -100.2
+
+# Quality filtering thresholds (rationale documented in CHANGES.md)
+MIN_LOCAL_MAG       = 1.0   # magnitude completeness threshold
+MAX_DEPTH_UNCERT_KM = 2.0   # 1σ depth error
+MAX_RMS             = 0.5   # location residual
+MAX_HORIZ_ERR_KM    = 2.0   # max of lat/lon error
+MIN_PHASE_COUNT     = 8     # minimum phases used in location
+KEEP_EVAL_STATUS    = {"final"}  # exclude preliminary / Automatic
 # ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -51,10 +66,15 @@ def main() -> None:
     df = df[KEEP_COLS].copy()
     lat, lon = "Latitude (WGS84)", "Longitude (WGS84)"
 
-    df[lat]            = pd.to_numeric(df[lat],            errors="coerce")
-    df[lon]            = pd.to_numeric(df[lon],            errors="coerce")
-    df["Local Magnitude"] = pd.to_numeric(df["Local Magnitude"], errors="coerce")
-    df["Origin Date"]     = pd.to_datetime(df["Origin Date"],    errors="coerce")
+    numeric_cols = [
+        lat, lon, "Local Magnitude",
+        "Latitude Error (km)", "Longitude Error (km)",
+        "Depth Uncertainty (Km. Corresponds to 1 st dev)",
+        "RMS", "UsedPhaseCount", "UsedStationCount",
+    ]
+    for c in numeric_cols:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["Origin Date"] = pd.to_datetime(df["Origin Date"], errors="coerce")
 
     df = df.dropna(subset=[lat, lon, "Local Magnitude"])
     df = df[(df[lat] != 0) & (df[lon] != 0)]
@@ -64,13 +84,36 @@ def main() -> None:
         df[lat].between(MIN_LAT, MAX_LAT) &
         df[lon].between(MIN_LON, MAX_LON)
     ]
+    print(f"\n📊  After bbox + non-null lat/lon/mag: {len(df):,} rows")
 
-    # 5 ▸ Magnitude completeness
-    df_f = df[df["Local Magnitude"] >= 1.0]
+    # 5 ▸ Quality filters (report each step)
+    def report_filter(df_in: pd.DataFrame, mask: pd.Series, label: str) -> pd.DataFrame:
+        kept = mask.sum()
+        dropped = len(df_in) - kept
+        print(f"   {label:<40s}  drop {dropped:>5,} → keep {kept:>5,}")
+        return df_in[mask]
+
+    print("\n🔍  Quality filters:")
+    df_f = report_filter(df, df["Local Magnitude"] >= MIN_LOCAL_MAG,
+                         f"Local Magnitude ≥ {MIN_LOCAL_MAG}")
+    df_f = report_filter(df_f, df_f["Evaluation Status"].isin(KEEP_EVAL_STATUS),
+                         f"Evaluation Status ∈ {sorted(KEEP_EVAL_STATUS)}")
+    df_f = report_filter(df_f, df_f["RMS"].fillna(99) <= MAX_RMS,
+                         f"RMS ≤ {MAX_RMS}")
+    df_f = report_filter(df_f,
+                         df_f["Depth Uncertainty (Km. Corresponds to 1 st dev)"].fillna(99) <= MAX_DEPTH_UNCERT_KM,
+                         f"Depth Uncertainty ≤ {MAX_DEPTH_UNCERT_KM} km")
+    horiz_err = df_f[["Latitude Error (km)", "Longitude Error (km)"]].max(axis=1).fillna(99)
+    df_f = report_filter(df_f, horiz_err <= MAX_HORIZ_ERR_KM,
+                         f"max(lat,lon) err ≤ {MAX_HORIZ_ERR_KM} km")
+    df_f = report_filter(df_f, df_f["UsedPhaseCount"].fillna(0) >= MIN_PHASE_COUNT,
+                         f"UsedPhaseCount ≥ {MIN_PHASE_COUNT}")
+
+    print(f"\n✅  Final catalog: {len(df_f):,} of {len(df):,} bbox events ({len(df_f)/len(df):.1%} retained)")
 
     # 6 ▸ Save CSV
     df_f.to_csv(OUTFILE, index=False)
-    print(f"✅  Saved filtered catalog → {OUTFILE} ({len(df_f):,} rows)")
+    print(f"💾  Saved → {OUTFILE}")
 
     # 7 ▸ World-class Matplotlib map
     if df_f.empty:

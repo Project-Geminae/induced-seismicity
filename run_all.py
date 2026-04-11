@@ -1,225 +1,190 @@
 #!/usr/bin/env python3
 """
-Seismic Analysis Pipeline Orchestrator
-Runs all scripts in the correct order for analyzing seismic activity
-related to injection wells with multi-radius sensitivity analysis.
+run_all.py
+──────────
+Orchestrate the full induced-seismicity causal pipeline end-to-end.
+
+Differences from the old run_all.py
+-----------------------------------
+1. **No interactive prompts**. The old version blocked on `input("Continue?
+   (y/n): ")` whenever a step failed, which made nohup / cron / CI runs hang
+   forever. The new version exits non-zero on the first failure unless you
+   pass `--continue-on-error`.
+2. **New step list** matching the cleaned pipeline:
+       0. swd_data_import.py             (extended schema with depth/formation)
+       1. seismic_data_import.py         (with quality filtering)
+       2. build_well_day_panel.py        (NEW — replaces filter_active_wells)
+       3. spatiotemporal_join.py         (NEW — replaces merge_seismic_swd)
+       4. add_geoscience_to_panel.py     (renamed, panel-aware)
+       5. dowhy_simple_all.py            (well-day, no bootstrap)
+       6. dowhy_simple_all_aggregate.py  (event-level, no bootstrap)
+       7. dowhy_ci.py                    (well-day with cluster-bootstrap CI)
+       8. dowhy_ci_aggregated.py         (event-level with cluster-bootstrap CI)
+       9. causal_poe_curves.py           (PoE figures from the new panel)
+      10. killer_visualizations.py       (CSV-driven dashboards)
+      11. induced_seismicity_scaling_plots.py (CSV-driven scaling plots)
+      12. measure_balrog.py              (catalog-driven magnitude histogram)
+3. **Each step is timed** and the elapsed times are dumped at the end so you
+   can see where the runtime is going without grepping the log.
+
+Usage
+-----
+    python run_all.py                       # all steps, exit on first failure
+    python run_all.py --continue-on-error   # tolerate failures, run everything
+    python run_all.py --skip 9 10 11        # skip step indices 9, 10, 11
+    python run_all.py --only 0 1 2 3 4      # ingest + panel only
 """
 
+from __future__ import annotations
+
+import argparse
+import logging
 import subprocess
 import sys
-import os
 import time
 from datetime import datetime
-import logging
+from pathlib import Path
 
-# Configure logging
+# ──────────────────── Pipeline definition ────────────────────────
+STEPS: list[tuple[str, str]] = [
+    ("swd_data_import.py",                "Filter SWD records to Midland Basin (extended schema)"),
+    ("seismic_data_import.py",            "Filter TexNet catalog with quality cuts"),
+    ("build_well_day_panel.py",           "Build (well, day) panel + rolling features + BHP"),
+    ("spatiotemporal_join.py",            "Spatiotemporal join: events → panel for 1..20 km"),
+    ("add_geoscience_to_panel.py",        "Per-well fault distance + per-radius segment counts"),
+    ("dowhy_simple_all.py",               "Well-day causal analysis (no bootstrap)"),
+    ("dowhy_simple_all_aggregate.py",     "Event-level (cluster-day) causal analysis (no bootstrap)"),
+    ("dowhy_ci.py",                       "Well-day analysis with cluster-bootstrap CIs + refutations"),
+    ("dowhy_ci_aggregated.py",            "Event-level analysis with cluster-bootstrap CIs + refutations"),
+    ("tmle_shift_analysis.py",            "TMLE: stochastic shift intervention (+10% cumulative volume)"),
+    ("tmle_dose_response.py",             "TMLE: causal dose-response curve E[Y_a]"),
+    ("tmle_mediation_analysis.py",        "TMLE: NDE/NIE mediation decomposition (p90 vs p10 contrast)"),
+    ("causal_poe_curves.py",              "PoE curves and per-radius figures"),
+    ("killer_visualizations.py",          "Individual vs aggregate comparison dashboards"),
+    ("induced_seismicity_scaling_plots.py", "Effect-vs-distance scaling plots"),
+    ("measure_balrog.py",                 "Animated magnitude histogram"),
+]
+
+
+# ──────────────────── Logging ────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format="%(asctime)s  %(levelname)-8s  %(message)s",
     handlers=[
-        logging.FileHandler('pipeline_run.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
+        logging.FileHandler("pipeline_run.log"),
+        logging.StreamHandler(sys.stdout),
+    ],
 )
-
-# Define all radius values used in the analysis
-RADIUS_VALUES = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0]
+log = logging.getLogger("run_all")
 
 
-def run_script(script_name, description=""):
-    """Run a Python script and handle errors."""
-    logging.info(f"{'=' * 70}")
-    logging.info(f"Running: {script_name}")
-    if description:
-        logging.info(f"Purpose: {description}")
-    logging.info(f"{'=' * 70}")
+def run_one(script: str, description: str, continue_on_error: bool) -> tuple[bool, float]:
+    """Run a single pipeline step. Returns (success, elapsed_seconds)."""
+    if not Path(script).exists():
+        log.error("✗  %s — script not found", script)
+        if not continue_on_error:
+            sys.exit(2)
+        return False, 0.0
 
-    start_time = time.time()
+    log.info("=" * 70)
+    log.info("▶  %s", script)
+    log.info("   %s", description)
+    log.info("=" * 70)
 
-    try:
-        # Run the script
-        result = subprocess.run(
-            [sys.executable, script_name],
-            capture_output=True,
-            text=True,
-            check=True
-        )
+    t0 = time.time()
+    proc = subprocess.run(
+        [sys.executable, "-u", script],
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    elapsed = time.time() - t0
 
-        # Log output
-        if result.stdout:
-            logging.info(f"Output:\n{result.stdout}")
+    if proc.returncode != 0:
+        log.error("✗  %s — exit %d after %.1fs", script, proc.returncode, elapsed)
+        if not continue_on_error:
+            log.error("Aborting (use --continue-on-error to keep going)")
+            sys.exit(proc.returncode)
+        return False, elapsed
 
-        elapsed_time = time.time() - start_time
-        logging.info(f"✓ Completed {script_name} in {elapsed_time:.2f} seconds\n")
-
-        return True
-
-    except subprocess.CalledProcessError as e:
-        logging.error(f"✗ Error running {script_name}")
-        logging.error(f"Return code: {e.returncode}")
-        if e.stdout:
-            logging.error(f"Stdout:\n{e.stdout}")
-        if e.stderr:
-            logging.error(f"Stderr:\n{e.stderr}")
-
-        # Ask user if they want to continue
-        response = input(f"\nError in {script_name}. Continue with pipeline? (y/n): ")
-        if response.lower() != 'y':
-            logging.error("Pipeline aborted by user")
-            sys.exit(1)
-
-        return False
-
-    except FileNotFoundError:
-        logging.error(f"✗ Script not found: {script_name}")
-        response = input(f"\nScript {script_name} not found. Continue? (y/n): ")
-        if response.lower() != 'y':
-            logging.error("Pipeline aborted by user")
-            sys.exit(1)
-
-        return False
+    log.info("✓  %s — done in %.1fs", script, elapsed)
+    return True, elapsed
 
 
-def print_step_header(step_num, title):
-    """Print a formatted step header."""
-    logging.info(f"\n{'#' * 80}")
-    logging.info(f"# STEP {step_num}: {title}")
-    logging.info(f"{'#' * 80}\n")
+def parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Run the induced-seismicity causal pipeline end-to-end."
+    )
+    p.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Don't abort on a failed step; report and move on",
+    )
+    p.add_argument(
+        "--skip",
+        type=int,
+        nargs="*",
+        default=[],
+        help="Step indices to skip (see --list)",
+    )
+    p.add_argument(
+        "--only",
+        type=int,
+        nargs="*",
+        default=None,
+        help="Only run these step indices (see --list)",
+    )
+    p.add_argument(
+        "--list",
+        action="store_true",
+        help="Print the step list and exit",
+    )
+    return p.parse_args()
 
 
-def main():
-    """Main pipeline orchestration function."""
+def main() -> None:
+    args = parse_args()
 
-    pipeline_start = time.time()
+    if args.list:
+        print("Pipeline steps:")
+        for i, (script, desc) in enumerate(STEPS):
+            print(f"  {i:>2}. {script:<38s}  {desc}")
+        sys.exit(0)
 
-    logging.info(f"""
-=====================================================================
- S E I S M I C   A N A L Y S I S   P I P E L I N E
-=====================================================================
-Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Radius values: {', '.join(map(str, RADIUS_VALUES))} km
-=====================================================================
-    """)
-
-    # STEP 0: Environment & Constants
-    logging.info("""
-STEP 0 · ENVIRONMENT & CONSTANTS
-───────────────────────────────────────────────────────────────────
-| Parameter                    | Value                            |
-|------------------------------|----------------------------------|
-| Geographic CRS               | EPSG 4326  (WGS-84)              |
-| Planar CRS for distances     | EPSG 3857  (Web Mercator)        |
-| Well–event link distance     | 2, 5, 10, 15, 20 km (varied)     |
-| Fault-segment length         | ~1 km                            |
-| Injection look-back window   | 30 days                          |
-| Random seed (DoWhy)          | 42                               |
-    """)
-
-    # STEP 1: Import & Filter Raw Tables
-    print_step_header(1, "IMPORT & FILTER RAW TABLES")
-
-    run_script(
-        "swd_data_import.py",
-        "Subset SWD records → swd_data_filtered.csv (650,374 rows × 7 cols)"
+    log.info(
+        "INDUCED-SEISMICITY PIPELINE — %s",
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     )
 
-    run_script(
-        "seismic_data_import.py",
-        "Subset TexNet catalog → texnet_events_filtered.csv (6,064 rows × 7 cols)"
-    )
+    selected = list(range(len(STEPS)))
+    if args.only is not None:
+        selected = [i for i in args.only if 0 <= i < len(STEPS)]
+    selected = [i for i in selected if i not in set(args.skip)]
 
-    # STEP 2: Spatial Join (Wells ↔ Events)
-    print_step_header(2, "SPATIAL JOIN (WELLS ↔ EVENTS)")
+    log.info("Running steps: %s", selected)
 
-    run_script(
-        "merge_seismic_swd.py",
-        f"Create event-well links for radii: {', '.join(map(str, RADIUS_VALUES))} km"
-    )
+    pipeline_t0 = time.time()
+    timings: list[tuple[int, str, bool, float]] = []
+    for i in selected:
+        script, description = STEPS[i]
+        ok, elapsed = run_one(script, description, args.continue_on_error)
+        timings.append((i, script, ok, elapsed))
 
-    # STEP 3: Same-day & N-day Injection Lookback
-    print_step_header(3, "SAME-DAY & N-DAY INJECTION LOOKBACK")
+    pipeline_elapsed = time.time() - pipeline_t0
 
-    run_script(
-        "filter_active_wells_before_events.py",
-        "Filter wells with injection activity before events"
-    )
-
-    run_script(
-        "filter_merge_events_and_nonevents.py",
-        "Merge active wells with innocent wells (non-injecting)"
-    )
-
-    # STEP 4: Fault-proximity Features
-    print_step_header(4, "FAULT-PROXIMITY FEATURES")
-
-    run_script(
-        "add_geoscience_to_event_well_links_with_injection.py",
-        "Add nearest fault distance and fault segment counts"
-    )
-
-    # STEP 5: Multi-radius Causal Sensitivity Analysis
-    print_step_header(5, "MULTI-RADIUS CAUSAL SENSITIVITY ANALYSIS")
-
-    run_script(
-        "dowhy_simple_all.py",
-        "Well-level causal analysis using DoWhy framework"
-    )
-
-    # STEP 6: Multi-radius Event-level Causal Analysis
-    print_step_header(6, "MULTI-RADIUS EVENT-LEVEL CAUSAL ANALYSIS")
-
-    run_script(
-        "dowhy_simple_all_aggregate.py",
-        "Event-level aggregated causal analysis"
-    )
-
-    # STEP 7: Enhanced Well-level DoWhy Analysis with Bootstrap CI
-    print_step_header(7, "ENHANCED WELL-LEVEL DOWHY ANALYSIS WITH BOOTSTRAP CI")
-
-    run_script(
-        "dowhy_ci.py",
-        "Well-level analysis with bootstrap confidence intervals (50 iterations)"
-    )
-
-    # STEP 8: Enhanced Event-level DoWhy Analysis with Bootstrap CI
-    print_step_header(8, "ENHANCED EVENT-LEVEL DOWHY ANALYSIS WITH BOOTSTRAP CI")
-
-    run_script(
-        "dowhy_ci_aggregated.py",
-        "Event-level analysis with bootstrap confidence intervals (50 iterations)"
-    )
-
-    # Pipeline completion summary
-    pipeline_elapsed = time.time() - pipeline_start
-    hours = int(pipeline_elapsed // 3600)
-    minutes = int((pipeline_elapsed % 3600) // 60)
-    seconds = int(pipeline_elapsed % 60)
-
-    logging.info(f"""
-=====================================================================
- P I P E L I N E   C O M P L E T E
-=====================================================================
-End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Total duration: {hours}h {minutes}m {seconds}s
-=====================================================================
-
-KEY FINDINGS:
-- Injection volume causes seismic activity through two mechanisms
-- Near-field (≤5km): Mixed direct mechanical and pressure-mediated effects  
-- Far-field (>10km): Exclusively pressure-mediated effects
-- Strongest effects: 3-4km radius shows 20× stronger effects than 20km
-- Optimal monitoring: 5-7km radius balances effect size and predictive accuracy
-- Policy implication: Spatially-targeted regulation within 7km of faults recommended
-=====================================================================
-    """)
+    # ── Final timing summary ────────────────────────────────────
+    log.info("=" * 70)
+    log.info("PIPELINE COMPLETE — total %.1fs (%.1f min)",
+             pipeline_elapsed, pipeline_elapsed / 60)
+    log.info("=" * 70)
+    log.info("%-3s %-40s %-6s %s", "#", "Script", "Status", "Elapsed")
+    for i, script, ok, elapsed in timings:
+        status = "OK" if ok else "FAIL"
+        log.info("%-3d %-40s %-6s %.1fs", i, script, status, elapsed)
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        logging.error("\nPipeline interrupted by user")
+        log.error("Interrupted by user")
         sys.exit(1)
-    except Exception as e:
-        logging.error(f"\nUnexpected error: {e}")
-        raise
