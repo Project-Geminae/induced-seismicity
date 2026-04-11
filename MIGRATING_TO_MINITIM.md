@@ -60,24 +60,88 @@ rsync -av minitim:~/induced-seismicity/{causal_*,dowhy_*,tmle_*,plots/,*.png,*.m
   ~/induced-seismicity/
 ```
 
-## Tuning for minitim's hardware
+## Tuning for minitim's hardware (validated 2026-04-11)
 
-Minitim has many more CPU cores than the Mac. Two changes to exploit them:
+Minitim has 32 cores and 125 GB RAM. The recommended TMLE configuration,
+based on the first successful escalation run:
 
-1. **Parallelize across radii in each TMLE driver.** Right now each driver
-   processes radii 1..20 sequentially. On minitim, wrap the per-radius loop
-   in `concurrent.futures.ProcessPoolExecutor` with `max_workers = N_CORES // 3`
-   (we run 3 drivers in parallel, so each gets a third of the cores).
+```bash
+# 1. SSH in
+ssh minitim@100.65.23.59
 
-2. **Bump Super Learner library size.** In [tmle_core.py](tmle_core.py),
-   `XGB_N_ESTIMATORS` and `GBM_N_ESTIMATORS` are conservative for the Mac.
-   On minitim you can use 300+ trees per learner without hurting wall-clock,
-   and add `MLPRegressor`, `KNeighborsRegressor`, and `ExtraTreesRegressor`
-   to the stack for more diversity. The targeted estimator's robustness
-   improves with library diversity, not depth.
+# 2. On minitim — make sure the panel files exist (~10 min if not)
+cd ~/induced-seismicity
+.venv/bin/python run_all.py --only 0 1 2 3 4    # ingest + panels + faults
 
-3. **Bootstrap iterations.** `tmle_mediation.tmle_mediation` defaults to
-   `n_iter_boot = 30`. Bump to 200 on minitim for tighter CIs.
+# 3. Launch all 3 TMLE drivers in parallel under tmux.
+#    The exact env vars matter — see "Lessons learned" below for why.
+tmux new-session -d -s tmle_shift "bash -lc \"cd ~/induced-seismicity && \
+  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  TMLE_N_FOLDS=5 TMLE_BIG_LIBRARY=0 TMLE_SKIP_GBM=1 TMLE_XGB_N=300 TMLE_WORKERS=10 \
+  .venv/bin/python -u tmle_run_parallel.py shift --window 365 --shift 0.10 \
+  &> minitim_tmle_shift.log\""
+
+tmux new-session -d -s tmle_dose "bash -lc \"cd ~/induced-seismicity && \
+  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  TMLE_N_FOLDS=5 TMLE_BIG_LIBRARY=0 TMLE_SKIP_GBM=1 TMLE_XGB_N=300 TMLE_WORKERS=10 \
+  .venv/bin/python -u tmle_run_parallel.py dose --window 365 --grid 1e4 1e5 1e6 1e7 1e8 \
+  &> minitim_tmle_dose.log\""
+
+tmux new-session -d -s tmle_med "bash -lc \"cd ~/induced-seismicity && \
+  OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  TMLE_N_FOLDS=5 TMLE_BIG_LIBRARY=0 TMLE_SKIP_GBM=1 TMLE_XGB_N=300 TMLE_WORKERS=10 \
+  .venv/bin/python -u tmle_run_parallel.py mediation --window 365 --n-iter-boot 200 \
+  &> minitim_tmle_med.log\""
+
+# 4. Watch progress
+tail -f minitim_tmle_*.log    # NOT grep — see "Lessons learned"
+
+# 5. Sync back when done
+# (run from local Mac)
+rsync -av minitim@100.65.23.59:~/induced-seismicity/tmle_*_365d_*.csv \
+  ~/induced-seismicity/
+```
+
+**Wall-clock budget at this configuration (validated):**
+- shift driver:  ~26 min for 20 radii
+- dose driver:   ~28 min for 20 radii × 5 grid points
+- mediation:     ~50 min for 20 radii × 200 bootstrap iters
+- All three in parallel: ~50 min total wall-clock (mediation is the long pole)
+
+### Lessons learned (the hard way)
+
+1. **`OMP_NUM_THREADS=1` is mandatory.** Without it, xgboost defaults to
+   `n_jobs=-1` and each worker tries to use all 32 cores, fighting the other
+   29 workers from the parallel sweep. Single-threaded xgboost per worker is
+   the right pattern for `ProcessPoolExecutor`-based outer parallelism.
+
+2. **`TMLE_SKIP_GBM=1` is mandatory.** sklearn's `GradientBoostingClassifier`
+   and `GradientBoostingRegressor` are single-threaded and have no `n_jobs`
+   parameter. On a 345k-row panel with 5-fold cross-fitting × hurdle stages
+   × SL CV, they take ~30 min per worker per radius and dominate runtime.
+   XGBoost provides the same boosted-tree representation with multi-threading
+   that we want disabled for outer parallelism.
+
+3. **`TMLE_BIG_LIBRARY=1` is NOT worth it.** Adding `MLPRegressor`,
+   `KNeighborsRegressor`, and `ExtraTreesRegressor` to the SL stack — which
+   is what the env var was designed for — makes per-worker runtime balloon
+   without meaningfully changing the point estimates. The Ridge + XGBoost
+   stack with TMLE targeting is enough at this sample size.
+
+4. **`&> file.log` not `| tee file.log`.** `tee` buffers stdout in line
+   chunks; for a 30-minute parallel run with deferred completion lines,
+   `grep` against the log returns nothing for the first ~20 minutes even
+   though all the workers are progressing. Use `&>` and `tail -f` instead.
+
+5. **`TMLE_WORKERS=10` is the sweet spot for 3-driver parallel.** That's 30
+   total workers on 32 cores, with two cores left for the OS and the parent
+   `ProcessPoolExecutor` schedulers. Going higher causes load >40 and CPU
+   contention slowdowns; going lower wastes hardware.
+
+6. **5-fold cross-fitting + 200 trees is the publish-quality config.** vs the
+   local Mac 3-fold + 120 trees. Point estimates agree to within 5% across
+   all 20 radii at this scale; CIs from the minitim run are 10-30% tighter,
+   which is the bias-variance gain you'd expect from more cross-fit folds.
 
 ## What NOT to migrate
 

@@ -118,6 +118,13 @@ GBM_N_ESTIMATORS  = int(_os.environ.get("TMLE_GBM_N", "80"))
 # runtime budget.
 BIG_LIBRARY = bool(int(_os.environ.get("TMLE_BIG_LIBRARY", "0")))
 
+# When TMLE_SKIP_GBM=1 the sklearn GradientBoosting* learner is dropped
+# from the SuperLearner stack. sklearn GBM is single-threaded (no n_jobs)
+# and dominates per-worker runtime on large panels (345k rows × 5 folds ×
+# 120 trees ≈ 10 min per worker). XGBoost gives equivalent diversity at a
+# fraction of the cost. Set this when running 30-way parallel on minitim.
+SKIP_GBM = bool(int(_os.environ.get("TMLE_SKIP_GBM", "0")))
+
 
 # ──────────────────── Data structures ────────────────────────────
 
@@ -158,28 +165,33 @@ class HurdleSuperLearner(BaseEstimator, RegressorMixin):
         self.random_state = random_state
 
     def _build_classifier_stack(self):
-        return [
+        stack = [
             ("logit",  Pipeline([("sc", StandardScaler()),
                                  ("clf", LogisticRegression(max_iter=2000,
                                                             solver="lbfgs"))])),
-            ("gbm",    GradientBoostingClassifier(n_estimators=GBM_N_ESTIMATORS, max_depth=3,
-                                                  random_state=self.random_state)),
             ("xgb",    xgb.XGBClassifier(n_estimators=XGB_N_ESTIMATORS, max_depth=4,
                                          learning_rate=0.05, eval_metric="logloss",
                                          tree_method="hist", verbosity=0,
                                          random_state=self.random_state)),
         ]
+        if not SKIP_GBM:
+            stack.insert(1,
+                ("gbm", GradientBoostingClassifier(n_estimators=GBM_N_ESTIMATORS, max_depth=3,
+                                                   random_state=self.random_state)))
+        return stack
 
     def _build_regressor_stack(self):
         base = [
             ("ridge",  Pipeline([("sc", StandardScaler()),
                                  ("reg", RidgeCV(alphas=np.logspace(-3, 3, 13)))])),
-            ("gbm",    GradientBoostingRegressor(n_estimators=GBM_N_ESTIMATORS, max_depth=3,
-                                                 random_state=self.random_state)),
             ("xgb",    xgb.XGBRegressor(n_estimators=XGB_N_ESTIMATORS, max_depth=4,
                                         learning_rate=0.05, tree_method="hist",
                                         verbosity=0, random_state=self.random_state)),
         ]
+        if not SKIP_GBM:
+            base.insert(1,
+                ("gbm", GradientBoostingRegressor(n_estimators=GBM_N_ESTIMATORS, max_depth=3,
+                                                  random_state=self.random_state)))
         if BIG_LIBRARY:
             # Add three more diverse learners for the minitim run.
             base.extend([
