@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin="" />
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
 <style>
   :root {
     /* Bloomberg-inspired terminal palette */
@@ -570,6 +571,14 @@
       <div id="well-list" class="panel-body empty">—</div>
     </div>
 
+    <!-- ─── Charts ─── -->
+    <div class="panel-section" id="charts-section" style="display:none">
+      <div class="panel-header"><span>ANALYTICS</span><span class="meta">[F9]</span></div>
+      <div id="chart-waterfall" style="height:260px; padding:4px 8px;"></div>
+      <div id="chart-dose-response" style="height:260px; padding:4px 8px; border-top:1px solid #2a2a2a;"></div>
+      <div id="chart-timeline" style="height:260px; padding:4px 8px; border-top:1px solid #2a2a2a;"></div>
+    </div>
+
     <div id="tmle-context" style="display:none">
       <div class="header-bar">
         <span>TMLE POPULATION CONTEXT @ <span id="tmle-radius">7</span> KM</span>
@@ -813,6 +822,7 @@
     renderAttributionSummary(attribution);
     renderWells(data);
     renderTmleContext(tmle);
+    renderCharts(attribution, tmle, ev.date);
     updateTicker();
   }
 
@@ -975,6 +985,167 @@
     document.getElementById("tmle-pct").textContent = tmle.pct_mediated == null ?
       "—" : tmle.pct_mediated.toFixed(1) + "%";
     document.getElementById("tmle-dose").textContent = fmtSci(tmle.dose_at_1e7);
+  }
+
+  // ──────────────────── Charts ──────────────────────────────────
+  const plotlyLayout = {
+    paper_bgcolor: "#000",
+    plot_bgcolor:  "#0a0a0a",
+    font: { family: "IBM Plex Mono, monospace", color: "#ff9900", size: 10 },
+    margin: { l: 50, r: 20, t: 30, b: 40 },
+    xaxis: { gridcolor: "#1a1a1a", zerolinecolor: "#2a2a2a", color: "#888" },
+    yaxis: { gridcolor: "#1a1a1a", zerolinecolor: "#ff9900", color: "#888" },
+  };
+  const plotlyConfig = { displayModeBar: false, responsive: true };
+
+  function renderCharts(attribution, tmle, eventDate) {
+    const section = document.getElementById("charts-section");
+    if (!attribution || !attribution.wells || attribution.wells.length === 0) {
+      section.style.display = "none";
+      return;
+    }
+    section.style.display = "block";
+
+    // ── Plot 1: CATE Waterfall ──
+    const wells = attribution.wells.filter(w => w.cate_ml != null);
+    const apis  = wells.map(w => `${w.api}`);
+    const cates = wells.map(w => w.cate_ml);
+    const ciLow = wells.map(w => w.cate_ci_low != null ? w.cate_ml - w.cate_ci_low : 0);
+    const ciHigh = wells.map(w => w.cate_ci_high != null ? w.cate_ci_high - w.cate_ml : 0);
+    const colors = wells.map(w => {
+      const d = w.perf_depth_ft || 7000;
+      if (d >= 10000) return "#ff3030";   // deep
+      if (d >= 6000)  return "#ff9900";   // mid
+      return "#4499ff";                    // shallow
+    });
+
+    Plotly.newPlot("chart-waterfall", [{
+      type: "bar",
+      x: cates,
+      y: apis,
+      orientation: "h",
+      marker: { color: colors },
+      error_x: {
+        type: "data",
+        symmetric: false,
+        array: ciHigh,
+        arrayminus: ciLow,
+        color: "#666",
+        thickness: 1,
+        width: 3,
+      },
+      hovertemplate: "API %{y}<br>CATE: %{x:.4f} ML<extra></extra>",
+    }], {
+      ...plotlyLayout,
+      title: { text: "CATE BY WELL (ML)", font: { size: 11, color: "#ff9900" } },
+      xaxis: { ...plotlyLayout.xaxis, title: "CATE (ML)", zeroline: true, zerolinecolor: "#ff9900", zerolinewidth: 1 },
+      yaxis: { ...plotlyLayout.yaxis, autorange: "reversed", tickfont: { size: 8 } },
+      margin: { l: 80, r: 20, t: 30, b: 40 },
+      height: Math.max(200, wells.length * 22 + 60),
+    }, plotlyConfig);
+
+    // ── Plot 2: Dose-response curve with well dots ──
+    if (tmle && tmle.dose_grid && tmle.dose_grid.length > 0) {
+      const grid = tmle.dose_grid;
+      const gridA   = grid.map(g => g.a);
+      const gridPsi = grid.map(g => g.psi);
+      const gridLo  = grid.map(g => g.ci_low);
+      const gridHi  = grid.map(g => g.ci_high);
+
+      // Well dots on the curve
+      const wellVols  = wells.filter(w => w.cum_vol_window > 0).map(w => w.cum_vol_window);
+      const wellCates = wells.filter(w => w.cum_vol_window > 0).map(w => w.cate_ml);
+      const wellLabels = wells.filter(w => w.cum_vol_window > 0).map(w => `API ${w.api}`);
+
+      // Baseline (E[Y|a=0]) — first grid point approximately
+      const baseline = gridPsi[0] || 0;
+
+      Plotly.newPlot("chart-dose-response", [
+        // CI ribbon
+        {
+          x: gridA.concat([...gridA].reverse()),
+          y: gridHi.concat([...gridLo].reverse()),
+          fill: "toself",
+          fillcolor: "rgba(255,153,0,0.1)",
+          line: { color: "transparent" },
+          showlegend: false,
+          hoverinfo: "skip",
+          type: "scatter",
+        },
+        // Dose-response curve
+        {
+          x: gridA, y: gridPsi,
+          type: "scatter", mode: "lines",
+          line: { color: "#ff9900", width: 2 },
+          name: "E[Y|a]",
+          hovertemplate: "Volume: %{x:,.0f} BBL<br>E[Y|a]: %{y:.4f} ML<extra></extra>",
+        },
+        // Well dots
+        {
+          x: wellVols,
+          y: wellCates.map(c => c + baseline),  // place on the curve scale
+          type: "scatter", mode: "markers",
+          marker: { color: "#ffffff", size: 8, symbol: "diamond",
+                    line: { color: "#ff9900", width: 1 } },
+          name: "Wells",
+          text: wellLabels,
+          hovertemplate: "%{text}<br>Vol: %{x:,.0f} BBL<br>CATE: %{y:.4f}<extra></extra>",
+        },
+      ], {
+        ...plotlyLayout,
+        title: { text: "DOSE-RESPONSE CURVE (TMLE) + WELL POSITIONS", font: { size: 11, color: "#ff9900" } },
+        xaxis: { ...plotlyLayout.xaxis, title: "CUM 365D INJECTION (BBL)", type: "log" },
+        yaxis: { ...plotlyLayout.yaxis, title: "E[Y|a] (ML)" },
+        showlegend: false,
+        height: 260,
+      }, plotlyConfig);
+    }
+
+    // ── Plot 3: Cumulative injection timeline ──
+    // Fetch timeseries for top 5 wells and plot stacked
+    const topWells = wells.filter(w => w.cum_vol_window > 0).slice(0, 5);
+    if (topWells.length > 0 && eventDate) {
+      const timelineColors = ["#ff3030", "#ff6600", "#ff9900", "#ffd700", "#00ddff"];
+      Promise.all(topWells.map(w =>
+        fetch(`/api/wells/${w.api}/timeseries?around=${eventDate}&days=365`)
+          .then(r => r.json())
+          .catch(() => null)
+      )).then(results => {
+        const traces = [];
+        results.forEach((r, i) => {
+          if (!r || !r.series || r.series.length === 0) return;
+          traces.push({
+            x: r.series.map(s => s.date),
+            y: r.series.map(s => s.cum_365d / 1e6),
+            type: "scatter",
+            mode: "lines",
+            name: `API ${r.api}`,
+            line: { color: timelineColors[i % timelineColors.length], width: 1.5 },
+            hovertemplate: `API ${r.api}<br>%{x}<br>Cum 365d: %{y:.2f}M BBL<extra></extra>`,
+          });
+        });
+        if (traces.length > 0) {
+          // Add event date vertical line
+          traces.push({
+            x: [eventDate, eventDate],
+            y: [0, Math.max(...traces.flatMap(t => t.y)) * 1.1],
+            type: "scatter", mode: "lines",
+            line: { color: "#ff3030", width: 2, dash: "dot" },
+            showlegend: false,
+            hoverinfo: "skip",
+          });
+          Plotly.newPlot("chart-timeline", traces, {
+            ...plotlyLayout,
+            title: { text: "INJECTION TIMELINE — TOP 5 WELLS (CUM 365D)", font: { size: 11, color: "#ff9900" } },
+            xaxis: { ...plotlyLayout.xaxis, title: "DATE" },
+            yaxis: { ...plotlyLayout.yaxis, title: "CUM 365D VOL (M BBL)" },
+            legend: { font: { size: 9, color: "#888" }, bgcolor: "transparent",
+                      x: 0, y: 1, xanchor: "left" },
+            height: 260,
+          }, plotlyConfig);
+        }
+      });
+    }
   }
 
   // ──────────────────── Well hover highlight ───────────────────
