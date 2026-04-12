@@ -575,27 +575,27 @@ def event_attribution(
     fdf_cf[W_col] = 0.0
     fdf_cf[P_col] = BRINE_GRADIENT_PSI_PER_FT * fdf_cf["perf_depth_ft"]
 
-    # ── TMLE-targeted predictions (not plain g-computation) ──
-    # Q̂*(a, l) = Q̂(a, l) + ε · H(a, l)
-    # Uses the pre-computed ε from the offline targeting step.
-    # hasattr check for backwards compatibility with old pickles that
-    # don't have the g model.
-    has_tmle = hasattr(aq, 'g') and aq.g is not None and hasattr(aq, 'epsilon')
+    # ── Localized TMLE-targeted predictions ──
+    # Uses the van der Laan & Luedtke (2015) localized TMLE: a separate ε
+    # is solved per-well using a Gaussian kernel on standardized confounders.
+    has_tmle = (hasattr(aq, 'g') and aq.g is not None
+                and hasattr(aq, 'L_std') and aq.L_std is not None)
 
     if has_tmle:
-        q_factual        = np.asarray(aq.predict_targeted(fdf), dtype=float)
-        q_counterfactual = np.asarray(aq.predict_targeted(fdf_cf), dtype=float)
-        cate_se          = aq.cate_se()  # population-level SE as approximation
+        q_fact, eps_fact, se_fact = aq.predict_targeted(fdf)
+        q_cf, eps_cf, se_cf       = aq.predict_targeted(fdf_cf)
+        q_factual        = np.asarray(q_fact, dtype=float)
+        q_counterfactual = np.asarray(q_cf, dtype=float)
+        # Per-well SE: combine the two targeting SEs in quadrature
+        se_per_well = np.sqrt(np.asarray(se_fact, dtype=float) ** 2
+                             + np.asarray(se_cf, dtype=float) ** 2)
     else:
-        # Fallback to plain g-computation (no targeting)
         q_factual        = np.asarray(aq.predict(fdf), dtype=float)
         q_counterfactual = np.asarray(aq.predict(fdf_cf), dtype=float)
-        cate_se          = float("nan")
+        se_per_well      = np.full(len(fdf), float("nan"))
 
     contributions = q_factual - q_counterfactual
     total_contribution = float(contributions.sum())
-
-    # Share normalization: only over POSITIVE contributions
     pos_total = float(np.maximum(contributions, 0).sum())
 
     z95 = 1.959963984540054
@@ -604,6 +604,7 @@ def event_attribution(
         qf = float(q_factual[i])
         qc = float(q_counterfactual[i])
         cate = qf - qc
+        se = float(se_per_well[i])
         share = (max(cate, 0.0) / pos_total) if pos_total > 0 else 0.0
         wells_out.append({
             "api":               int(api_list[i]),
@@ -613,8 +614,9 @@ def event_attribution(
             "q_targeted":        qf,
             "q_cf_targeted":     qc,
             "cate_ml":           cate,
-            "cate_ci_low":       cate - z95 * cate_se if not np.isnan(cate_se) else None,
-            "cate_ci_high":      cate + z95 * cate_se if not np.isnan(cate_se) else None,
+            "cate_se":           se if not np.isnan(se) else None,
+            "cate_ci_low":       cate - z95 * se if not np.isnan(se) else None,
+            "cate_ci_high":      cate + z95 * se if not np.isnan(se) else None,
             "share":             share,
             "formation":         row["formation"],
             "perf_depth_ft":     float(row["perf_depth_ft"])
@@ -642,19 +644,18 @@ def event_attribution(
         "aggregate": {
             "total_cate_ml":     total_contribution,
             "positive_total_ml": pos_total,
-            "cate_se":           cate_se if not np.isnan(cate_se) else None,
             "top_contributor":   (top_contributor and {
                 "api":       top_contributor["api"],
                 "cate_ml":   top_contributor["cate_ml"],
                 "share":     top_contributor["share"],
             }),
         },
-        "estimand": "CATE-TMLE" if has_tmle else "g-computation (no targeting)",
+        "estimand": "Localized CATE-TMLE (van der Laan & Luedtke 2015)" if has_tmle else "g-computation (no targeting)",
         "model_meta": {
             "n_train":     aq.n_train,
             "n_pos":       aq.n_pos,
-            "epsilon":     float(aq.epsilon) if has_tmle else None,
-            "if_var":      float(aq.if_var) if has_tmle else None,
+            "bandwidth":   float(aq.bandwidth) if has_tmle else None,
+            "n_subsample": len(aq.L_std) if has_tmle else None,
             "feature_cols": aq.feature_cols,
         },
         "disclaimer":  ATTRIBUTION_DISCLAIMER,
@@ -662,13 +663,15 @@ def event_attribution(
 
 
 ATTRIBUTION_DISCLAIMER = (
-    "CATE-TMLE: Conditional Average Treatment Effect estimated via Targeted "
-    "Maximum Likelihood. CATE(l) = Q̂*(actual, l) − Q̂*(shut-off, l) where "
-    "Q̂* is the TMLE-targeted outcome regression (hurdle Super Learner + "
-    "epsilon-fluctuation via the clever covariate from the conditional density "
-    "g(A|L)). The 95% CI uses the influence-function-based SE from the "
-    "population-level targeting step. Identified under: no unmeasured "
-    "confounding, positivity, consistency. See /methodology for full discussion."
+    "Localized CATE-TMLE (van der Laan & Luedtke 2015): Conditional Average "
+    "Treatment Effect estimated via kernel-localized Targeted Maximum Likelihood. "
+    "For each well, a separate targeting parameter ε(l₀) is solved using a "
+    "Gaussian kernel on standardized confounders, weighting nearby training "
+    "observations more heavily. This avoids the global-ε overcorrection that "
+    "can make per-well CATEs implausible at the edges of the covariate "
+    "distribution. CIs are from the localized influence function. Identified "
+    "under: no unmeasured confounding, positivity, consistency. "
+    "See /methodology for full discussion."
 )
 
 

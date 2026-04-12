@@ -94,36 +94,49 @@ log = logging.getLogger(__name__)
 # ──────────────────── Pickled wrapper ────────────────────────────
 @dataclass
 class AttributionQ:
-    """A pickled bundle: fitted Q, fitted g, pre-computed targeting ε, and
-    metadata needed for CATE-TMLE computation at serve time.
+    """A pickled bundle: fitted Q, fitted g, and the training-sample arrays
+    needed for **localized TMLE** (van der Laan & Luedtke 2015) at serve time.
 
-    The TMLE targeting step has already been solved offline on the full
-    training sample. At serve time, the per-well CATE is:
+    Instead of a single global ε that over-corrects individual CATEs, the
+    localized TMLE solves a separate ε(l₀) for each query well by
+    weighting the efficient influence function equation with a Gaussian
+    kernel centered at the query well's covariate profile:
 
-        CATE(l) = Q̂*(a_high, l) − Q̂*(a_low, l)
+        H_i(l₀) = K_h(L_i, l₀) / (g(A_i | L_i) · bin_width_i)
 
-    where Q̂*(a, l) = Q̂(a, l) + ε · H(a, l)
-    and   H(a, l) = I(A in bin(a)) / (g(a | l) · bin_width)
+        ε(l₀) = Σ_i K_i · H_i · (Y_i − Q̂_i) / Σ_i K_i · H_i²
 
-    The IF-based variance is pre-computed from the training-sample IF
-    evaluated at the population mean. For per-well CIs we scale the
-    population IF variance by 1/n, which gives the asymptotic standard
-    error of the CATE at a specific covariate profile.
+    where K_i = K_h(L_i, l₀) = exp(−||L̃_i − l̃₀||² / (2h²)) and L̃ is
+    the standardized confounder vector.
+
+    This gives a CATE estimate that's locally targeted to the specific
+    well's geology/injection profile, rather than globally optimized for
+    the population mean (which is what caused the nonsensical results for
+    edge-of-basin events).
+
+    The IF-based SE is also localized:
+        SE(l₀) = sqrt(Σ_i K²_i · resid²_i / (Σ_i K_i)²)
     """
     radius_km:      int
     window_days:    int
-    feature_cols:   list[str]      # column order for the design matrix
-    formation_cols: list[str]      # the one-hot dummy column names
-    top_formations: list[str]      # which formations got their own one-hot
+    feature_cols:   list[str]
+    formation_cols: list[str]
+    top_formations: list[str]
     q:              tmle.HurdleSuperLearner
-    g:              tmle.HistogramConditionalDensity   # conditional density of A | L
-    epsilon:        float            # TMLE targeting parameter (solved offline)
+    g:              tmle.HistogramConditionalDensity
     n_train:        int
     n_pos:          int
     fit_time_sec:   float
-    # Pre-computed IF variance for the population-level ψ̂ (used to derive
-    # per-well SE as an approximation: SE_cate ≈ sqrt(if_var / n))
-    if_var:         float
+    # Pre-computed training-sample arrays for localized targeting at serve time
+    L_std:          np.ndarray    # standardized confounders (n_train × n_conf)
+    L_mean:         np.ndarray    # confounder means (for standardizing query)
+    L_scale:        np.ndarray    # confounder stds (for standardizing query)
+    A_train:        np.ndarray    # treatment values (n_train,)
+    Y_train:        np.ndarray    # outcome values (n_train,)
+    Q_hat_train:    np.ndarray    # Q predictions on training data (n_train,)
+    g_obs_train:    np.ndarray    # g(A|L) on training data (n_train,)
+    bin_idx_train:  np.ndarray    # histogram bin index per training row
+    bandwidth:      float         # kernel bandwidth (in standardized units)
 
     def _to_X(self, well_rows: pd.DataFrame) -> np.ndarray:
         """Convert a DataFrame of per-well features into the design matrix."""
@@ -150,33 +163,83 @@ class AttributionQ:
         """Plain g-computation prediction Q̂(features) — no targeting."""
         return self.q.predict(self._to_X(well_rows))
 
-    def predict_targeted(self, well_rows: pd.DataFrame) -> np.ndarray:
-        """Targeted prediction Q̂*(a, l) = Q̂(a, l) + ε · H(a, l).
+    def _solve_local_epsilon(self, l_query_std: np.ndarray) -> tuple[float, float]:
+        """Solve the localized targeting parameter ε(l₀) and return (ε, SE).
 
-        The clever covariate H is computed from the persisted g model.
-        Treatment column (first feature col) is used as the A value.
+        l_query_std: standardized confounder vector for the query well (1D).
+        Returns (epsilon_local, se_local).
+        """
+        # Gaussian kernel weights: K_i = exp(-||L̃_i - l̃₀||² / (2h²))
+        diff = self.L_std - l_query_std[np.newaxis, :]
+        sq_dist = np.sum(diff ** 2, axis=1)
+        K = np.exp(-sq_dist / (2.0 * self.bandwidth ** 2))
+
+        # Floor tiny weights to avoid numerical noise from distant observations
+        K = np.where(K > 1e-10, K, 0.0)
+        K_sum = K.sum()
+        if K_sum < 1.0:
+            # Essentially no nearby training data — return zero epsilon
+            return 0.0, float("nan")
+
+        # Clever covariate: H_i = K_i / (g(A_i|L_i) · bin_width_i)
+        bin_w = self.g.widths_[self.bin_idx_train]
+        H = K / np.maximum(self.g_obs_train * bin_w, 1e-12)
+
+        # Residual from the initial Q fit
+        resid = self.Y_train - self.Q_hat_train
+
+        # Weighted OLS of residual on H (no intercept), weights = K
+        # ε = Σ K·H·resid / Σ K·H²
+        num = np.dot(K * H, resid)
+        den = np.dot(K * H, H)
+        eps_local = float(num / max(den, 1e-15))
+
+        # Localized SE: sqrt(Σ K²·(resid − ε·H)² / (Σ K)²)
+        targeted_resid = resid - eps_local * H
+        se_local = float(np.sqrt(
+            np.dot(K ** 2, targeted_resid ** 2) / max(K_sum ** 2, 1e-15)
+        ))
+
+        return eps_local, se_local
+
+    def predict_targeted(self, well_rows: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Localized TMLE prediction.
+
+        For each query row, solves a local ε(l₀) and returns:
+          (q_star, epsilon_per_well, se_per_well)
+
+        q_star: Q̂*(a, l₀) = Q̂(a, l₀) + ε(l₀) · H_query(a, l₀)
         """
         X = self._to_X(well_rows)
-        A = X[:, 0]  # treatment is always the first feature column
-        L = X[:, 1:]  # confounders are the rest
+        n = X.shape[0]
+        A_query = X[:, 0]
+        L_query = X[:, 1:]
+
         q_hat = self.q.predict(X)
-        # H = I(in_bin(a)) / (g(a|l) * bin_width)
-        g_a = self.g.density(A, L)
-        bin_idx = np.clip(
-            np.digitize(A, self.g.edges_, right=False) - 1,
+
+        # Standardize query confounders using the training-time means/scales
+        L_query_std = (L_query - self.L_mean[np.newaxis, :]) / np.maximum(self.L_scale[np.newaxis, :], 1e-12)
+
+        # g density at the query treatment values
+        g_query = self.g.density(A_query, L_query)
+        bin_idx_query = np.clip(
+            np.digitize(A_query, self.g.edges_, right=False) - 1,
             0, self.g.n_bins - 1,
         )
-        bin_w = self.g.widths_[bin_idx]
-        H = 1.0 / np.maximum(g_a * bin_w, 1e-12)
-        return q_hat + self.epsilon * H
+        bin_w_query = self.g.widths_[bin_idx_query]
+        H_query = 1.0 / np.maximum(g_query * bin_w_query, 1e-12)
 
-    def cate_se(self) -> float:
-        """Approximate standard error for the per-well CATE.
+        q_star = np.zeros(n)
+        eps_arr = np.zeros(n)
+        se_arr  = np.full(n, float("nan"))
 
-        This is the population-level SE from the pre-computed IF variance,
-        which serves as a conservative upper bound on the per-well CATE SE.
-        """
-        return float(np.sqrt(self.if_var / max(self.n_train, 1)))
+        for i in range(n):
+            eps_i, se_i = self._solve_local_epsilon(L_query_std[i])
+            q_star[i] = q_hat[i] + eps_i * H_query[i]
+            eps_arr[i] = eps_i
+            se_arr[i] = se_i
+
+        return q_star, eps_arr, se_arr
 
 
 # ──────────────────── Per-radius training ────────────────────────
@@ -246,33 +309,49 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> AttributionQ | Non
     L = X[:, 1:]  # confounders = the rest
     g = tmle.HistogramConditionalDensity(random_state=42)
     g.fit(A, L)
-    log.info("[%2dkm] g fit done", R)
-
-    # ── Step 3: solve targeting parameter ε ──
-    # Clever covariate: H_i = I(A_i in bin(A_i)) / (g(A_i | L_i) · bin_width)
-    # This is the identity clever covariate for a continuous treatment TMLE
-    # when we evaluate at the observed treatment value.
     g_obs = g.density(A, L)
     bin_idx = np.clip(np.digitize(A, g.edges_, right=False) - 1, 0, g.n_bins - 1)
-    bin_w = g.widths_[bin_idx]
-    H = 1.0 / np.maximum(g_obs * bin_w, 1e-12)
+    log.info("[%2dkm] g fit done", R)
 
-    # ε from univariate OLS of (Y − Q̂) on H, no intercept
-    residual = y - Q_hat
-    eps = float(np.dot(H, residual) / max(np.dot(H, H), 1e-15))
-    log.info("[%2dkm] targeting ε = %+.4e", R, eps)
+    # ── Step 3: standardize confounders + choose bandwidth ──
+    L_mean = L.mean(axis=0)
+    L_scale = L.std(axis=0)
+    L_scale = np.where(L_scale > 1e-12, L_scale, 1.0)
+    L_std = (L - L_mean[np.newaxis, :]) / L_scale[np.newaxis, :]
 
-    # ── Step 4: compute IF variance for uncertainty ──
-    # Q̂* = Q̂ + ε · H
-    Q_star = Q_hat + eps * H
-    # IF_i = H_i · (Y_i − Q̂*_i)  + Q̂*_i − ψ̂
-    psi_hat = float(Q_star.mean())
-    IF = H * (y - Q_star) + Q_star - psi_hat
-    if_var = float(np.var(IF, ddof=1))
+    # Bandwidth: Silverman's rule of thumb on the standardized confounders
+    # h = n^(-1/(d+4)) where d = number of confounders
+    n_conf = L.shape[1]
+    bandwidth = float(len(X) ** (-1.0 / (n_conf + 4)))
+    log.info("[%2dkm] kernel bandwidth h = %.4f (Silverman, d=%d)", R, bandwidth, n_conf)
+
+    # ── Step 4: subsample training arrays for serve-time kernel queries ──
+    # 800k rows is too many for per-query kernel evaluation at serve time
+    # (~10ms per query × 20 wells = 200ms, tolerable). But if we want to
+    # keep memory reasonable in the pickle, subsample to ~50k rows. The
+    # kernel will still find enough neighbors.
+    MAX_TRAIN_ROWS = 50_000
+    if len(X) > MAX_TRAIN_ROWS:
+        rng = np.random.default_rng(42)
+        idx = rng.choice(len(X), MAX_TRAIN_ROWS, replace=False)
+        L_std_keep   = L_std[idx]
+        A_keep       = A[idx]
+        Y_keep       = y[idx]
+        Q_hat_keep   = Q_hat[idx]
+        g_obs_keep   = g_obs[idx]
+        bin_idx_keep = bin_idx[idx]
+        log.info("[%2dkm] subsampled training arrays: %d → %d rows", R, len(X), MAX_TRAIN_ROWS)
+    else:
+        L_std_keep   = L_std
+        A_keep       = A
+        Y_keep       = y
+        Q_hat_keep   = Q_hat
+        g_obs_keep   = g_obs
+        bin_idx_keep = bin_idx
 
     fit_time = time.time() - t0
-    log.info("[%2dkm] ✅ full TMLE fit in %.1fs (ε=%+.4e, IF_var=%.4e)",
-             R, fit_time, eps, if_var)
+    log.info("[%2dkm] ✅ localized TMLE fit in %.1fs (h=%.4f, n_sub=%d)",
+             R, fit_time, bandwidth, len(A_keep))
 
     return AttributionQ(
         radius_km      = R,
@@ -282,11 +361,18 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> AttributionQ | Non
         top_formations = top_forms,
         q              = q,
         g              = g,
-        epsilon        = eps,
         n_train        = len(X),
         n_pos          = n_pos,
         fit_time_sec   = fit_time,
-        if_var         = if_var,
+        L_std          = L_std_keep.astype(np.float32),
+        L_mean         = L_mean.astype(np.float32),
+        L_scale        = L_scale.astype(np.float32),
+        A_train        = A_keep.astype(np.float32),
+        Y_train        = Y_keep.astype(np.float32),
+        Q_hat_train    = Q_hat_keep.astype(np.float32),
+        g_obs_train    = g_obs_keep.astype(np.float32),
+        bin_idx_train  = bin_idx_keep.astype(np.int16),
+        bandwidth      = bandwidth,
     )
 
 
