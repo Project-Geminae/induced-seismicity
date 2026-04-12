@@ -874,7 +874,7 @@
         fillOpacity: 0.9,
       }).bindTooltip(
         `API ${w.api}<br>${w.distance_km.toFixed(2)} km<br>` +
-        `${w.panel.formation || "—"}`,
+        `${w.panel.perf_depth_ft ? w.panel.perf_depth_ft.toFixed(0) + ' ft' : '—'}`,
         { sticky: true, opacity: 1 }
       );
       m._api = w.api;
@@ -896,7 +896,9 @@
       `<div class="well-list">` +
       data.wells.map((w, i) => {
         const p = w.panel || {};
-        const formClass = "formation-" + (p.formation || "OTHER").replace(/\s+/g, "-");
+        const depthFt = p.perf_depth_ft || 0;
+        const depthClass = depthFt >= 10000 ? "DEEP" : (depthFt >= 6000 ? "MID" : "SHALLOW");
+        const depthColor = depthFt >= 10000 ? "var(--red)" : (depthFt >= 6000 ? "var(--amber)" : "var(--blue)");
         const attr = (data._attrByApi && data._attrByApi[w.api]) || null;
         const rankClass = i < 3 ? `rank-${i + 1}` : "";
         const rankNum = (i + 1).toString().padStart(2, "0");
@@ -936,7 +938,7 @@
               <span class="api"><span class="rank-num">#${rankNum}</span>API ${w.api}</span>
               <span class="distance">${w.distance_km.toFixed(2)} KM</span>
             </div>
-            <span class="formation ${formClass}">${(p.formation || "UNKNOWN").toUpperCase()}</span>
+            <span style="display:inline-block;padding:1px 6px;font-size:9px;font-weight:700;letter-spacing:0.05em;border:1px solid ${depthColor};color:${depthColor};margin-bottom:4px;">${depthFt > 0 ? fmtFt(depthFt) + ' FT · ' + depthClass : 'UNKNOWN DEPTH'}</span>
             <div class="features">
               <span class="label">DEPTH</span>
               <span class="val">${fmtFt(p.perf_depth_ft)} FT</span>
