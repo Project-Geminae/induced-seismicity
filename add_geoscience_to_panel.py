@@ -32,11 +32,13 @@ which scaled with the link table size; this version scales with the well count.
 
 from __future__ import annotations
 
+import argparse
 import logging
 import math
 import os
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import contextmanager
 from pathlib import Path
 from typing import List
@@ -203,20 +205,42 @@ def compute_well_fault_features(wells_wgs: gpd.GeoDataFrame,
     return out
 
 
-def join_to_panels(well_features: pd.DataFrame) -> None:
+def _join_one_radius(args: dict) -> dict:
+    """Worker: load one panel_with_outcomes_<R>km.csv, merge fault features, write output."""
+    R           = args["R"]
+    features_df = args["features_df"]
+    infile  = Path(PANEL_IN_FMT.format(R=R))
+    outfile = Path(PANEL_OUT_FMT.format(R=R))
+    if not infile.exists():
+        return {"R": R, "ok": False, "reason": f"{infile} not found"}
+    log.info("Joining fault features into %s", infile.name)
+    panel = pd.read_csv(infile, low_memory=False)
+    cols  = ["API Number", "Nearest Fault Dist (km)", f"Fault Segments <= {R} km"]
+    out   = panel.merge(features_df[cols], on="API Number", how="left")
+    out.to_csv(outfile, index=False)
+    log.info("    → %s (%d rows × %d cols)", outfile.name, *out.shape)
+    return {"R": R, "ok": True, "n_rows": len(out)}
+
+
+def join_to_panels(well_features: pd.DataFrame, n_workers: int = 1) -> None:
     """For each panel_with_outcomes_<R>km.csv, attach the relevant fault columns."""
-    for R in RADII_KM:
-        infile  = Path(PANEL_IN_FMT.format(R=R))
-        outfile = Path(PANEL_OUT_FMT.format(R=R))
-        if not infile.exists():
-            log.warning("⚠️   %s not found, skipping", infile)
-            continue
-        log.info("Joining fault features into %s", infile.name)
-        panel = pd.read_csv(infile, low_memory=False)
-        cols  = ["API Number", "Nearest Fault Dist (km)", f"Fault Segments <= {R} km"]
-        out   = panel.merge(well_features[cols], on="API Number", how="left")
-        out.to_csv(outfile, index=False)
-        log.info("    → %s (%d rows × %d cols)", outfile.name, *out.shape)
+    if n_workers <= 1:
+        for R in RADII_KM:
+            _join_one_radius({"R": R, "features_df": well_features})
+    else:
+        log.info("🚀  Parallel join: %d workers for %d radii", n_workers, len(RADII_KM))
+        jobs = [{"R": R, "features_df": well_features} for R in RADII_KM]
+        with ProcessPoolExecutor(max_workers=n_workers) as pool:
+            futures = {pool.submit(_join_one_radius, j): j for j in jobs}
+            for fut in as_completed(futures):
+                try:
+                    res = fut.result()
+                    if res["ok"]:
+                        log.info("✓ R=%dkm joined", res["R"])
+                    else:
+                        log.warning("⚠️   R=%dkm: %s", res["R"], res.get("reason"))
+                except Exception as e:
+                    log.error("✗ R=%dkm failed: %s", futures[fut]["R"], e)
 
 
 def write_sanity_map(wells: gpd.GeoDataFrame, faults: gpd.GeoDataFrame) -> None:
@@ -239,6 +263,14 @@ def write_sanity_map(wells: gpd.GeoDataFrame, faults: gpd.GeoDataFrame) -> None:
 
 # ──────────────────── Main ───────────────────────────────────────
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--workers", type=int, default=1,
+        help="Parallel workers for the per-radius CSV join step. On minitim "
+             "use --workers 16. Default 1 (sequential, for Mac).",
+    )
+    args = parser.parse_args()
+
     wells = load_unique_wells()
     faults = load_faults(wells)
     log.info("Faults loaded: %d polylines", len(faults))
@@ -254,7 +286,7 @@ def main() -> None:
 
     write_sanity_map(wells, faults)
 
-    join_to_panels(well_features)
+    join_to_panels(well_features, n_workers=args.workers)
     log.info("✅  All panels augmented with fault features")
 
 

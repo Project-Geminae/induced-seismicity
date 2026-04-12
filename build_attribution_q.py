@@ -218,6 +218,11 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> AttributionQ | Non
 
 def _worker(args: dict) -> dict:
     """ProcessPoolExecutor worker entry point."""
+    # Force single-threaded xgboost / BLAS per worker to avoid core contention
+    # when running under ProcessPoolExecutor with multiple workers.
+    import os
+    for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+        os.environ[k] = "1"
     R = args["R"]
     window_days = args["window_days"]
     aq = fit_one_radius(R, window_days)

@@ -3,293 +3,628 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Induced Seismicity TMLE Dashboard</title>
+<title>SEIS &lt;GO&gt; — Induced Seismicity Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin="" />
 <style>
   :root {
-    --bg: #0e1117;
-    --panel: #161b22;
-    --panel-2: #1f2630;
-    --border: #30363d;
-    --text: #e6edf3;
-    --muted: #8b949e;
-    --accent: #58a6ff;
-    --warn: #f0883e;
-    --danger: #f85149;
-    --good: #56d364;
+    /* Bloomberg-inspired terminal palette */
+    --bg:           #000000;
+    --bg-alt:       #050505;
+    --panel:        #0a0a0a;
+    --panel-2:      #111111;
+    --panel-3:      #181818;
+    --border:       #2a2a2a;
+    --border-bright:#444444;
+    --grid-line:    #1a1a1a;
+
+    --amber:        #ff9900;        /* Bloomberg orange */
+    --amber-bright: #ffaa00;
+    --amber-dim:    #aa6600;
+    --white:        #ffffff;
+    --white-dim:    #cccccc;
+    --muted:        #666666;
+    --muted-bright: #888888;
+
+    --green:        #00ff66;
+    --green-dim:    #00aa44;
+    --red:          #ff3030;
+    --red-dim:      #aa1818;
+    --yellow:       #ffd700;
+    --cyan:         #00ddff;
+    --magenta:      #ff44dd;
+    --blue:         #4499ff;
+
+    --text:         var(--amber);
+    --accent:       var(--amber);
+    --warn:         var(--yellow);
+    --danger:       var(--red);
+    --good:         var(--green);
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; height: 100%;
-    background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                 "Helvetica Neue", Arial, sans-serif;
-    font-size: 13px;
+    background: var(--bg); color: var(--amber);
+    font-family: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+  ::selection { background: var(--amber); color: var(--bg); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 0; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--amber-dim); }
+
+  /* ──────────────── Top function bar ──────────────── */
   header {
-    padding: 10px 16px;
-    background: var(--panel);
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 16px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--amber);
+    padding: 6px 10px 4px 10px;
+    display: flex; align-items: center; gap: 12px;
+    height: 38px;
+    flex-shrink: 0;
   }
-  header h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); }
-  header .meta { color: var(--muted); font-size: 11px; }
-  header .meta strong { color: var(--text); }
-  main {
-    display: grid;
-    grid-template-columns: 1fr 420px;
-    height: calc(100vh - 47px);
-    gap: 0;
-  }
-  #map-container {
-    position: relative;
+  header .brand {
+    color: var(--amber);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.03em;
+    padding-right: 12px;
     border-right: 1px solid var(--border);
   }
-  #map { width: 100%; height: 100%; background: #0a0e14; }
-  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.85); }
-  .leaflet-control-attribution { background: rgba(0,0,0,0.5); color: var(--muted); }
-  .leaflet-control-attribution a { color: var(--accent); }
-
-  #controls {
-    position: absolute; top: 12px; left: 12px;
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 6px; padding: 10px 12px; z-index: 1000;
-    min-width: 220px;
+  header .brand .pipe { color: var(--muted); margin: 0 4px; }
+  header .brand .ticker { color: var(--white); font-weight: 700; }
+  header .brand .go {
+    color: var(--bg); background: var(--amber);
+    padding: 1px 5px; font-weight: 700;
+    margin-left: 4px;
   }
-  #controls label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  header nav { display: flex; gap: 2px; }
+  header nav .fkey {
+    color: var(--white); background: transparent;
+    padding: 4px 9px;
+    font-size: 11px; font-weight: 600;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  header nav .fkey:hover { background: var(--panel-2); color: var(--amber); border-color: var(--amber-dim); }
+  header nav .fkey .label { color: var(--amber); }
+  header nav .fkey.active { background: var(--amber); color: var(--bg); border-color: var(--amber); }
+  header nav .fkey.active .label { color: var(--bg); }
+
+  header .right {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 16px;
+    color: var(--muted-bright); font-size: 11px;
+  }
+  header .right .key { color: var(--amber); font-weight: 600; }
+  header .right .live-clock {
+    color: var(--green); font-weight: 600;
+    border: 1px solid var(--border); padding: 3px 8px;
+  }
+  header .right a { color: var(--cyan); text-decoration: none; }
+  header .right a:hover { color: var(--white); text-decoration: underline; }
+
+  main {
+    display: grid;
+    grid-template-columns: 1fr 460px;
+    height: calc(100vh - 38px - 22px);  /* minus header + ticker */
+    gap: 0;
+    overflow: hidden;
+  }
+
+  /* ──────────────── Map pane ──────────────── */
+  #map-container {
+    position: relative;
+    border-right: 1px solid var(--amber-dim);
+    background: var(--bg);
+  }
+  #map { width: 100%; height: 100%; background: var(--bg); }
+  /* Heavy invert + amber tint to match Bloomberg geo charts */
+  .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.55) contrast(1.15) sepia(0.4) hue-rotate(-30deg) saturate(1.4);
+  }
+  .leaflet-control-attribution {
+    background: rgba(0,0,0,0.85) !important;
+    color: var(--muted) !important;
+    font-family: "IBM Plex Mono", monospace !important;
+    font-size: 9px !important;
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+  }
+  .leaflet-control-attribution a { color: var(--amber-dim) !important; }
+  .leaflet-bar a {
+    background: var(--bg) !important;
+    color: var(--amber) !important;
+    border: 1px solid var(--amber-dim) !important;
+    font-family: "IBM Plex Mono", monospace !important;
+    font-weight: 700 !important;
+  }
+  .leaflet-bar a:hover { background: var(--panel-2) !important; }
+  .leaflet-tooltip {
+    background: var(--bg) !important;
+    color: var(--amber) !important;
+    border: 1px solid var(--amber) !important;
+    border-radius: 0 !important;
+    font-family: "IBM Plex Mono", monospace !important;
+    font-size: 10px !important;
+    box-shadow: 0 0 8px rgba(255, 153, 0, 0.4) !important;
+  }
+  .leaflet-tooltip:before { display: none; }
+
+  /* ──────────────── Controls overlay ──────────────── */
+  #controls {
+    position: absolute; top: 10px; left: 10px;
+    background: var(--bg);
+    border: 1px solid var(--amber);
+    padding: 0;
+    z-index: 1000;
+    width: 240px;
+    box-shadow: 0 0 12px rgba(255, 153, 0, 0.15);
+  }
+  #controls .header-bar {
+    background: var(--amber); color: var(--bg);
+    padding: 3px 8px;
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: flex; justify-content: space-between;
+  }
+  #controls .body { padding: 8px 10px; }
+  #controls label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 10px; color: var(--muted-bright);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin-bottom: 3px;
+  }
   #controls .row { margin-bottom: 8px; }
   #controls .row:last-child { margin-bottom: 0; }
-  #controls input[type=range] { width: 100%; }
+  #controls input[type=range] {
+    width: 100%; -webkit-appearance: none; appearance: none;
+    height: 4px; background: var(--panel-2); outline: none;
+    border: 1px solid var(--border);
+  }
+  #controls input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 12px; height: 12px;
+    background: var(--amber); cursor: pointer;
+    border: none; border-radius: 0;
+  }
+  #controls input[type=range]::-moz-range-thumb {
+    width: 12px; height: 12px;
+    background: var(--amber); cursor: pointer;
+    border: none; border-radius: 0;
+  }
   #controls input[type=number] {
-    width: 60px; background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--border); border-radius: 4px; padding: 3px 5px;
-    font-family: inherit; font-size: 12px;
+    width: 56px; background: var(--panel-2); color: var(--amber);
+    border: 1px solid var(--border); padding: 2px 5px;
+    font-family: inherit; font-size: 11px; font-weight: 600;
   }
-  #controls .value { color: var(--accent); font-weight: 600; font-size: 14px; }
+  #controls input[type=number]:focus { outline: none; border-color: var(--amber); }
+  #controls .value {
+    color: var(--amber); font-weight: 700; font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  #controls .legend-row {
+    display: flex; gap: 8px; flex-wrap: wrap;
+    border-top: 1px solid var(--border);
+    padding-top: 6px; margin-top: 4px;
+  }
 
+  .legend-item {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 10px; color: var(--muted-bright);
+  }
+  .legend-dot { width: 9px; height: 9px; border: 1px solid #000; }
+
+  /* ──────────────── Sidebar ──────────────── */
   #sidebar {
-    background: var(--panel);
+    background: var(--bg);
     overflow-y: auto;
-    padding: 16px;
+    padding: 0;
+    border-left: 1px solid var(--amber-dim);
   }
-  #sidebar h2 { font-size: 13px; font-weight: 600; margin: 0 0 12px 0;
-                color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  #sidebar .empty {
-    text-align: center; color: var(--muted); padding: 40px 0;
-    font-style: italic;
+  .panel-section { border-bottom: 1px solid var(--border); }
+  .panel-header {
+    background: var(--amber); color: var(--bg);
+    padding: 3px 10px;
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: flex; justify-content: space-between; align-items: center;
   }
+  .panel-header .meta { color: var(--bg); font-weight: 600; opacity: 0.85; }
+  .panel-body { padding: 8px 10px; }
+  .panel-body.empty {
+    text-align: center; color: var(--muted-bright); padding: 24px 10px;
+    font-size: 11px;
+  }
+  .panel-body.empty .blink { animation: blink 1.5s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
 
-  .event-card {
-    background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 6px; padding: 12px; margin-bottom: 16px;
+  /* ──────────────── Event card ──────────────── */
+  .event-card { padding: 10px; }
+  .event-card .id-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 1px dashed var(--border);
+    padding-bottom: 4px; margin-bottom: 6px;
   }
   .event-card .id {
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 12px; color: var(--accent);
+    font-size: 11px; color: var(--cyan); font-weight: 600;
     word-break: break-all;
   }
+  .event-card .id-tag {
+    color: var(--muted); font-size: 9px;
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .event-card .ml-row {
+    display: flex; align-items: baseline; gap: 12px;
+    margin: 4px 0;
+  }
+  .event-card .ml-label {
+    font-size: 9px; color: var(--muted-bright);
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
   .event-card .ml {
-    font-size: 22px; font-weight: 700; margin-top: 4px;
+    font-size: 28px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
   }
-  .ml-color-1 { color: #5fb3b3; }
-  .ml-color-2 { color: #62a0ea; }
-  .ml-color-3 { color: #ffa657; }
-  .ml-color-4 { color: #f0883e; }
-  .ml-color-5 { color: #f85149; }
-  .event-card .meta { color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .ml-color-1 { color: var(--cyan); }
+  .ml-color-2 { color: var(--blue); }
+  .ml-color-3 { color: var(--amber); }
+  .ml-color-4 { color: #ff6600; }
+  .ml-color-5 { color: var(--red); }
+  .event-card .meta-grid {
+    display: grid; grid-template-columns: auto 1fr;
+    gap: 2px 12px;
+    font-size: 11px;
+    margin-top: 6px;
+  }
+  .event-card .meta-grid .key { color: var(--muted-bright); text-transform: uppercase; font-size: 9px; letter-spacing: 0.05em; }
+  .event-card .meta-grid .val { color: var(--white); font-variant-numeric: tabular-nums; }
 
-  .well-list { display: flex; flex-direction: column; gap: 8px; }
-  .well-card {
-    background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 6px; padding: 10px 12px;
+  /* ──────────────── Attribution summary ──────────────── */
+  #attribution-summary {
+    border: 1px solid var(--amber);
+    background: linear-gradient(180deg, rgba(255, 153, 0, 0.08), transparent);
+    margin: 8px 10px;
+    padding: 0;
   }
-  .well-card .header {
-    display: flex; justify-content: space-between; align-items: baseline;
+  #attribution-summary .header-bar {
+    background: var(--amber); color: var(--bg);
+    padding: 2px 8px;
+    font-size: 9px; font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  #attribution-summary .body { padding: 8px 10px; }
+  #attribution-summary .total {
+    font-size: 18px; font-weight: 700;
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
     margin-bottom: 6px;
   }
-  .well-card .api {
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 12px; color: var(--text); font-weight: 600;
+  #attribution-summary .total .unit { font-size: 11px; color: var(--muted-bright); margin-left: 4px; font-weight: 400; }
+  #attribution-summary .top-line {
+    font-size: 11px; color: var(--white-dim); margin-bottom: 3px;
+    display: flex; justify-content: space-between;
   }
-  .well-card .distance { color: var(--accent); font-size: 11px; }
-  .well-card .formation {
-    display: inline-block; padding: 2px 6px; border-radius: 3px;
-    font-size: 10px; font-weight: 600; margin-bottom: 6px;
+  #attribution-summary .top-line .key { color: var(--muted-bright); text-transform: uppercase; font-size: 9px; letter-spacing: 0.05em; }
+  #attribution-summary .top-line .val { color: var(--white); font-variant-numeric: tabular-nums; }
+  #attribution-summary .top-line .val strong { color: var(--cyan); }
+  #attribution-summary .disclaimer {
+    margin-top: 8px; padding-top: 6px;
+    border-top: 1px dashed var(--border);
+    font-size: 9px; color: var(--muted); line-height: 1.4;
   }
-  .formation-SAN-ANDRES   { background: #1f4d8a; color: #cfe1f5; }
-  .formation-ELLENBURGER  { background: #6b1e1e; color: #f5c8c8; }
-  .formation-DEVONIAN     { background: #5a4a1d; color: #f0deaa; }
-  .formation-CLEAR-FORK   { background: #1d5a3c; color: #aef0c8; }
-  .formation-GLORIETA     { background: #5a1d4a; color: #f0aade; }
-  .formation-GRAYBURG     { background: #4a3a1d; color: #e0c4a0; }
-  .formation-OTHER        { background: #3a3a3a; color: #c8c8c8; }
+  #attribution-summary .disclaimer a { color: var(--cyan); text-decoration: none; }
+  #attribution-summary .disclaimer a:hover { text-decoration: underline; color: var(--white); }
 
-  .well-card .features { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11px; }
-  .well-card .features .label { color: var(--muted); }
-  .well-card .features .val { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
-
-  /* Per-well attribution row */
-  .well-card .attribution {
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border);
+  /* ──────────────── Well cards ──────────────── */
+  #well-list {
+    padding: 0 10px 10px;
   }
-  .well-card .attr-label {
-    font-size: 10px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+  .well-list { display: flex; flex-direction: column; gap: 2px; }
+  .well-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--amber-dim);
+    padding: 6px 9px;
+    transition: border-left-color 0.1s;
+  }
+  .well-card:hover { border-left-color: var(--amber); background: var(--panel-2); }
+  .well-card.rank-1 { border-left-color: var(--red); }
+  .well-card.rank-2 { border-left-color: #ff6600; }
+  .well-card.rank-3 { border-left-color: var(--amber); }
+
+  .well-card .well-header {
+    display: flex; justify-content: space-between; align-items: baseline;
     margin-bottom: 4px;
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
+  }
+  .well-card .api {
+    font-size: 11px; color: var(--white); font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .well-card .api .rank-num {
+    color: var(--amber); font-weight: 700; margin-right: 6px;
+  }
+  .well-card .distance {
+    color: var(--cyan); font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .well-card .formation {
+    display: inline-block; padding: 1px 6px;
+    font-size: 9px; font-weight: 700;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    margin-bottom: 4px;
+    border: 1px solid;
+  }
+  .formation-SAN-ANDRES   { color: var(--blue);  border-color: var(--blue); }
+  .formation-ELLENBURGER  { color: var(--red);   border-color: var(--red); }
+  .formation-DEVONIAN     { color: var(--amber); border-color: var(--amber); }
+  .formation-DEVONIAN-31  { color: var(--amber); border-color: var(--amber); }
+  .formation-CLEAR-FORK   { color: var(--green); border-color: var(--green); }
+  .formation-CLEARFORK    { color: var(--green); border-color: var(--green); }
+  .formation-GLORIETA     { color: var(--magenta); border-color: var(--magenta); }
+  .formation-GRAYBURG     { color: var(--yellow); border-color: var(--yellow); }
+  .formation-OTHER        { color: var(--muted-bright); border-color: var(--muted); }
+  .formation-UNKNOWN      { color: var(--muted-bright); border-color: var(--muted); }
+
+  .well-card .features {
+    display: grid; grid-template-columns: auto 1fr auto 1fr;
+    gap: 1px 8px; font-size: 10px;
+    border-top: 1px dashed var(--border);
+    border-bottom: 1px dashed var(--border);
+    padding: 4px 0; margin: 4px 0;
+  }
+  .well-card .features .label {
+    color: var(--muted-bright);
+    text-transform: uppercase;
+    font-size: 9px;
+    letter-spacing: 0.03em;
+  }
+  .well-card .features .val {
+    color: var(--white-dim); text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .well-card .attribution { margin-top: 4px; }
+  .well-card .attr-label {
+    font-size: 9px; color: var(--muted-bright);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin-bottom: 3px;
+    display: flex; justify-content: space-between; align-items: baseline;
   }
   .well-card .attr-label .share-pct {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--accent);
-    text-transform: none;
-    letter-spacing: normal;
+    font-size: 14px; font-weight: 700;
+    color: var(--amber);
+    text-transform: none; letter-spacing: normal;
+    font-variant-numeric: tabular-nums;
   }
   .well-card .attr-bar {
-    height: 6px;
-    background: #1a1f28;
-    border-radius: 3px;
-    overflow: hidden;
-    margin-bottom: 4px;
+    height: 4px;
+    background: var(--panel-3);
+    border: 1px solid var(--border);
+    overflow: hidden; margin-bottom: 4px;
   }
   .well-card .attr-bar .fill {
     height: 100%;
-    background: linear-gradient(90deg, #58a6ff, #f0883e, #f85149);
+    background: linear-gradient(90deg, var(--amber-dim), var(--amber), var(--red));
   }
   .well-card .attr-detail {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px;
+    display: grid; grid-template-columns: auto 1fr auto 1fr;
+    gap: 1px 8px;
     font-size: 10px;
   }
-  .well-card .attr-detail .label { color: var(--muted); }
-  .well-card .attr-detail .val { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
-  .well-card .attr-detail .pn-high { color: var(--warn); font-weight: 600; }
-  .well-card .attr-detail .pn-very-high { color: var(--danger); font-weight: 600; }
-  .well-card .neg-contribution { color: var(--good); font-style: italic; }
+  .well-card .attr-detail .label { color: var(--muted-bright); text-transform: uppercase; font-size: 9px; letter-spacing: 0.03em; }
+  .well-card .attr-detail .val { color: var(--white); text-align: right; font-variant-numeric: tabular-nums; }
+  .well-card .attr-detail .pn-high { color: var(--yellow); font-weight: 700; }
+  .well-card .attr-detail .pn-very-high { color: var(--red); font-weight: 700; }
+  .well-card .neg-contribution { color: var(--green); }
+  .well-card .pos-contribution { color: var(--red); }
 
-  /* Top-of-sidebar attribution summary card */
-  #attribution-summary {
-    background: linear-gradient(135deg, rgba(88, 166, 255, 0.1), rgba(240, 136, 62, 0.06));
-    border: 1px solid var(--accent); border-radius: 6px;
-    padding: 12px; margin-bottom: 16px;
-  }
-  #attribution-summary h3 {
-    margin: 0 0 8px 0; font-size: 11px; color: var(--accent);
-    text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  #attribution-summary .total {
-    font-size: 18px; font-weight: 700; margin-bottom: 6px;
-  }
-  #attribution-summary .top-line {
-    font-size: 11px; color: var(--text); margin-bottom: 4px;
-  }
-  #attribution-summary .top-line strong { color: var(--accent); }
-  #attribution-summary .disclaimer {
-    margin-top: 10px; padding-top: 8px;
-    border-top: 1px solid var(--border);
-    font-size: 9px; color: var(--muted); line-height: 1.4;
-  }
-  #attribution-summary .disclaimer a { color: var(--accent); }
-
+  /* ──────────────── TMLE context ──────────────── */
   #tmle-context {
-    background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 6px; padding: 10px 12px; margin-top: 16px;
-    font-size: 11px;
+    margin: 8px 10px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 0;
   }
-  #tmle-context h3 { margin: 0 0 6px 0; font-size: 11px; color: var(--muted);
-                     text-transform: uppercase; letter-spacing: 0.05em; }
-  #tmle-context .row { display: flex; justify-content: space-between; padding: 2px 0; }
-  #tmle-context .label { color: var(--muted); }
-  #tmle-context .val { color: var(--text); font-variant-numeric: tabular-nums; }
+  #tmle-context .header-bar {
+    background: var(--panel-2);
+    color: var(--amber);
+    padding: 2px 8px;
+    font-size: 9px; font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between;
+  }
+  #tmle-context .header-bar .right { color: var(--white-dim); font-weight: 400; }
+  #tmle-context .body { padding: 6px 10px; }
+  #tmle-context .row {
+    display: flex; justify-content: space-between;
+    padding: 1px 0; font-size: 10px;
+  }
+  #tmle-context .label { color: var(--muted-bright); text-transform: uppercase; font-size: 9px; letter-spacing: 0.03em; }
+  #tmle-context .val { color: var(--white); font-variant-numeric: tabular-nums; }
 
-  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
-  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  /* ──────────────── Bottom status ticker ──────────────── */
+  #ticker {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 22px;
+    background: var(--bg);
+    border-top: 1px solid var(--amber);
+    color: var(--amber);
+    font-size: 10px; font-weight: 600;
+    display: flex; align-items: center;
+    padding: 0 10px;
+    overflow: hidden;
+    z-index: 999;
+  }
+  #ticker .seg {
+    display: inline-flex; align-items: center;
+    gap: 6px;
+    padding-right: 14px;
+    border-right: 1px solid var(--border);
+    margin-right: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  #ticker .seg:last-child { border-right: none; }
+  #ticker .seg .key { color: var(--muted-bright); }
+  #ticker .seg .val { color: var(--amber); font-weight: 700; font-variant-numeric: tabular-nums; }
+  #ticker .seg .val.green { color: var(--green); }
+  #ticker .seg .val.red { color: var(--red); }
+  #ticker .pulse {
+    width: 6px; height: 6px;
+    background: var(--green); display: inline-block;
+    margin-right: 4px;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--green); }
+    50%      { opacity: 0.3; box-shadow: 0 0 0 transparent; }
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>Induced Seismicity TMLE Dashboard</h1>
-  <div class="meta">
-    <span id="loaded-meta">Loading…</span>
+  <div class="brand">
+    <span class="ticker">SEIS</span><span class="go">GO</span>
+    <span class="pipe">|</span>
+    <span style="color:var(--white)">PERMIAN BSN</span>
   </div>
-  <div class="meta" style="margin-left:auto">
-    <a href="/methodology" target="_blank" style="color:var(--accent); text-decoration:none; margin-right:12px;">📖 Methodology</a>
-    Project Geminae • TMLE rebuild
+  <nav>
+    <a href="/" class="fkey active"><span class="label">F1</span> MAP</a>
+    <a href="/methodology" target="_blank" class="fkey"><span class="label">F2</span> METH</a>
+    <a href="/docs" target="_blank" class="fkey"><span class="label">F3</span> API</a>
+    <a href="https://github.com/Project-Geminae/induced-seismicity/tree/tmle-rebuild" target="_blank" class="fkey"><span class="label">F4</span> SRC</a>
+  </nav>
+  <div class="right">
+    <span><span class="key">PROJ</span> GEMINAE</span>
+    <span><span class="key">BRANCH</span> tmle-rebuild</span>
+    <span class="live-clock" id="live-clock">--:--:-- UTC</span>
   </div>
 </header>
 
 <main>
   <div id="map-container">
     <div id="controls">
-      <div class="row">
-        <label>Radius (km): <span class="value" id="radius-value">7</span></label>
-        <input type="range" id="radius-slider" min="1" max="20" step="1" value="7" />
+      <div class="header-bar">
+        <span>FILTERS</span>
+        <span>F5</span>
       </div>
-      <div class="row">
-        <label>Min magnitude (ML): <span class="value" id="ml-value">2.0</span></label>
-        <input type="range" id="ml-slider" min="1.0" max="5.5" step="0.1" value="2.0" />
-      </div>
-      <div class="row">
-        <label>Date range (year):</label>
-        <div style="display:flex; gap:4px; align-items:center;">
-          <input type="number" id="year-from" min="2017" max="2025" value="2017" />
-          <span style="color:var(--muted)">→</span>
-          <input type="number" id="year-to"   min="2017" max="2025" value="2025" />
+      <div class="body">
+        <div class="row">
+          <label>RADIUS [KM] <span class="value" id="radius-value">7</span></label>
+          <input type="range" id="radius-slider" min="1" max="20" step="1" value="7" />
         </div>
-      </div>
-      <div class="row" style="border-top:1px solid var(--border); padding-top:6px;">
-        <div class="legend-item"><span class="legend-dot" style="background:#5fb3b3"></span>ML 1–2</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#62a0ea"></span>ML 2–3</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#ffa657"></span>ML 3–4</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#f0883e"></span>ML 4–5</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#f85149"></span>ML ≥ 5</div>
+        <div class="row">
+          <label>MIN ML <span class="value" id="ml-value">2.0</span></label>
+          <input type="range" id="ml-slider" min="1.0" max="5.5" step="0.1" value="2.0" />
+        </div>
+        <div class="row">
+          <label>YEAR RANGE</label>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <input type="number" id="year-from" min="2017" max="2025" value="2017" />
+            <span style="color:var(--muted-bright)">→</span>
+            <input type="number" id="year-to"   min="2017" max="2025" value="2025" />
+          </div>
+        </div>
+        <div class="legend-row">
+          <div class="legend-item"><span class="legend-dot" style="background:#00ddff"></span>1–2</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#4499ff"></span>2–3</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#ff9900"></span>3–4</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#ff6600"></span>4–5</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#ff3030"></span>≥5</div>
+        </div>
       </div>
     </div>
     <div id="map"></div>
   </div>
 
   <aside id="sidebar">
-    <h2>Selected Event</h2>
-    <div id="event-detail" class="empty">Click an event on the map.</div>
+    <div class="panel-section">
+      <div class="panel-header"><span>EVENT DETAIL</span><span class="meta">[F6]</span></div>
+      <div id="event-detail" class="panel-body empty">
+        <span class="blink">▎</span> AWAITING EVENT SELECTION
+      </div>
+    </div>
 
     <div id="attribution-summary" style="display:none"></div>
 
-    <h2 style="margin-top:24px">Wells within radius</h2>
-    <div id="well-list" class="empty">—</div>
+    <div class="panel-section">
+      <div class="panel-header"><span>WELL ATTRIBUTION</span><span class="meta" id="well-list-meta">[F7]</span></div>
+      <div id="well-list" class="panel-body empty">—</div>
+    </div>
 
     <div id="tmle-context" style="display:none">
-      <h3>TMLE context @ <span id="tmle-radius">7</span> km</h3>
-      <div class="row">
-        <span class="label">Total effect (p90 vs p10)</span>
-        <span class="val" id="tmle-te">—</span>
+      <div class="header-bar">
+        <span>TMLE POPULATION CONTEXT @ <span id="tmle-radius">7</span> KM</span>
+        <span class="right">[F8]</span>
       </div>
-      <div class="row">
-        <span class="label">Direct (NDE)</span>
-        <span class="val" id="tmle-nde">—</span>
-      </div>
-      <div class="row">
-        <span class="label">Indirect (NIE)</span>
-        <span class="val" id="tmle-nie">—</span>
-      </div>
-      <div class="row">
-        <span class="label">% pressure-mediated</span>
-        <span class="val" id="tmle-pct">—</span>
-      </div>
-      <div class="row">
-        <span class="label">E[Y | a=1e7 BBL]</span>
-        <span class="val" id="tmle-dose">—</span>
+      <div class="body">
+        <div class="row">
+          <span class="label">TE (P90 vs P10)</span>
+          <span class="val" id="tmle-te">—</span>
+        </div>
+        <div class="row">
+          <span class="label">DIRECT (NDE)</span>
+          <span class="val" id="tmle-nde">—</span>
+        </div>
+        <div class="row">
+          <span class="label">INDIRECT (NIE)</span>
+          <span class="val" id="tmle-nie">—</span>
+        </div>
+        <div class="row">
+          <span class="label">% MEDIATED</span>
+          <span class="val" id="tmle-pct">—</span>
+        </div>
+        <div class="row">
+          <span class="label">E[Y | A=1E7 BBL]</span>
+          <span class="val" id="tmle-dose">—</span>
+        </div>
       </div>
     </div>
   </aside>
 </main>
+
+<div id="ticker">
+  <span class="seg">
+    <span class="pulse"></span>
+    <span class="key">LIVE</span>
+  </span>
+  <span class="seg">
+    <span class="key">EVT</span> <span class="val" id="tk-evt">—</span>
+  </span>
+  <span class="seg">
+    <span class="key">WELL</span> <span class="val" id="tk-well">687</span>
+  </span>
+  <span class="seg">
+    <span class="key">RAD</span> <span class="val" id="tk-rad">7KM</span>
+  </span>
+  <span class="seg">
+    <span class="key">MIN ML</span> <span class="val" id="tk-mlmin">2.0</span>
+  </span>
+  <span class="seg">
+    <span class="key">SEL</span> <span class="val" id="tk-sel">—</span>
+  </span>
+  <span class="seg" style="margin-left:auto; border-right:none">
+    <span class="key">TMLE</span> <span class="val green">5-FOLD · 200 BOOT</span>
+  </span>
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
@@ -412,10 +747,7 @@
       marker.addTo(state.eventLayer);
     }
     state.eventLayer.addTo(map);
-    document.getElementById("loaded-meta").innerHTML =
-      `<strong>${state.events.length}</strong> events visible &middot; ` +
-      `radius=<strong>${state.radius} km</strong> &middot; ` +
-      `min ML=<strong>${state.minML.toFixed(1)}</strong>`;
+    updateTicker();
   }
 
   // ──────────────────── Render: selected event sidebar ─────────
@@ -479,6 +811,7 @@
     renderAttributionSummary(attribution);
     renderWells(data);
     renderTmleContext(tmle);
+    updateTicker();
   }
 
   function renderAttributionSummary(attribution) {
@@ -491,59 +824,66 @@
     const top = a.top_contributor;
     el.style.display = "block";
     el.innerHTML = `
-      <h3>Per-well attribution (in-model g-computation)</h3>
-      <div class="total">
-        Σ contribution = <span class="${a.positive_total_ml > 0 ? "ml-color-3" : ""}">${fmtML(a.positive_total_ml)} ML</span>
-      </div>
-      <div class="top-line">
-        Top contributor: ${top ? `<strong>API ${top.api}</strong> (${(top.share * 100).toFixed(0)}%, PN ${top.pn.toFixed(2)})` : "—"}
-      </div>
-      <div class="top-line">
-        Wells with PN ≥ 0.5: <strong>${a.n_wells_with_pn_gt_50}</strong> of ${attribution.n_wells}
-      </div>
-      <div class="disclaimer">
-        ${attribution.disclaimer}
-        <a href="/methodology" target="_blank">Read more →</a>
+      <div class="header-bar">PER-WELL ATTRIBUTION · IN-MODEL G-COMPUTATION</div>
+      <div class="body">
+        <div class="total">
+          Σ ${fmtML(a.positive_total_ml)}<span class="unit">ML  (positive contributors)</span>
+        </div>
+        <div class="top-line">
+          <span class="key">TOP</span>
+          <span class="val">${top ? `API <strong>${top.api}</strong>  ${(top.share * 100).toFixed(0)}%  PN ${top.pn.toFixed(2)}` : "—"}</span>
+        </div>
+        <div class="top-line">
+          <span class="key">PN ≥ 0.50</span>
+          <span class="val"><strong>${a.n_wells_with_pn_gt_50}</strong> / ${attribution.n_wells}</span>
+        </div>
+        <div class="disclaimer">
+          ${attribution.disclaimer}
+          <a href="/methodology" target="_blank">[F2] METH →</a>
+        </div>
       </div>
     `;
   }
 
   function renderWells(data) {
     const container = document.getElementById("well-list");
+    const meta      = document.getElementById("well-list-meta");
 
-    // Draw well dots on the map
+    // Draw well dots on the map (amber, square-ish)
     if (state.wellLayer) map.removeLayer(state.wellLayer);
     state.wellLayer = L.layerGroup();
     for (const w of data.wells) {
       L.circleMarker([w.lat, w.lon], {
         radius: 4,
-        fillColor: "#58a6ff",
-        color: "#fff",
-        weight: 0.5,
-        fillOpacity: 0.8,
+        fillColor: "#ff9900",
+        color: "#000",
+        weight: 1,
+        fillOpacity: 0.9,
       }).bindTooltip(
         `API ${w.api}<br>${w.distance_km.toFixed(2)} km<br>` +
         `${w.panel.formation || "—"}`,
-        { sticky: true, opacity: 0.95 }
+        { sticky: true, opacity: 1 }
       ).addTo(state.wellLayer);
     }
     state.wellLayer.addTo(map);
 
     if (data.n_wells === 0) {
-      container.innerHTML = `<div class="empty">No wells within ${state.radius} km.</div>`;
+      container.innerHTML = `<div class="empty"><span class="blink">▎</span> NO WELLS WITHIN ${state.radius} KM</div>`;
+      meta.textContent = "[F7] 0 WELLS";
+      container.classList.add("empty");
       return;
     }
 
     container.classList.remove("empty");
+    meta.textContent = `[F7] ${data.n_wells} WELLS · BY CONTRIBUTION ↓`;
     container.innerHTML =
-      `<div style="color:var(--muted); font-size:11px; margin-bottom:8px;">
-         ${data.n_wells} well${data.n_wells === 1 ? "" : "s"} sorted by distance
-       </div>` +
       `<div class="well-list">` +
-      data.wells.map(w => {
+      data.wells.map((w, i) => {
         const p = w.panel || {};
         const formClass = "formation-" + (p.formation || "OTHER").replace(/\s+/g, "-");
         const attr = (data._attrByApi && data._attrByApi[w.api]) || null;
+        const rankClass = i < 3 ? `rank-${i + 1}` : "";
+        const rankNum = (i + 1).toString().padStart(2, "0");
         let attrBlock = "";
         if (attr) {
           const sharePct = (attr.share * 100);
@@ -552,61 +892,61 @@
           attrBlock = `
             <div class="attribution">
               <div class="attr-label">
-                <span>Attribution share</span>
+                <span>SHARE</span>
                 <span class="share-pct">${sharePct.toFixed(0)}%</span>
               </div>
               <div class="attr-bar">
                 <div class="fill" style="width:${Math.min(100, sharePct).toFixed(1)}%"></div>
               </div>
               <div class="attr-detail">
-                <span class="label">Contribution</span>
-                <span class="val ${isNeg ? 'neg-contribution' : ''}">${isNeg ? '+' : ''}${fmtML(attr.contribution_ml)} ML</span>
-                <span class="label">Q (factual)</span>
-                <span class="val">${fmtML(attr.q_factual)} ML</span>
-                <span class="label">Q (cum_vol = 0)</span>
-                <span class="val">${fmtML(attr.q_counterfactual)} ML</span>
-                <span class="label">PN (proxy)</span>
+                <span class="label">CONTRIB</span>
+                <span class="val ${isNeg ? 'neg-contribution' : 'pos-contribution'}">${isNeg ? '+' : ''}${fmtML(attr.contribution_ml)} ML</span>
+                <span class="label">PN PROXY</span>
                 <span class="val ${pnClass}">${attr.pn.toFixed(2)}</span>
+                <span class="label">Q FACT</span>
+                <span class="val">${fmtML(attr.q_factual)}</span>
+                <span class="label">Q CF</span>
+                <span class="val">${fmtML(attr.q_counterfactual)}</span>
               </div>
             </div>
           `;
         }
         return `
-          <div class="well-card">
-            <div class="header">
-              <span class="api">API ${w.api}</span>
-              <span class="distance">${w.distance_km.toFixed(2)} km</span>
+          <div class="well-card ${rankClass}">
+            <div class="well-header">
+              <span class="api"><span class="rank-num">#${rankNum}</span>API ${w.api}</span>
+              <span class="distance">${w.distance_km.toFixed(2)} KM</span>
             </div>
-            <span class="formation ${formClass}">${p.formation || "UNKNOWN"}</span>
+            <span class="formation ${formClass}">${(p.formation || "UNKNOWN").toUpperCase()}</span>
             <div class="features">
-              <span class="label">Perf depth</span>
-              <span class="val">${fmtFt(p.perf_depth_ft)} ft</span>
-              <span class="label">Days active</span>
+              <span class="label">DEPTH</span>
+              <span class="val">${fmtFt(p.perf_depth_ft)} FT</span>
+              <span class="label">DAYS ON</span>
               <span class="val">${fmtDays(p.days_active)}</span>
 
-              <span class="label">Vol same-day</span>
-              <span class="val">${fmtVol(p["Volume Injected (BBLs)"])} BBL</span>
-              <span class="label">PSIG same-day</span>
+              <span class="label">VOL D</span>
+              <span class="val">${fmtVol(p["Volume Injected (BBLs)"])}</span>
+              <span class="label">PSIG D</span>
               <span class="val">${fmtPsi(p["Injection Pressure Average PSIG"])}</span>
 
-              <span class="label">cum 30d</span>
-              <span class="val">${fmtVol(p.cum_vol_30d_BBL)} BBL</span>
-              <span class="label">cum 90d</span>
-              <span class="val">${fmtVol(p.cum_vol_90d_BBL)} BBL</span>
+              <span class="label">CUM 30D</span>
+              <span class="val">${fmtVol(p.cum_vol_30d_BBL)}</span>
+              <span class="label">CUM 90D</span>
+              <span class="val">${fmtVol(p.cum_vol_90d_BBL)}</span>
 
-              <span class="label">cum 180d</span>
-              <span class="val">${fmtVol(p.cum_vol_180d_BBL)} BBL</span>
-              <span class="label">cum 365d</span>
-              <span class="val">${fmtVol(p.cum_vol_365d_BBL)} BBL</span>
+              <span class="label">CUM 180D</span>
+              <span class="val">${fmtVol(p.cum_vol_180d_BBL)}</span>
+              <span class="label">CUM 365D</span>
+              <span class="val">${fmtVol(p.cum_vol_365d_BBL)}</span>
 
-              <span class="label">vw PSIG 30d</span>
+              <span class="label">PSI VW 30D</span>
               <span class="val">${fmtPsi(p.vw_avg_psig_30d)}</span>
-              <span class="label">vw PSIG 365d</span>
+              <span class="label">PSI VW 365D</span>
               <span class="val">${fmtPsi(p.vw_avg_psig_365d)}</span>
 
-              <span class="label">BHP 30d (psi)</span>
+              <span class="label">BHP 30D</span>
               <span class="val">${fmtPsi(p.bhp_vw_avg_30d)}</span>
-              <span class="label">BHP 365d (psi)</span>
+              <span class="label">BHP 365D</span>
               <span class="val">${fmtPsi(p.bhp_vw_avg_365d)}</span>
             </div>
             ${attrBlock}
@@ -628,6 +968,24 @@
     document.getElementById("tmle-dose").textContent = fmtSci(tmle.dose_at_1e7);
   }
 
+  // ──────────────────── Live clock + status ticker ─────────────
+  function pad(n) { return n.toString().padStart(2, "0"); }
+  function updateClock() {
+    const d = new Date();
+    const t = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())} UTC`;
+    const el = document.getElementById("live-clock");
+    if (el) el.textContent = t;
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  function updateTicker() {
+    document.getElementById("tk-evt").textContent   = state.events ? state.events.length.toLocaleString() : "—";
+    document.getElementById("tk-rad").textContent   = state.radius + "KM";
+    document.getElementById("tk-mlmin").textContent = state.minML.toFixed(1);
+    document.getElementById("tk-sel").textContent   = state.selected ? state.selected.id : "—";
+  }
+
   // ──────────────────── Wire up controls ───────────────────────
   const radiusSlider = document.getElementById("radius-slider");
   const radiusValue  = document.getElementById("radius-value");
@@ -639,11 +997,13 @@
   radiusSlider.addEventListener("input", (e) => {
     state.radius = parseInt(e.target.value, 10);
     radiusValue.textContent = state.radius;
+    updateTicker();
     if (state.selected) selectEvent(state.selected);
   });
   mlSlider.addEventListener("input", (e) => {
     state.minML = parseFloat(e.target.value);
     mlValue.textContent = state.minML.toFixed(1);
+    updateTicker();
   });
   mlSlider.addEventListener("change", async () => {
     state.events = await fetchEvents();
@@ -665,11 +1025,15 @@
     try {
       const health = await fetchHealth();
       console.log("Dashboard health:", health);
+      // n_wells isn't in /api/health; the panel size is too misleading.
+      // Leave the static "687" we hardcoded in the ticker for now.
       state.events = await fetchEvents();
       renderEvents();
+      updateTicker();
     } catch (e) {
       console.error("Boot failed:", e);
-      document.getElementById("loaded-meta").textContent = "Error loading events.";
+      const el = document.getElementById("event-detail");
+      if (el) el.innerHTML = `<span style="color:var(--red)">▎ ERROR LOADING DATA</span>`;
     }
   })();
 </script>

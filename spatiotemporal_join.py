@@ -38,7 +38,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -221,6 +223,32 @@ def write_event_index(events: pd.DataFrame, all_links: pd.DataFrame) -> None:
     log.info("✅  Wrote %s (%d events)", EVENT_INDEX_JSON, len(index))
 
 
+def _process_one_radius(args: dict) -> dict:
+    """Worker function for parallel-radius processing.
+
+    Each worker re-loads the panel and events (BallTree isn't picklable)
+    and processes a single radius. The ~3 sec data-load overhead is amortised
+    across the radii since all workers load in parallel.
+    """
+    R           = args["R"]
+    links_only  = args["links_only"]
+
+    panel, events = load_inputs()
+    wells, tree = build_well_tree(panel)
+    out, links = join_one_radius(panel, events, wells, tree, R)
+
+    if not links_only:
+        outfile = OUT_FMT.format(R=R)
+        out.to_csv(outfile, index=False)
+        log.info("💾  Wrote %s (%d rows × %d cols)", outfile, *out.shape)
+
+    links_file = LINKS_FMT.format(R=R)
+    links.to_csv(links_file, index=False)
+    log.info("💾  Wrote %s (%d rows)", links_file, len(links))
+
+    return {"R": R, "links_file": links_file, "n_links": len(links)}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -231,29 +259,60 @@ def main() -> None:
              "+ event_index.json. Useful for re-running just the dashboard "
              "data without paying the cost of the panel rewrite.",
     )
+    parser.add_argument(
+        "--workers", type=int, default=1,
+        help="Parallel workers for per-radius processing. On minitim use "
+             "--workers 16. Default 1 (sequential, for Mac).",
+    )
     args = parser.parse_args()
 
-    panel, events = load_inputs()
-    wells, tree = build_well_tree(panel)
-    log.info("Built BallTree on %d unique well locations", len(wells))
+    if args.workers <= 1:
+        # ──── Sequential path (original behavior, for Mac) ────
+        panel, events = load_inputs()
+        wells, tree = build_well_tree(panel)
+        log.info("Built BallTree on %d unique well locations", len(wells))
 
-    all_links: list[pd.DataFrame] = []
+        all_links: list[pd.DataFrame] = []
 
-    for R in RADII_KM:
-        out, links = join_one_radius(panel, events, wells, tree, R)
+        for R in RADII_KM:
+            out, links = join_one_radius(panel, events, wells, tree, R)
 
-        if not args.links_only:
-            outfile = OUT_FMT.format(R=R)
-            out.to_csv(outfile, index=False)
-            log.info("💾  Wrote %s (%d rows × %d cols)", outfile, *out.shape)
+            if not args.links_only:
+                outfile = OUT_FMT.format(R=R)
+                out.to_csv(outfile, index=False)
+                log.info("💾  Wrote %s (%d rows × %d cols)", outfile, *out.shape)
 
-        # Always write the per-radius links CSV
-        links_file = LINKS_FMT.format(R=R)
-        links.to_csv(links_file, index=False)
-        log.info("💾  Wrote %s (%d rows)", links_file, len(links))
-        all_links.append(links)
+            links_file = LINKS_FMT.format(R=R)
+            links.to_csv(links_file, index=False)
+            log.info("💾  Wrote %s (%d rows)", links_file, len(links))
+            all_links.append(links)
 
-    # Consolidated parquet across all radii — what the dashboard queries
+    else:
+        # ──── Parallel path (for minitim) ────
+        log.info("🚀  Parallel mode: %d workers for %d radii", args.workers, len(RADII_KM))
+        jobs = [{"R": R, "links_only": args.links_only} for R in RADII_KM]
+
+        all_links = []
+        with ProcessPoolExecutor(max_workers=args.workers) as pool:
+            futures = {pool.submit(_process_one_radius, j): j for j in jobs}
+            for fut in as_completed(futures):
+                try:
+                    res = fut.result()
+                    log.info("✓ R=%dkm complete (%d link rows)", res["R"], res["n_links"])
+                    # Re-read the per-radius link CSV for consolidation
+                    ldf = pd.read_csv(res["links_file"])
+                    all_links.append(ldf)
+                except Exception as e:
+                    job = futures[fut]
+                    log.error("✗ R=%dkm failed: %s", job["R"], e)
+
+    # ──── Consolidate links + event index (both paths) ────
+    # Re-load events for the event_index.json writer
+    if not EVENTS_FILE.exists():
+        sys.exit(f"❌  {EVENTS_FILE} not found")
+    events = pd.read_csv(EVENTS_FILE, low_memory=False)
+    events["Origin Date"] = pd.to_datetime(events["Origin Date"]).dt.normalize()
+
     if all_links:
         consolidated = pd.concat(all_links, ignore_index=True)
         log.info("Writing consolidated %s (%d rows)…", LINKS_PARQUET, len(consolidated))
@@ -261,12 +320,10 @@ def main() -> None:
             consolidated.to_parquet(LINKS_PARQUET, index=False, compression="snappy")
             log.info("✅  Wrote %s", LINKS_PARQUET)
         except Exception as e:
-            # Fall back to CSV if pyarrow isn't installed
             fallback = LINKS_PARQUET.with_suffix(".csv")
             log.warning("Parquet write failed (%s); falling back to %s", e, fallback)
             consolidated.to_csv(fallback, index=False)
 
-        # event_index.json for the dashboard map
         write_event_index(events, consolidated)
 
     log.info("✅  All radii complete")

@@ -78,7 +78,16 @@ logging.basicConfig(
 log = logging.getLogger("run_all")
 
 
-def run_one(script: str, description: str, continue_on_error: bool) -> tuple[bool, float]:
+# Scripts that support --workers N for per-radius parallelism
+_PARALLELIZABLE = {
+    "spatiotemporal_join.py",
+    "add_geoscience_to_panel.py",
+    "build_attribution_q.py",
+}
+
+
+def run_one(script: str, description: str, continue_on_error: bool,
+            parallel_radii: int = 1) -> tuple[bool, float]:
     """Run a single pipeline step. Returns (success, elapsed_seconds)."""
     if not Path(script).exists():
         log.error("✗  %s — script not found", script)
@@ -91,12 +100,13 @@ def run_one(script: str, description: str, continue_on_error: bool) -> tuple[boo
     log.info("   %s", description)
     log.info("=" * 70)
 
+    cmd = [sys.executable, "-u", script]
+    if parallel_radii > 1 and script in _PARALLELIZABLE:
+        cmd.extend(["--workers", str(parallel_radii)])
+        log.info("   (parallel: --workers %d)", parallel_radii)
+
     t0 = time.time()
-    proc = subprocess.run(
-        [sys.executable, "-u", script],
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
+    proc = subprocess.run(cmd, stdout=sys.stdout, stderr=sys.stderr)
     elapsed = time.time() - t0
 
     if proc.returncode != 0:
@@ -138,6 +148,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print the step list and exit",
     )
+    p.add_argument(
+        "--parallel-radii", type=int, default=1,
+        help="Parallel workers for per-radius steps (spatiotemporal_join, "
+             "add_geoscience_to_panel, build_attribution_q). On minitim "
+             "use --parallel-radii 16. Default 1 (Mac).",
+    )
     return p.parse_args()
 
 
@@ -166,7 +182,8 @@ def main() -> None:
     timings: list[tuple[int, str, bool, float]] = []
     for i in selected:
         script, description = STEPS[i]
-        ok, elapsed = run_one(script, description, args.continue_on_error)
+        ok, elapsed = run_one(script, description, args.continue_on_error,
+                              parallel_radii=args.parallel_radii)
         timings.append((i, script, ok, elapsed))
 
     pipeline_elapsed = time.time() - pipeline_t0
