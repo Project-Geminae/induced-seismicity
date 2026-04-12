@@ -98,14 +98,22 @@ class CausalForestBundle:
     def _to_X(self, well_rows: pd.DataFrame) -> np.ndarray:
         """Build the confounder design matrix from a DataFrame of well features."""
         df = well_rows.copy()
-        df["_form"] = np.where(
-            df[COL_FORMATION].isin(self.top_formations),
-            df[COL_FORMATION],
-            "OTHER",
-        )
-        for col in self.formation_cols:
-            label = col[len("form_"):]
-            df[col] = (df["_form"] == label).astype(float)
+        # If the model used formation one-hots (legacy), build them
+        if self.top_formations:
+            df["_form"] = np.where(
+                df[COL_FORMATION].isin(self.top_formations),
+                df[COL_FORMATION],
+                "OTHER",
+            )
+            for col in self.formation_cols:
+                label = col[len("form_"):]
+                df[col] = (df["_form"] == label).astype(float)
+        else:
+            # Depth-class proxy: compute from perf_depth_ft
+            depth = pd.to_numeric(df.get(COL_PERF_DEPTH_FT, 7000), errors="coerce").fillna(7000)
+            df["depth_shallow"] = (depth < 6000).astype(float)
+            df["depth_mid"]     = ((depth >= 6000) & (depth < 10000)).astype(float)
+            df["depth_deep"]    = (depth >= 10000).astype(float)
         for col in self.confounder_cols:
             if col not in df.columns:
                 df[col] = 0.0
@@ -177,12 +185,20 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> CausalForestBundle
     for c in [G_dep, G_age, G_fdist, G_fseg]:
         sub[c] = sub[c].fillna(sub[c].median())
 
-    # One-hot formation
-    top_forms = sub[COL_FORMATION].value_counts().head(TOP_K_FORMATIONS).index.tolist()
-    sub["_form"] = np.where(sub[COL_FORMATION].isin(top_forms), sub[COL_FORMATION], "OTHER")
-    form_dummies = pd.get_dummies(sub["_form"], prefix="form", drop_first=False, dtype=float)
-    formation_cols = list(form_dummies.columns)
-    sub = pd.concat([sub.drop(columns=["_form"]), form_dummies], axis=1)
+    # ── Depth-class proxy instead of self-reported formation ──
+    # The `Current Injection Formations` field is operator-reported and
+    # unreliable. Replace with a measured proxy: depth bins that capture
+    # the same physical distinction (shallow carbonate vs mid-depth vs
+    # basement-coupled) without depending on the formation label.
+    depth_med = sub[G_dep].median()
+    sub["depth_shallow"] = (sub[G_dep] < 6000).astype(float)     # < 6000 ft (SAN ANDRES / GRAYBURG class)
+    sub["depth_mid"]     = ((sub[G_dep] >= 6000) & (sub[G_dep] < 10000)).astype(float)  # 6000-10000 ft
+    sub["depth_deep"]    = (sub[G_dep] >= 10000).astype(float)    # > 10000 ft (ELLENBURGER / DEVONIAN class)
+    formation_cols = ["depth_shallow", "depth_mid", "depth_deep"]
+    top_forms = []  # no formation one-hots — using depth proxy instead
+    log.info("[%2dkm] using depth-class proxy: shallow=%d mid=%d deep=%d",
+             R, int(sub["depth_shallow"].sum()),
+             int(sub["depth_mid"].sum()), int(sub["depth_deep"].sum()))
 
     confounder_cols = [G_dep, G_age, G_fdist, G_fseg, *formation_cols]
 
