@@ -49,18 +49,13 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 from column_maps import (
     COL_API,
-    COL_FORMATION,
     COL_OUTCOME_MAX_ML,
+    COL_PERF_DEPTH_FT,
     confounder_columns,
     fault_segment_col,
     mediator_column,
     treatment_column,
 )
-
-
-# Top-K formations to one-hot encode. Wells in less common formations get
-# bucketed into "OTHER" so the design matrix doesn't explode.
-TOP_K_FORMATIONS = 6
 
 
 # ──────────────────── Data loading & cleaning ────────────────────
@@ -74,7 +69,7 @@ def load_panel(path: str, radius_km: int) -> pd.DataFrame:
     df = pd.read_csv(path, low_memory=False)
 
     required = [
-        COL_API, COL_OUTCOME_MAX_ML, COL_FORMATION,
+        COL_API, COL_OUTCOME_MAX_ML, COL_PERF_DEPTH_FT,
         treatment_column(30), treatment_column(90), treatment_column(180), treatment_column(365),
         mediator_column(30), mediator_column(90), mediator_column(180), mediator_column(365),
         *confounder_columns(radius_km),
@@ -94,15 +89,17 @@ def build_design_matrix(
     """Construct (data, W, P, S, confounder_cols, cluster_id).
 
     Drops rows with NaN treatment / mediator / outcome. Median-fills the
-    numeric confounders. One-hot encodes the formation column (top-K levels +
-    OTHER bucket).
+    numeric confounders. Uses depth-class proxy (shallow/mid/deep bins from
+    measured perf_depth_ft) instead of operator-reported formation labels.
     """
     W = treatment_column(window_days)
     P = mediator_column(window_days, use_bhp=use_bhp)
     S = COL_OUTCOME_MAX_ML
     base_confs = confounder_columns(radius_km)
 
-    sub = df[[COL_API, W, P, S, COL_FORMATION, *base_confs]].copy()
+    # COL_PERF_DEPTH_FT is already in base_confs; avoid duplicate columns
+    cols = list(dict.fromkeys([COL_API, W, P, S, *base_confs]))
+    sub = df[cols].copy()
     sub = sub.dropna(subset=[W, P, S])
 
     # Median-fill numeric confounders
@@ -110,14 +107,14 @@ def build_design_matrix(
         med = sub[c].median()
         sub[c] = sub[c].fillna(med)
 
-    # One-hot formation (top-K + OTHER)
-    top_forms = sub[COL_FORMATION].value_counts().head(TOP_K_FORMATIONS).index.tolist()
-    sub["_form"] = np.where(sub[COL_FORMATION].isin(top_forms), sub[COL_FORMATION], "OTHER")
-    form_dummies = pd.get_dummies(sub["_form"], prefix="form", drop_first=True, dtype=float)
-    sub = pd.concat([sub, form_dummies], axis=1)
-    sub = sub.drop(columns=[COL_FORMATION, "_form"])
+    # Depth-class proxy instead of operator-reported formation
+    # (formation labels are unreliable — operators self-report, RRC doesn't validate)
+    depth = sub[COL_PERF_DEPTH_FT].fillna(sub[COL_PERF_DEPTH_FT].median())
+    sub["depth_shallow"] = (depth < 6000).astype(float)
+    sub["depth_mid"]     = ((depth >= 6000) & (depth < 10000)).astype(float)
+    # drop_first=True equivalent: omit depth_deep (it's the reference category)
 
-    confounders = base_confs + list(form_dummies.columns)
+    confounders = base_confs + ["depth_shallow", "depth_mid"]
     cluster_id = sub[COL_API]
 
     return sub, W, P, S, confounders, cluster_id
@@ -509,13 +506,17 @@ def aggregate_panel_to_event_level(
     agg[G_dep] = safe_div(agg["_dep_v30"], agg[W30])
     agg[G_dep] = agg[G_dep].fillna(depth_med)
 
-    # Mode formation per cluster (vectorized via groupby)
-    formation_mode = (
-        panel.groupby(grp_cols, sort=False)["formation"]
-        .agg(lambda s: s.mode().iloc[0] if not s.mode().empty else "UNKNOWN")
-        .reset_index(name="formation")
-    )
-    agg = agg.merge(formation_mode, on=grp_cols, how="left")
+    # Formation label dropped — operator-reported and unreliable. The
+    # design matrix uses depth-class proxy from measured perf_depth_ft.
+    # If the panel has a "formation" column, carry it through for backward
+    # compatibility but it's not used by build_design_matrix().
+    if "formation" in panel.columns:
+        formation_mode = (
+            panel.groupby(grp_cols, sort=False)["formation"]
+            .agg(lambda s: s.mode().iloc[0] if not s.mode().empty else "UNKNOWN")
+            .reset_index(name="formation")
+        )
+        agg = agg.merge(formation_mode, on=grp_cols, how="left")
 
     # Cluster pseudo-id (used as the "API Number" for downstream cluster bootstrap)
     agg[COL_API] = (

@@ -70,13 +70,20 @@ COL_SAME_DAY_MAX = "Injection Pressure Max PSIG"
 
 
 def confounder_columns(radius_km: int) -> list[str]:
-    """Confounders G1..G5 used in the causal DAG.
+    """Confounders G1..G4 used in the causal DAG.
 
     G1 = Nearest fault distance (km)
     G2 = Fault segment count within radius
     G3 = Injection interval midpoint depth (ft)
     G4 = Days since well first injected
-    (G5 = Formation, handled separately as one-hot in the design matrix)
+
+    Note: formation was previously G5 (one-hot encoded from operator-reported
+    `Current Injection Formations`). Dropped because the RRC formation labels
+    are self-reported and unreliable. Replaced with a depth-class proxy
+    (shallow/mid/deep bins from measured perf_depth_ft) computed inside
+    causal_core.build_design_matrix(). The depth proxy captures the same
+    physical distinction (shallow carbonate vs basement-coupled) without
+    depending on potentially wrong labels.
     """
     return [
         COL_NEAREST_FAULT_KM,
