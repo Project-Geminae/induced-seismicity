@@ -640,6 +640,8 @@
     selected:  null,
     eventLayer: null,
     wellLayer:  null,
+    wellMarkers: {},    // {api: L.circleMarker} — for hover highlight
+    eventMarker: null,  // the currently-selected event marker (for hover pulse)
     radiusCircle: null,
   };
 
@@ -761,9 +763,9 @@
     if (state.radiusCircle) map.removeLayer(state.radiusCircle);
     state.radiusCircle = L.circle([ev.lat, ev.lon], {
       radius: state.radius * 1000,  // metres
-      color: "#58a6ff",
+      color: "#ff9900",
       weight: 1.5,
-      fillColor: "#58a6ff",
+      fillColor: "#ff9900",
       fillOpacity: 0.05,
       dashArray: "4 4",
     }).addTo(map);
@@ -849,12 +851,13 @@
     const container = document.getElementById("well-list");
     const meta      = document.getElementById("well-list-meta");
 
-    // Draw well dots on the map (amber, square-ish)
+    // Draw well dots on the map (amber) — tracked by API for hover highlight
     if (state.wellLayer) map.removeLayer(state.wellLayer);
     state.wellLayer = L.layerGroup();
+    state.wellMarkers = {};
     for (const w of data.wells) {
-      L.circleMarker([w.lat, w.lon], {
-        radius: 4,
+      const m = L.circleMarker([w.lat, w.lon], {
+        radius: 5,
         fillColor: "#ff9900",
         color: "#000",
         weight: 1,
@@ -863,7 +866,10 @@
         `API ${w.api}<br>${w.distance_km.toFixed(2)} km<br>` +
         `${w.panel.formation || "—"}`,
         { sticky: true, opacity: 1 }
-      ).addTo(state.wellLayer);
+      );
+      m._api = w.api;
+      m.addTo(state.wellLayer);
+      state.wellMarkers[w.api] = m;
     }
     state.wellLayer.addTo(map);
 
@@ -912,7 +918,9 @@
           `;
         }
         return `
-          <div class="well-card ${rankClass}">
+          <div class="well-card ${rankClass}" data-api="${w.api}"
+               onmouseenter="highlightWell(${w.api}, true)"
+               onmouseleave="highlightWell(${w.api}, false)">
             <div class="well-header">
               <span class="api"><span class="rank-num">#${rankNum}</span>API ${w.api}</span>
               <span class="distance">${w.distance_km.toFixed(2)} KM</span>
@@ -966,6 +974,41 @@
     document.getElementById("tmle-pct").textContent = tmle.pct_mediated == null ?
       "—" : tmle.pct_mediated.toFixed(1) + "%";
     document.getElementById("tmle-dose").textContent = fmtSci(tmle.dose_at_1e7);
+  }
+
+  // ──────────────────── Well hover highlight ───────────────────
+  function highlightWell(api, on) {
+    // Highlight the well marker on the map
+    const marker = state.wellMarkers[api];
+    if (marker) {
+      if (on) {
+        marker.setStyle({ radius: 12, fillColor: "#ffffff", color: "#ff9900", weight: 3, fillOpacity: 1 });
+        marker.bringToFront();
+        marker.openTooltip();
+      } else {
+        marker.setStyle({ radius: 5, fillColor: "#ff9900", color: "#000", weight: 1, fillOpacity: 0.9 });
+        marker.closeTooltip();
+      }
+    }
+    // Pulse the selected event marker
+    if (state.radiusCircle) {
+      if (on) {
+        state.radiusCircle.setStyle({ color: "#ffffff", fillColor: "#ffffff", fillOpacity: 0.08, weight: 2 });
+      } else {
+        state.radiusCircle.setStyle({ color: "#ff9900", fillColor: "#ff9900", fillOpacity: 0.05, weight: 1.5 });
+      }
+    }
+    // Highlight the card in the sidebar
+    const card = document.querySelector(`.well-card[data-api="${api}"]`);
+    if (card) {
+      if (on) {
+        card.style.borderLeftColor = "#ffffff";
+        card.style.background = "#1a1a1a";
+      } else {
+        card.style.borderLeftColor = "";
+        card.style.background = "";
+      }
+    }
   }
 
   // ──────────────────── Live clock + status ticker ─────────────
