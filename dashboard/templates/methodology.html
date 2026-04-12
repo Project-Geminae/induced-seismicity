@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Methodology — Induced Seismicity TMLE Dashboard</title>
+<style>
+  :root {
+    --bg: #0e1117;
+    --panel: #161b22;
+    --panel-2: #1f2630;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --warn: #f0883e;
+    --danger: #f85149;
+    --good: #56d364;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px; line-height: 1.6;
+  }
+  header {
+    padding: 12px 24px; background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px;
+  }
+  header a { color: var(--accent); text-decoration: none; }
+  main {
+    max-width: 820px; margin: 0 auto; padding: 28px 24px;
+  }
+  h1 { font-size: 22px; font-weight: 600; margin-top: 0; }
+  h2 { font-size: 17px; font-weight: 600; margin-top: 32px;
+       padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 14px; font-weight: 600; margin-top: 20px; color: var(--accent); }
+  p { margin: 10px 0; }
+  code, .var {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--panel-2); padding: 1px 6px; border-radius: 3px;
+    font-size: 12px; color: var(--text);
+  }
+  pre {
+    background: var(--panel-2); border: 1px solid var(--border);
+    padding: 12px; border-radius: 4px; overflow-x: auto;
+    font-size: 12px; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  .callout {
+    background: rgba(240, 136, 62, 0.08);
+    border-left: 3px solid var(--warn);
+    padding: 12px 16px; margin: 16px 0; border-radius: 0 4px 4px 0;
+  }
+  .callout.danger {
+    background: rgba(248, 81, 73, 0.08);
+    border-left-color: var(--danger);
+  }
+  .callout.good {
+    background: rgba(86, 211, 100, 0.08);
+    border-left-color: var(--good);
+  }
+  .estimand-table {
+    width: 100%; border-collapse: collapse; margin: 12px 0;
+  }
+  .estimand-table th, .estimand-table td {
+    border: 1px solid var(--border);
+    padding: 8px 10px; text-align: left; vertical-align: top;
+  }
+  .estimand-table th {
+    background: var(--panel-2); font-weight: 600; color: var(--accent);
+  }
+  .estimand-table .yes { color: var(--good); }
+  .estimand-table .partial { color: var(--warn); }
+  .estimand-table .no { color: var(--danger); }
+  ul { padding-left: 22px; }
+  li { margin: 4px 0; }
+  .toc {
+    background: var(--panel-2); border: 1px solid var(--border);
+    padding: 14px 20px; border-radius: 4px; margin: 18px 0;
+  }
+  .toc ul { margin: 6px 0; padding-left: 20px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/">← back to dashboard</a>
+  <span style="color:var(--muted)">Methodology</span>
+</header>
+
+<main>
+
+<h1>Per-event well attribution — methodology and disclaimers</h1>
+
+<p style="color:var(--muted); font-size:13px;">
+  Last updated 2026-04-11 • applies to the in-model g-computation displayed
+  in the per-well attribution sidebar of the main dashboard.
+</p>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ul>
+    <li><a href="#question">1. The question we're trying to answer</a></li>
+    <li><a href="#estimands">2. Causal estimands and which one we compute</a></li>
+    <li><a href="#what-we-compute">3. What the dashboard actually computes</a></li>
+    <li><a href="#assumptions">4. Assumptions and disclaimers</a></li>
+    <li><a href="#interpretation">5. How to read the per-well numbers</a></li>
+    <li><a href="#limits">6. Known limitations</a></li>
+    <li><a href="#references">7. References</a></li>
+  </ul>
+</div>
+
+<h2 id="question">1. The question we're trying to answer</h2>
+
+<p>
+A regulator looking at an induced seismic event in the Midland Basin wants
+a number that helps them act. The interesting actions are roughly:
+</p>
+
+<ol>
+  <li><strong>Deny new permits</strong> in problematic geology</li>
+  <li><strong>Cap volumes</strong> on existing wells</li>
+  <li><strong>Order shut-ins</strong> after a specific event</li>
+  <li><strong>Set risk-based monitoring thresholds</strong></li>
+</ol>
+
+<p>
+The dashboard's per-event interaction (click an event → see contributing
+wells) is targeted at action #3: <em>"given that this M3.4 just happened,
+which of these 12 wells are most likely 'responsible' and which are
+bystanders?"</em>
+</p>
+
+<p>
+This is a different question from "what's the average effect of injection
+on seismicity in the basin?" — that's the population-level ATE that the
+TMLE shift / dose-response / mediation drivers compute. This page is about
+the <em>per-event</em> attribution layer that sits on top of the same Q
+model.
+</p>
+
+<h2 id="estimands">2. Causal estimands and which one we compute</h2>
+
+<p>
+There is no single "the causal question" — there is a hierarchy, and
+different estimands answer different policy questions:
+</p>
+
+<table class="estimand-table">
+<thead>
+  <tr>
+    <th>Estimand</th>
+    <th>Question it answers</th>
+    <th>Have we computed it?</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td><strong>ATE</strong> (Average Treatment Effect)</td>
+    <td>"On average across all well-days, what's the effect of injection on expected ML?"</td>
+    <td class="yes">Yes — see <code>tmle_shift_*.csv</code>, <code>tmle_dose_response_*.csv</code></td>
+  </tr>
+  <tr>
+    <td><strong>CATE</strong> (Conditional ATE)</td>
+    <td>"What's the effect for wells with this depth/formation/fault profile?"</td>
+    <td class="partial">Partial — features are in the panel but not yet sliced</td>
+  </tr>
+  <tr>
+    <td><strong>ITE</strong> (Individual Treatment Effect)</td>
+    <td>"For <em>this</em> well on <em>this</em> day, what's the effect?"</td>
+    <td class="no">Not identified from observational data alone</td>
+  </tr>
+  <tr>
+    <td><strong>g-computation prediction</strong></td>
+    <td>"What does the model predict for this well's contribution under its actual injection vs. zero injection, holding all other features constant?"</td>
+    <td class="yes"><strong>This is what the per-well attribution sidebar shows.</strong></td>
+  </tr>
+  <tr>
+    <td><strong>PN</strong> (Probability of Necessity, Pearl 2000)</td>
+    <td>"Given that this event happened with this well injecting, what's the probability it wouldn't have happened with the well at zero?"</td>
+    <td class="partial">A simplified fractional-reduction <em>proxy</em> is shown; not the formal Pearl PN</td>
+  </tr>
+  <tr>
+    <td><strong>Shapley attribution</strong></td>
+    <td>"What's the unique fair share of credit for each well, given non-additive interactions in the Q model?"</td>
+    <td class="no">Not computed; deferred</td>
+  </tr>
+</tbody>
+</table>
+
+<div class="callout">
+  <strong>TMLE is a method, not an estimand.</strong> The TMLE machinery
+  can target any of these — what differs is the unit of analysis, the DAG,
+  and what counterfactual you're contrasting against. The per-event
+  attribution shown in the sidebar is a per-well g-computation prediction,
+  not an identified causal effect.
+</div>
+
+<h2 id="what-we-compute">3. What the dashboard actually computes</h2>
+
+<p>
+For each event-radius combination, the pipeline does the following:
+</p>
+
+<h3>3.1. Q model fitting (offline, per radius)</h3>
+<p>
+A hurdle Super Learner is fit on the well-day panel
+(<code>panel_with_faults_&lt;R&gt;km.csv</code>):
+</p>
+
+<pre>Outcome:    outcome_max_ML  (max ML within R km on this day, or 0)
+Treatment:  cum_vol_365d_BBL
+Mediator:   bhp_vw_avg_365d  (depth-corrected BHP from volume-weighted WHP)
+Confounders: perf_depth_ft, days_active, Nearest Fault Dist (km),
+             Fault Segments &le; R km, formation (one-hot top-K + OTHER)
+
+Q model:    Hurdle Super Learner
+            Stage 1: P(Y &gt; 0 | features)              logistic stack
+            Stage 2: E[log(1 + Y) | Y &gt; 0, features]   regression stack
+            Combined: Q(features) = P_pos(features) &middot; expm1(stage_2(features))
+
+            Base learners: RidgeCV + XGBoost (GBM dropped for runtime)
+            Meta-learner:  RidgeCV non-negative ensemble</pre>
+
+<p>
+This Q model is conceptually <em>different</em> from the Q used by the
+TMLE shift / dose-response / mediation drivers. Those are fit at the
+<em>cluster-day</em> level (multiple wells aggregated into one row before
+the model sees them) and are used to estimate population-level estimands.
+The dashboard Q is fit at the <em>well-day</em> level so it can be applied
+to individual wells.
+</p>
+
+<p>
+Code: <code>build_attribution_q.py</code>. Output:
+<code>q_attribution_&lt;R&gt;km.pkl</code> for R = 1..20 km.
+</p>
+
+<h3>3.2. Per-event attribution (live, on click)</h3>
+<p>
+When the user clicks an event:
+</p>
+<ol>
+  <li>For each well within R km of the event, build its feature row:
+    <code>(cum_vol_365d, bhp_vw_avg_365d, perf_depth_ft, days_active, fault_dist, fault_count, formation_one_hot)</code>
+  </li>
+  <li>Compute <span class="var">Q_factual = Q(actual features)</span></li>
+  <li>Compute <span class="var">Q_counterfactual = Q(features with cum_vol set to 0
+      and bhp set to depth-only hydrostatic baseline 0.45 psi/ft × perf_depth_ft)</span></li>
+  <li><span class="var">contribution = Q_factual − Q_counterfactual</span></li>
+  <li><span class="var">share = max(contribution, 0) / Σⱼ max(contributionⱼ, 0)</span></li>
+  <li><span class="var">PN_proxy = max(0, min(1, 1 − Q_counterfactual / Q_factual))</span></li>
+</ol>
+
+<h3>3.3. Why this counterfactual</h3>
+<p>
+The <em>shut-off</em> counterfactual zeroes the cumulative-volume treatment
+AND replaces the BHP feature with the value the well would have had at
+zero wellhead pressure (just hydrostatic from the brine column at the
+perforation depth). This keeps the counterfactual on the support of the
+training distribution: a well that has perforations at 9000 ft but isn't
+injecting still has ~4050 psi of bottom-hole pressure from the column
+weight alone. Setting BHP to literally zero would push the input outside
+the support and produce nonsense extrapolations.
+</p>
+
+<h2 id="assumptions">4. Assumptions and disclaimers</h2>
+
+<div class="callout danger">
+  <strong>The contribution numbers are model predictions, not identified
+  causal effects.</strong> They are conditional expectations from a Q model
+  fit on observational data, applied to factual and counterfactual feature
+  vectors. They are useful for ranking wells and for "back of the envelope"
+  attribution, but they are not the same thing as the well-day potential
+  outcome under intervention.
+</div>
+
+<p>The full set of assumptions:</p>
+
+<ul>
+  <li><strong>No unmeasured confounding.</strong> The DAG assumes that
+    <code>(cum_vol, BHP)</code> capture all the injection-side variation
+    that affects nearby seismicity, and that the listed L variables capture
+    all the confounders. Pre-existing pore pressure, fluid chemistry,
+    fault stress state, and basement coupling depth — not in the panel.
+  </li>
+  <li><strong>Positivity / overlap.</strong> The "shut off" counterfactual
+    should be inside the support of the training data. Wells that are
+    injecting at extreme volumes <em>and</em> in unusual formations may
+    have counterfactual feature vectors that the Q has never seen. This
+    is part of why the simple <code>cum_vol → 0</code> counterfactual was
+    too aggressive without the BHP fix.
+  </li>
+  <li><strong>The Q is honest in the population sense, not the per-well
+    sense.</strong> The Super Learner stack was fit to minimize cross-
+    validated MSE across ~600k well-day cells. Individual cell predictions
+    are unbiased on average across the training distribution, but the
+    per-cell error variance is large. A single click's per-well numbers
+    are noisy.
+  </li>
+  <li><strong>The PN proxy is not Pearl's formal PN.</strong> Pearl &amp;
+    Tian (2000) define <code>PN = P(Y_{do(X=0)} = 0 | Y_{X=actual} = 1)</code>,
+    which requires a binary outcome and monotonicity. We have a continuous
+    outcome and use the simple in-model fractional reduction
+    <code>1 − Q_cf/Q_factual</code> as a usable proxy. It tells you "what
+    fraction of the model's predicted outcome would go away if this well
+    had been shut off", which is informative but isn't a probability in
+    the formal Bayesian-hypothetical sense.
+  </li>
+  <li><strong>Negative contributions are real and informative.</strong>
+    For some wells the model predicts that shutting them off would
+    <em>increase</em> nearby expected ML. This is usually because the well
+    is in a formation/depth/fault context where its observed injection is
+    correlated with lower-than-average outcomes — the model sees that
+    pattern and the counterfactual breaks it. Don't dismiss negative
+    contributions; they're a legitimate signal that the well isn't a
+    primary driver under the model. They get a 0% share (we only divide
+    positive contributions across the positive total).
+  </li>
+</ul>
+
+<h2 id="interpretation">5. How to read the per-well numbers</h2>
+
+<table class="estimand-table">
+<thead>
+  <tr>
+    <th>Number</th>
+    <th>Interpretation</th>
+  </tr>
+</thead>
+<tbody>
+  <tr>
+    <td><code>Q_factual</code></td>
+    <td>The model's expected max ML at this well's actual feature vector
+    on the event date. (Note: the "max ML" is the max within R km of the
+    well, so a high <code>Q_factual</code> means "the model expects this
+    well's neighborhood to have higher seismic outcomes given its feature
+    profile" — not "this well's injection caused the event.")</td>
+  </tr>
+  <tr>
+    <td><code>Q_counterfactual</code></td>
+    <td>The same prediction but with this well's <code>cum_vol_365d</code>
+    set to 0 and <code>BHP</code> set to depth-only hydrostatic.</td>
+  </tr>
+  <tr>
+    <td><code>contribution</code></td>
+    <td><code>Q_factual − Q_counterfactual</code>. The model's estimate of
+    how much of the predicted local ML goes away if you shut this well off.
+    <strong>Can be negative.</strong></td>
+  </tr>
+  <tr>
+    <td><code>share</code></td>
+    <td>This well's positive contribution as a fraction of the sum of all
+    positive contributions across the wells in the radius. Wells with
+    negative contribution get 0%.</td>
+  </tr>
+  <tr>
+    <td><code>PN proxy</code></td>
+    <td>Fractional reduction: <code>1 − Q_cf / Q_factual</code>, clamped
+    to [0, 1]. <strong>≥0.5</strong> = "more than half of the model's
+    predicted outcome at this well would go away under shut-off."
+    <strong>≥0.7</strong> = strong attribution under the model.</td>
+  </tr>
+</tbody>
+</table>
+
+<h2 id="limits">6. Known limitations</h2>
+
+<ul>
+  <li><strong>The Q is fit per-radius.</strong> The dashboard uses 20
+    different Q models depending on the radius slider. The same well at
+    the same date can have a different attribution depending on the
+    radius, because the outcome definition (max ML within R km) changes.
+  </li>
+  <li><strong>Wells outside the radius are invisible to the
+    attribution.</strong> A well 8 km from the event with a 7 km radius
+    contributes 0 to the in-radius decomposition, even if it's a
+    plausible driver. Try the radius slider to see how the picture changes.
+  </li>
+  <li><strong>Multi-event days are aggregated by max ML.</strong> If two
+    events happen on the same day at different locations, the panel records
+    only the max nearby ML per well-day. Per-event attribution at single-
+    event days is cleanest; multi-event days should be interpreted with
+    extra caution.
+  </li>
+  <li><strong>Sum of contributions ≠ event magnitude.</strong> The
+    contributions are <em>per-well predictions</em> from a population-fit
+    model, not a decomposition of the event's actual ML into well shares.
+    Don't expect Σ contribution_i to equal the observed M.
+  </li>
+  <li><strong>Leave-one-out vs Shapley.</strong> Our g-computation is
+    "remove this one well, holding all other wells at their actual
+    values". If there are strong interactions between wells (one well's
+    pressure plume amplified by another's), Shapley values would give a
+    different and more rigorous attribution. We'd need to fit Q across
+    all subsets of nearby wells to compute true Shapley; not done.
+  </li>
+  <li><strong>Negative contributions mean what they say.</strong> If a well
+    has <code>contribution &lt; 0</code>, the model thinks shutting it off
+    would NOT reduce expected nearby ML. This is informative — it tells
+    the regulator that for this well, the shut-off lever wouldn't work
+    according to the model. Don't ignore the sign.
+  </li>
+</ul>
+
+<h2 id="references">7. References</h2>
+
+<ul>
+  <li>Pearl, J. &amp; Tian, J. (2000). "Probabilities of Causation: Bounds
+    and Identification." <em>Annals of Mathematics and Artificial
+    Intelligence</em>, 28, 287–313.</li>
+  <li>VanderWeele, T. J. (2015). <em>Explanation in Causal Inference:
+    Methods for Mediation and Interaction.</em> Oxford University Press.</li>
+  <li>van der Laan, M. J. &amp; Rose, S. (2011). <em>Targeted Learning:
+    Causal Inference for Observational and Experimental Data.</em> Springer.</li>
+  <li>Hejazi, N. S., Benkeser, D., &amp; van der Laan, M. J. (2020).
+    "haldensify: Highly Adaptive Lasso conditional density estimation."
+    <em>JOSS</em> 5(54), 2526.</li>
+  <li>Díaz, I. &amp; van der Laan, M. J. (2018). "Stochastic Treatment
+    Regimes." In <em>Targeted Learning in Data Science</em>, Springer.</li>
+  <li>Lundberg, S. M. &amp; Lee, S.-I. (2017). "A Unified Approach to
+    Interpreting Model Predictions." <em>NeurIPS</em>. (For the Shapley
+    attribution baseline we haven't implemented yet.)</li>
+</ul>
+
+<p style="margin-top:32px; padding-top:16px; border-top:1px solid var(--border); color:var(--muted); font-size:11px;">
+  Project Geminae · induced-seismicity TMLE rebuild · feedback to the
+  branch maintainer.
+</p>
+
+</main>
+</body>
+</html>

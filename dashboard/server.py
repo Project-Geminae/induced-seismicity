@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import pickle
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -48,14 +49,20 @@ from fastapi.staticfiles import StaticFiles
 REPO_ROOT          = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR      = Path(__file__).resolve().parent / "templates"
 INDEX_HTML         = TEMPLATES_DIR / "index.html"
+METHODOLOGY_HTML   = TEMPLATES_DIR / "methodology.html"
 
 EVENTS_CSV         = REPO_ROOT / "texnet_events_filtered.csv"
 EVENT_INDEX_JSON   = REPO_ROOT / "event_index.json"
 LINKS_PARQUET      = REPO_ROOT / "event_well_links.parquet"
 LINKS_CSV_FALLBACK = REPO_ROOT / "event_well_links.csv"  # only if pyarrow missing
 PANEL_CSV          = REPO_ROOT / "well_day_panel.csv"
+Q_PKL_FMT          = "q_attribution_{R}km.pkl"
 
 RADII_KM = list(range(1, 21))
+
+# Hydrostatic baseline (psi/ft) used to compute the counterfactual BHP for
+# a "shut-off" well. Matches the value used in build_well_day_panel.py.
+BRINE_GRADIENT_PSI_PER_FT = 0.45
 
 
 # ──────────────────── Logging ────────────────────────────────────
@@ -120,6 +127,48 @@ def _load_event_index() -> dict:
         raise FileNotFoundError(f"{EVENT_INDEX_JSON} not found — run spatiotemporal_join.py --links-only")
     log.info("📄  Loading %s …", EVENT_INDEX_JSON.name)
     return json.loads(EVENT_INDEX_JSON.read_text())
+
+
+def _load_attribution_qs() -> dict[int, object]:
+    """Load the per-radius attribution Q models, if any are on disk.
+
+    These are produced by build_attribution_q.py and are optional —
+    the dashboard works without them, but the per-event attribution
+    endpoint will return an error if the requested radius's Q is missing.
+
+    Pickle dispatch: the AttributionQ class is defined in
+    build_attribution_q.py, which on the build side runs as `__main__`. To
+    let pickle find the class regardless of how the build script was
+    invoked, we register the class under both `__main__` AND
+    `build_attribution_q` namespaces before unpickling.
+    """
+    out: dict[int, object] = {}
+
+    # Make `build_attribution_q.AttributionQ` AND `__main__.AttributionQ`
+    # both resolve to the same class object
+    try:
+        import build_attribution_q as baq
+        import __main__ as main_mod
+        if not hasattr(main_mod, "AttributionQ"):
+            main_mod.AttributionQ = baq.AttributionQ
+    except Exception as e:
+        log.warning("Could not register AttributionQ for pickle: %s", e)
+
+    for R in RADII_KM:
+        path = REPO_ROOT / Q_PKL_FMT.format(R=R)
+        if not path.exists():
+            continue
+        try:
+            with path.open("rb") as f:
+                out[R] = pickle.load(f)
+            log.info("📄  Loaded Q model: %s", path.name)
+        except Exception as e:
+            log.warning("Failed to load %s: %s", path.name, e)
+    if not out:
+        log.warning("⚠️   No q_attribution_*.pkl files found — "
+                    "attribution endpoint will be unavailable. "
+                    "Run `python build_attribution_q.py` to fit them.")
+    return out
 
 
 def _load_tmle_summary() -> dict[int, dict]:
@@ -190,12 +239,13 @@ app = FastAPI(
 
 class State:
     """In-memory state. Loaded once at startup."""
-    events:       pd.DataFrame  # indexed by EventID
-    event_index:  dict          # from event_index.json
-    links:        pd.DataFrame  # consolidated event-well links across all radii
-    panel:        pd.DataFrame  # indexed by (API Number, Date of Injection)
-    tmle_summary: dict[int, dict]
-    loaded_at:    datetime
+    events:        pd.DataFrame  # indexed by EventID
+    event_index:   dict          # from event_index.json
+    links:         pd.DataFrame  # consolidated event-well links across all radii
+    panel:         pd.DataFrame  # indexed by (API Number, Date of Injection)
+    tmle_summary:  dict[int, dict]
+    attribution_q: dict[int, object]  # per-radius AttributionQ models
+    loaded_at:     datetime
 
 
 state = State()
@@ -203,15 +253,23 @@ state = State()
 
 @app.on_event("startup")
 def _startup() -> None:
+    # build_attribution_q.py needs to be importable so the unpickler can
+    # resolve the AttributionQ class. Add the repo root to sys.path before
+    # _load_attribution_qs() runs.
+    sys.path.insert(0, str(REPO_ROOT))
+
     log.info("=" * 60)
     log.info("Loading dashboard state …")
-    state.events       = _load_events()
-    state.event_index  = _load_event_index()
-    state.links        = _load_links()
-    state.panel        = _load_panel()
-    state.tmle_summary = _load_tmle_summary()
-    state.loaded_at    = datetime.now()
+    state.events        = _load_events()
+    state.event_index   = _load_event_index()
+    state.links         = _load_links()
+    state.panel         = _load_panel()
+    state.tmle_summary  = _load_tmle_summary()
+    state.attribution_q = _load_attribution_qs()
+    state.loaded_at     = datetime.now()
     log.info("✅  Dashboard ready (loaded at %s)", state.loaded_at.isoformat())
+    log.info("    %d attribution Q models available: %s",
+             len(state.attribution_q), sorted(state.attribution_q.keys()))
     log.info("=" * 60)
 
 
@@ -231,6 +289,16 @@ def index() -> HTMLResponse:
             status_code=500,
         )
     return HTMLResponse(INDEX_HTML.read_text())
+
+
+@app.get("/methodology", response_class=HTMLResponse)
+def methodology() -> HTMLResponse:
+    if not METHODOLOGY_HTML.exists():
+        return HTMLResponse(
+            "<h1>dashboard/templates/methodology.html not found</h1>",
+            status_code=500,
+        )
+    return HTMLResponse(METHODOLOGY_HTML.read_text())
 
 
 # ──────────────────── Routes: API ────────────────────────────────
@@ -391,6 +459,222 @@ def event_wells(
         "n_wells":   len(wells),
         "wells":     wells,
     }
+
+
+@app.get("/api/event/{event_id}/attribution")
+def event_attribution(
+    event_id:  str,
+    radius_km: int = Query(7, ge=1, le=20),
+) -> dict:
+    """Per-well in-model attribution of expected seismic outcome.
+
+    For each well within `radius_km` of the event, compute the model's
+    estimate of this well's contribution to the predicted local seismic
+    outcome (max ML within R km on the event date) by g-computation:
+
+        contribution_i = Q(this well, actual injection)
+                        − Q(this well, zero injection)
+
+    The Q model used here is `q_attribution_<R>km.pkl`, fit at the well-day
+    level on `panel_with_faults_<R>km.csv` by `build_attribution_q.py`. It
+    is a different (per-well) Q than the one used by the TMLE shift /
+    dose-response / mediation drivers (which fit at the cluster-day level).
+
+    The "zero injection" counterfactual sets:
+      - cum_vol_<window>d_BBL → 0 (the treatment)
+      - bhp_vw_avg_<window>  → 0.45 psi/ft × perf_depth_ft (depth-only
+                                 hydrostatic baseline; matches the panel's
+                                 BHP construction with WHP=0)
+
+    All other features (formation, depth, fault distance, segment count,
+    days_active) are held at their actual values.
+
+    Returns:
+      - per-well: {api, distance_km, q_factual, q_counterfactual,
+                   contribution_ml, share, pn}
+        where `pn` is a simplified probability-of-necessity proxy:
+            pn = 1 − Q_counterfactual / max(Q_factual, ε)   clamped to [0, 1]
+        Higher `pn` means "more of the model's predicted outcome would go
+        away if this well had been shut off." It is NOT Pearl's formal PN;
+        it is the in-model fractional reduction.
+      - aggregate: total_contribution, top_contributor, n_wells_with_pn_gt_50
+      - disclaimer: a one-line caveat the frontend should display
+
+    This endpoint requires `q_attribution_<R>km.pkl` on disk. If missing,
+    returns HTTP 503 with a hint to run `build_attribution_q.py`.
+    """
+    if event_id not in state.events.index:
+        raise HTTPException(404, f"event {event_id} not found")
+    if radius_km not in state.attribution_q:
+        raise HTTPException(503,
+            f"q_attribution_{radius_km}km.pkl not loaded. "
+            f"Run `python build_attribution_q.py --radii {radius_km}` and "
+            f"restart the server.")
+
+    aq = state.attribution_q[radius_km]
+    ev = state.events.loc[event_id]
+    ev_date = ev["Origin Date"]
+
+    sub = state.links[
+        (state.links["EventID"] == event_id)
+        & (state.links["radius_km"] == radius_km)
+    ].sort_values("distance_km")
+
+    if sub.empty:
+        return {
+            "event":          {"id": event_id, "ml": float(ev["Local Magnitude"])},
+            "radius_km":      radius_km,
+            "window_days":    aq.window_days,
+            "n_wells":        0,
+            "wells":          [],
+            "aggregate":      {"total_contribution_ml": 0.0,
+                               "top_contributor": None,
+                               "n_wells_with_pn_gt_50": 0},
+            "disclaimer":     ATTRIBUTION_DISCLAIMER,
+        }
+
+    # Build a feature dataframe for ALL wells in one shot, then call Q.predict
+    # twice (factual + counterfactual) and zip the results.
+    W_col = f"cum_vol_{aq.window_days}d_BBL"
+    P_col = f"bhp_vw_avg_{aq.window_days}d"
+
+    def _safe(v, fallback=0.0):
+        """Coerce to float, replacing None/NaN with `fallback`."""
+        if v is None:
+            return fallback
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return fallback
+        return fallback if (f != f) else f  # NaN check
+
+    feature_rows = []
+    api_list = []
+    for _, link in sub.iterrows():
+        api = int(link["API Number"])
+        api_list.append(api)
+        feats = _well_features_at(api, ev_date)
+        perf_depth = _safe(feats.get("perf_depth_ft"), fallback=7000.0)
+        feature_rows.append({
+            W_col:                    _safe(feats.get(W_col)),
+            P_col:                    _safe(feats.get(P_col)),
+            "perf_depth_ft":          perf_depth,
+            "days_active":            _safe(feats.get("days_active")),
+            "Nearest Fault Dist (km)": _safe(_well_static(api, "Nearest Fault Dist (km)")),
+            f"Fault Segments <= {radius_km} km": _safe(_well_static(api, f"Fault Segments <= {radius_km} km")),
+            "formation":              feats.get("formation") or "UNKNOWN",
+            "_distance_km":           float(link["distance_km"]),
+            "_well_lat":              float(link["well_lat"]),
+            "_well_lon":              float(link["well_lon"]),
+        })
+
+    fdf = pd.DataFrame(feature_rows)
+
+    # Counterfactual: zero out treatment AND set BHP to depth-only baseline
+    fdf_cf = fdf.copy()
+    fdf_cf[W_col] = 0.0
+    fdf_cf[P_col] = BRINE_GRADIENT_PSI_PER_FT * fdf_cf["perf_depth_ft"]
+
+    q_factual         = np.asarray(aq.predict(fdf), dtype=float)
+    q_counterfactual  = np.asarray(aq.predict(fdf_cf), dtype=float)
+
+    contributions = q_factual - q_counterfactual
+    total_contribution = float(contributions.sum())
+
+    # Share normalization: only over POSITIVE contributions (negative
+    # contributions mean the model thinks shutting this well OFF would
+    # increase predicted risk, which is informative but doesn't get a
+    # "share of blame")
+    pos_total = float(np.maximum(contributions, 0).sum())
+
+    wells_out = []
+    for i, row in fdf.iterrows():
+        qf = float(q_factual[i])
+        qc = float(q_counterfactual[i])
+        contribution = qf - qc
+        share = (max(contribution, 0.0) / pos_total) if pos_total > 0 else 0.0
+        # PN proxy: fractional reduction. Clamp to [0, 1].
+        if qf > 1e-9:
+            pn = max(0.0, min(1.0, 1.0 - qc / qf))
+        else:
+            pn = 0.0
+        wells_out.append({
+            "api":               int(api_list[i]),
+            "distance_km":       float(row["_distance_km"]),
+            "lat":               float(row["_well_lat"]),
+            "lon":               float(row["_well_lon"]),
+            "q_factual":         qf,
+            "q_counterfactual":  qc,
+            "contribution_ml":   contribution,
+            "share":             share,
+            "pn":                pn,
+            "formation":         row["formation"],
+            "perf_depth_ft":     float(row["perf_depth_ft"])
+                                  if pd.notna(row["perf_depth_ft"]) else None,
+            "cum_vol_window":    float(row[W_col]),
+        })
+
+    # Sort by contribution descending (regulator-relevant ranking)
+    wells_out.sort(key=lambda w: w["contribution_ml"], reverse=True)
+
+    n_pn_50 = sum(1 for w in wells_out if w["pn"] >= 0.5)
+    top_contributor = wells_out[0] if wells_out else None
+
+    return {
+        "event": {
+            "id":   event_id,
+            "lat":  float(ev["Latitude (WGS84)"]),
+            "lon":  float(ev["Longitude (WGS84)"]),
+            "date": ev_date.strftime("%Y-%m-%d"),
+            "ml":   float(ev["Local Magnitude"]),
+        },
+        "radius_km":   radius_km,
+        "window_days": aq.window_days,
+        "n_wells":     len(wells_out),
+        "wells":       wells_out,
+        "aggregate": {
+            "total_contribution_ml": total_contribution,
+            "positive_total_ml":     pos_total,
+            "top_contributor":       (top_contributor and {
+                "api":             top_contributor["api"],
+                "contribution_ml": top_contributor["contribution_ml"],
+                "share":           top_contributor["share"],
+                "pn":              top_contributor["pn"],
+            }),
+            "n_wells_with_pn_gt_50": n_pn_50,
+        },
+        "model_meta": {
+            "n_train":     aq.n_train,
+            "n_pos":       aq.n_pos,
+            "feature_cols": aq.feature_cols,
+        },
+        "disclaimer":  ATTRIBUTION_DISCLAIMER,
+    }
+
+
+ATTRIBUTION_DISCLAIMER = (
+    "In-model g-computation, not an identified causal effect. "
+    "Contribution = Q(this well's actual features) − Q(this well, cum_vol set to 0). "
+    "PN is a simplified fractional-reduction proxy, not Pearl's formal Probability "
+    "of Necessity. The Q model is a hurdle Super Learner fit on the well-day panel "
+    "and applied per-well; predictions are extrapolations of the model's expectation, "
+    "not per-well counterfactual identification. See /methodology for full discussion."
+)
+
+
+def _well_static(api: int, col: str) -> float:
+    """Look up a constant per-well feature (fault distance, fault count) from
+    any panel row for that API. Falls back to None if missing."""
+    try:
+        sub = state.panel.loc[api]
+    except KeyError:
+        return float("nan")
+    if isinstance(sub, pd.Series):
+        return float(sub.get(col, float("nan")))
+    if col not in sub.columns:
+        return float("nan")
+    val = sub[col].dropna()
+    return float(val.iloc[0]) if not val.empty else float("nan")
 
 
 @app.get("/api/tmle/summary")

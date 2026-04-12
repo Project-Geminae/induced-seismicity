@@ -130,6 +130,74 @@
   .well-card .features .label { color: var(--muted); }
   .well-card .features .val { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
 
+  /* Per-well attribution row */
+  .well-card .attribution {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .well-card .attr-label {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .well-card .attr-label .share-pct {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: none;
+    letter-spacing: normal;
+  }
+  .well-card .attr-bar {
+    height: 6px;
+    background: #1a1f28;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+  .well-card .attr-bar .fill {
+    height: 100%;
+    background: linear-gradient(90deg, #58a6ff, #f0883e, #f85149);
+  }
+  .well-card .attr-detail {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px;
+    font-size: 10px;
+  }
+  .well-card .attr-detail .label { color: var(--muted); }
+  .well-card .attr-detail .val { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+  .well-card .attr-detail .pn-high { color: var(--warn); font-weight: 600; }
+  .well-card .attr-detail .pn-very-high { color: var(--danger); font-weight: 600; }
+  .well-card .neg-contribution { color: var(--good); font-style: italic; }
+
+  /* Top-of-sidebar attribution summary card */
+  #attribution-summary {
+    background: linear-gradient(135deg, rgba(88, 166, 255, 0.1), rgba(240, 136, 62, 0.06));
+    border: 1px solid var(--accent); border-radius: 6px;
+    padding: 12px; margin-bottom: 16px;
+  }
+  #attribution-summary h3 {
+    margin: 0 0 8px 0; font-size: 11px; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  #attribution-summary .total {
+    font-size: 18px; font-weight: 700; margin-bottom: 6px;
+  }
+  #attribution-summary .top-line {
+    font-size: 11px; color: var(--text); margin-bottom: 4px;
+  }
+  #attribution-summary .top-line strong { color: var(--accent); }
+  #attribution-summary .disclaimer {
+    margin-top: 10px; padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-size: 9px; color: var(--muted); line-height: 1.4;
+  }
+  #attribution-summary .disclaimer a { color: var(--accent); }
+
   #tmle-context {
     background: var(--panel-2); border: 1px solid var(--border);
     border-radius: 6px; padding: 10px 12px; margin-top: 16px;
@@ -153,6 +221,7 @@
     <span id="loaded-meta">Loading…</span>
   </div>
   <div class="meta" style="margin-left:auto">
+    <a href="/methodology" target="_blank" style="color:var(--accent); text-decoration:none; margin-right:12px;">📖 Methodology</a>
     Project Geminae • TMLE rebuild
   </div>
 </header>
@@ -190,6 +259,8 @@
   <aside id="sidebar">
     <h2>Selected Event</h2>
     <div id="event-detail" class="empty">Click an event on the map.</div>
+
+    <div id="attribution-summary" style="display:none"></div>
 
     <h2 style="margin-top:24px">Wells within radius</h2>
     <div id="well-list" class="empty">—</div>
@@ -302,6 +373,12 @@
     return r.json();
   }
 
+  async function fetchEventAttribution(eventId, radiusKm) {
+    const r = await fetch(`/api/event/${eventId}/attribution?radius_km=${radiusKm}`);
+    if (!r.ok) return null;
+    return r.json();
+  }
+
   async function fetchTmleSummary(radiusKm) {
     const r = await fetch(`/api/tmle/summary?radius_km=${radiusKm}`);
     return r.json();
@@ -374,15 +451,61 @@
       </div>
     `;
 
-    // Fetch + render wells
+    // Fetch wells + attribution + TMLE in parallel
     document.getElementById("well-list").innerHTML =
       `<div class="empty">Loading wells within ${state.radius} km…</div>`;
-    const data = await fetchEventWells(ev.id, state.radius);
-    renderWells(data);
+    document.getElementById("attribution-summary").style.display = "none";
+    const [data, attribution, tmle] = await Promise.all([
+      fetchEventWells(ev.id, state.radius),
+      fetchEventAttribution(ev.id, state.radius),
+      fetchTmleSummary(state.radius),
+    ]);
 
-    // TMLE context
-    const tmle = await fetchTmleSummary(state.radius);
+    // Merge attribution into the wells (lookup by API)
+    if (attribution && attribution.wells) {
+      const attrByApi = {};
+      for (const w of attribution.wells) attrByApi[w.api] = w;
+      data._attrByApi = attrByApi;
+      data._aggregate = attribution.aggregate;
+      data._disclaimer = attribution.disclaimer;
+      // Re-sort wells by attribution contribution (descending)
+      data.wells.sort((a, b) => {
+        const ca = (attrByApi[a.api] && attrByApi[a.api].contribution_ml) || 0;
+        const cb = (attrByApi[b.api] && attrByApi[b.api].contribution_ml) || 0;
+        return cb - ca;
+      });
+    }
+
+    renderAttributionSummary(attribution);
+    renderWells(data);
     renderTmleContext(tmle);
+  }
+
+  function renderAttributionSummary(attribution) {
+    const el = document.getElementById("attribution-summary");
+    if (!attribution || !attribution.aggregate) {
+      el.style.display = "none";
+      return;
+    }
+    const a = attribution.aggregate;
+    const top = a.top_contributor;
+    el.style.display = "block";
+    el.innerHTML = `
+      <h3>Per-well attribution (in-model g-computation)</h3>
+      <div class="total">
+        Σ contribution = <span class="${a.positive_total_ml > 0 ? "ml-color-3" : ""}">${fmtML(a.positive_total_ml)} ML</span>
+      </div>
+      <div class="top-line">
+        Top contributor: ${top ? `<strong>API ${top.api}</strong> (${(top.share * 100).toFixed(0)}%, PN ${top.pn.toFixed(2)})` : "—"}
+      </div>
+      <div class="top-line">
+        Wells with PN ≥ 0.5: <strong>${a.n_wells_with_pn_gt_50}</strong> of ${attribution.n_wells}
+      </div>
+      <div class="disclaimer">
+        ${attribution.disclaimer}
+        <a href="/methodology" target="_blank">Read more →</a>
+      </div>
+    `;
   }
 
   function renderWells(data) {
@@ -420,6 +543,34 @@
       data.wells.map(w => {
         const p = w.panel || {};
         const formClass = "formation-" + (p.formation || "OTHER").replace(/\s+/g, "-");
+        const attr = (data._attrByApi && data._attrByApi[w.api]) || null;
+        let attrBlock = "";
+        if (attr) {
+          const sharePct = (attr.share * 100);
+          const isNeg = attr.contribution_ml < 0;
+          const pnClass = attr.pn >= 0.7 ? "pn-very-high" : (attr.pn >= 0.5 ? "pn-high" : "");
+          attrBlock = `
+            <div class="attribution">
+              <div class="attr-label">
+                <span>Attribution share</span>
+                <span class="share-pct">${sharePct.toFixed(0)}%</span>
+              </div>
+              <div class="attr-bar">
+                <div class="fill" style="width:${Math.min(100, sharePct).toFixed(1)}%"></div>
+              </div>
+              <div class="attr-detail">
+                <span class="label">Contribution</span>
+                <span class="val ${isNeg ? 'neg-contribution' : ''}">${isNeg ? '+' : ''}${fmtML(attr.contribution_ml)} ML</span>
+                <span class="label">Q (factual)</span>
+                <span class="val">${fmtML(attr.q_factual)} ML</span>
+                <span class="label">Q (cum_vol = 0)</span>
+                <span class="val">${fmtML(attr.q_counterfactual)} ML</span>
+                <span class="label">PN (proxy)</span>
+                <span class="val ${pnClass}">${attr.pn.toFixed(2)}</span>
+              </div>
+            </div>
+          `;
+        }
         return `
           <div class="well-card">
             <div class="header">
@@ -458,6 +609,7 @@
               <span class="label">BHP 365d (psi)</span>
               <span class="val">${fmtPsi(p.bhp_vw_avg_365d)}</span>
             </div>
+            ${attrBlock}
           </div>
         `;
       }).join("") +

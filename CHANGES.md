@@ -1019,11 +1019,10 @@ Recipe + restart instructions in
 
 ## What this dashboard is NOT (deferred)
 
-- **Per-well counterfactual TMLE.** The TMLE estimates remain
+- **Per-well counterfactual TMLE.** ~~The TMLE estimates remain
   population-level. The dashboard shows a well's *features* in the context
-  of an event, not its *causal contribution* to that event. A real
-  counterfactual would require leave-one-out TMLE refits per well per
-  event, which is computationally prohibitive at the current scale.
+  of an event, not its *causal contribution* to that event.~~ **Added in
+  the next iteration — see "Per-well attribution layer" below.**
 - **Time slider for event evolution.** The events are static markers; you
   can filter by year-from / year-to but you can't scrub through time.
 - **Per-formation filters.** Formation is shown as a color-coded tag but
@@ -1032,3 +1031,163 @@ Recipe + restart instructions in
   in the repo if anyone needs them.
 - **User auth.** None. The Tailnet is the auth boundary; anyone on
   Lewis's tailnet can access the dashboard.
+
+---
+
+# Per-well attribution layer
+
+The first dashboard iteration was descriptive: "click an event, see the
+nearby wells' panel features." Useful for context, but it didn't answer
+the question a regulator actually wants: **"which wells are responsible
+for this event, and which are bystanders?"** This iteration adds a
+per-well attribution layer that ranks wells by their model-predicted
+marginal contribution to the local seismic outcome.
+
+## Estimand and method
+
+The estimand is **in-model g-computation prediction**, not an identified
+causal effect:
+
+```
+contribution_i = Q(this well's actual features)
+                − Q(this well's features with cum_vol_365d set to 0
+                    and bhp_vw_avg_365d set to 0.45 psi/ft × perf_depth_ft)
+```
+
+The Q model is a hurdle Super Learner (Ridge + XGBoost stack with logistic
+hurdle on `P(Y > 0)`) fit on the well-day panel directly — *not* the
+cluster-day aggregation that the population TMLE drivers use. One Q is fit
+per radius (1..20 km) since the outcome `outcome_max_ML` (max ML within
+R km on this day) changes definition with R.
+
+Counterfactual rationale: setting `cum_vol → 0` is the obvious shut-off
+intervention. Setting `bhp → 0.45 × perf_depth_ft` puts BHP at the
+hydrostatic baseline a non-injecting well at this depth would still have,
+which keeps the counterfactual on the support of the training distribution.
+The naive `bhp → 0` would push the input outside the support.
+
+For each well in the event neighborhood the dashboard reports:
+
+- **`contribution_ml`** — `Q_factual − Q_counterfactual`. Can be negative;
+  negatives mean "the model thinks shutting this well off would NOT reduce
+  predicted nearby ML." Negatives are informative and shown explicitly.
+- **`share`** — this well's positive contribution as a fraction of the
+  sum of positive contributions across the neighborhood. Wells with
+  negative contribution get 0% share.
+- **`PN proxy`** — `1 − Q_counterfactual / Q_factual`, clamped to [0, 1].
+  Reads as "fraction of the model's predicted ML at this well that would
+  go away under shut-off." NOT Pearl's formal Probability of Necessity;
+  the page at `/methodology` explains the difference in detail.
+
+## What the regulator gets
+
+Three things, all on the dashboard sidebar after clicking an event:
+
+1. **Attribution summary card** at the top of the sidebar:
+   - Σ positive contribution across all wells in the radius (in ML units)
+   - Top contributor's API + share + PN
+   - Number of wells with PN ≥ 0.5
+   - One-line disclaimer linked to the full methodology page
+
+2. **Per-well contribution row** added to each well card:
+   - Horizontal bar showing the well's `share` as a percentage
+   - Numerical readout of `contribution_ml`, `Q_factual`, `Q_counterfactual`, `PN_proxy`
+   - PN ≥ 0.7 is colored red, ≥ 0.5 is colored amber
+
+3. **Wells re-sorted** by `contribution_ml` descending instead of distance.
+   The regulator sees the model's biggest contributors first. Distance is
+   still in the card so spatial proximity is visible.
+
+## Validation against the M5.1 Mentone event (texnet2024shcj)
+
+```
+Σ positive contribution: +0.196 ML
+Top contributor:         API 31737387  (SAN ANDRES, 6.15 km, 19.6%, PN 0.34)
+Wells with PN ≥ 0.5:     0 of 8
+
+Per-well ranking:
+  API 31737387  6.15 km  +0.0385 ML  19.6%  PN=0.34  SAN ANDRES
+  API 31741322  4.01 km  +0.0381 ML  19.4%  PN=0.19  DEVONIAN
+  API 31736826  6.80 km  +0.0342 ML  17.5%  PN=0.36  SAN ANDRES
+  API 31740201  6.56 km  +0.0272 ML  13.9%  PN=0.14  DEVONIAN
+  API 31737381  3.81 km  +0.0246 ML  12.5%  PN=0.27  SAN ANDRES
+  API 31743409  6.01 km  +0.0230 ML  11.7%  PN=0.14  DEVONIAN
+  API 31742062  4.38 km  +0.0104 ML   5.3%  PN=0.23  ELLENBURGER
+  API 31745827  5.00 km  -0.0007 ML   0.0%  PN=0.00  GLORIETA  ← negative!
+```
+
+Notable findings on this event:
+- **No well has PN ≥ 0.5** — under the model, no individual well's
+  shut-off would eliminate even half the predicted local ML. Attribution
+  is genuinely diffuse across this 8-well neighborhood.
+- **The closest well isn't the top contributor.** API 31737381 at 3.8 km
+  ranks 5th. The top contributor (31737387) is at 6.15 km. The Q model
+  weighs cumulative volume and formation depth more heavily than
+  proximity in this 7 km neighborhood.
+- **One well has negative contribution.** API 31745827 (GLORIETA, 5.0 km)
+  has `contribution_ml = -0.0007`, meaning the model predicts shutting it
+  off would *not* reduce expected nearby ML. Could be a real signal
+  (this well's feature pattern correlates with lower outcomes) or a
+  noisy boundary cell — either way, it's a legitimate disagreement
+  with the "obvious" attribution and the dashboard surfaces it explicitly.
+
+## Files added
+
+- [build_attribution_q.py](build_attribution_q.py) — Fits one
+  `HurdleSuperLearner` per radius on the well-day panel and pickles it
+  to `q_attribution_<R>km.pkl`. Sequential run on minitim takes 3.8 min
+  for all 20 radii (sequential is required because parallel workers
+  oversubscribe cores without `OMP_NUM_THREADS=1`).
+- [dashboard/server.py](dashboard/server.py) — New endpoint
+  `GET /api/event/{event_id}/attribution?radius_km=R`. Loads all 20
+  pickled Q models at startup (~50 MB resident) and computes per-event
+  attribution on the fly per click. Per-click latency ~50 ms.
+- [dashboard/templates/index.html](dashboard/templates/index.html) —
+  Added the attribution summary card, the per-well attribution row,
+  re-sorting wells by contribution descending, and a "Methodology"
+  link in the header.
+- [dashboard/templates/methodology.html](dashboard/templates/methodology.html) —
+  Standalone page at `/methodology` explaining the estimand hierarchy
+  (ATE / CATE / ITE / PN / Shapley), what the in-model g-computation
+  is and isn't, the assumptions and disclaimers, and references to
+  Pearl, VanderWeele, van der Laan, and the SHAP literature.
+- [.gitignore](.gitignore) — Filters `q_attribution_*.pkl` (regenerated
+  artifacts).
+
+## Honest disclaimers
+
+Every attribution result on the dashboard is annotated with the
+disclaimer: *"In-model g-computation, not an identified causal effect.
+PN is a simplified fractional-reduction proxy, not Pearl's formal
+Probability of Necessity. The Q model is a hurdle Super Learner fit on
+the well-day panel and applied per-well; predictions are extrapolations
+of the model's expectation, not per-well counterfactual identification."*
+
+The methodology page goes into substantially more detail — the estimand
+table, the assumption list (no unmeasured confounding, positivity, the
+Q's population-level honesty), and explicit guidance on how to read the
+numbers (and how not to). It is the document a regulator should read
+before quoting any of these contributions in a finding.
+
+## What this still doesn't do
+
+- **Leave-one-out TMLE refits per well per event.** Computationally
+  prohibitive (~30 sec per well per click). Would give a more rigorous
+  per-event causal estimate at the cost of being unusable as a click
+  interaction. The current g-computation is the affordable approximation.
+- **Shapley value attribution.** The g-computation is a single
+  leave-one-out per well, which assumes additivity. If the Q has strong
+  interactions between wells (one well's pressure plume amplified by
+  another's), Shapley would give a more rigorous attribution. We'd need
+  to fit Q across all 2^N subsets of nearby wells to compute true
+  Shapley; not done. KernelSHAP-style approximation is feasible (~1-10
+  sec per click) but deferred.
+- **Formal Pearl PN.** Requires a binary outcome and monotonicity. We
+  have continuous max ML and report a fractional-reduction proxy
+  instead. Computing the formal PN would require additional structural
+  assumptions about the dose-response monotonicity that we haven't yet
+  defended.
+- **Multi-event days.** The panel records only the max ML per well-day,
+  so per-event attribution at days with multiple events is conflated.
+  Single-event days are clean; multi-event days should be interpreted
+  with extra caution.
