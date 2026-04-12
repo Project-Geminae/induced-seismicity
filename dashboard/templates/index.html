@@ -538,9 +538,9 @@
         <div class="row">
           <label>YEAR RANGE</label>
           <div style="display:flex; gap:6px; align-items:center;">
-            <input type="number" id="year-from" min="2017" max="2025" value="2017" />
+            <input type="number" id="year-from" min="2017" max="2030" value="2017" />
             <span style="color:var(--muted-bright)">→</span>
-            <input type="number" id="year-to"   min="2017" max="2025" value="2025" />
+            <input type="number" id="year-to"   min="2017" max="2030" value="2026" />
           </div>
         </div>
         <div class="legend-row">
@@ -635,7 +635,7 @@
     radius:    7,
     minML:     2.0,
     yearFrom:  2017,
-    yearTo:    2025,
+    yearTo:    2026,
     events:    [],
     selected:  null,
     eventLayer: null,
@@ -804,8 +804,8 @@
       data._disclaimer = attribution.disclaimer;
       // Re-sort wells by attribution contribution (descending)
       data.wells.sort((a, b) => {
-        const ca = (attrByApi[a.api] && attrByApi[a.api].contribution_ml) || 0;
-        const cb = (attrByApi[b.api] && attrByApi[b.api].contribution_ml) || 0;
+        const ca = (attrByApi[a.api] && attrByApi[a.api].cate_ml) || 0;
+        const cb = (attrByApi[b.api] && attrByApi[b.api].cate_ml) || 0;
         return cb - ca;
       });
     }
@@ -826,18 +826,18 @@
     const top = a.top_contributor;
     el.style.display = "block";
     el.innerHTML = `
-      <div class="header-bar">PER-WELL ATTRIBUTION · IN-MODEL G-COMPUTATION</div>
+      <div class="header-bar">PER-WELL CATE · TMLE-TARGETED</div>
       <div class="body">
         <div class="total">
-          Σ ${fmtML(a.positive_total_ml)}<span class="unit">ML  (positive contributors)</span>
+          Σ CATE = ${fmtML(a.positive_total_ml)}<span class="unit">ML  (positive contributors)</span>
         </div>
         <div class="top-line">
           <span class="key">TOP</span>
-          <span class="val">${top ? `API <strong>${top.api}</strong>  ${(top.share * 100).toFixed(0)}%  PN ${top.pn.toFixed(2)}` : "—"}</span>
+          <span class="val">${top ? `API <strong>${top.api}</strong>  CATE ${fmtML(top.cate_ml)} ML  (${(top.share * 100).toFixed(0)}%)` : "—"}</span>
         </div>
         <div class="top-line">
-          <span class="key">PN ≥ 0.50</span>
-          <span class="val"><strong>${a.n_wells_with_pn_gt_50}</strong> / ${attribution.n_wells}</span>
+          <span class="key">ESTIMAND</span>
+          <span class="val">${attribution.estimand || "CATE-TMLE"}</span>
         </div>
         <div class="disclaimer">
           ${attribution.disclaimer}
@@ -893,26 +893,27 @@
         let attrBlock = "";
         if (attr) {
           const sharePct = (attr.share * 100);
-          const isNeg = attr.contribution_ml < 0;
-          const pnClass = attr.pn >= 0.7 ? "pn-very-high" : (attr.pn >= 0.5 ? "pn-high" : "");
+          const isNeg = attr.cate_ml < 0;
+          const ciLo = attr.cate_ci_low != null ? fmtML(attr.cate_ci_low) : "—";
+          const ciHi = attr.cate_ci_high != null ? fmtML(attr.cate_ci_high) : "—";
           attrBlock = `
             <div class="attribution">
               <div class="attr-label">
-                <span>SHARE</span>
+                <span>CATE SHARE</span>
                 <span class="share-pct">${sharePct.toFixed(0)}%</span>
               </div>
               <div class="attr-bar">
                 <div class="fill" style="width:${Math.min(100, sharePct).toFixed(1)}%"></div>
               </div>
               <div class="attr-detail">
-                <span class="label">CONTRIB</span>
-                <span class="val ${isNeg ? 'neg-contribution' : 'pos-contribution'}">${isNeg ? '+' : ''}${fmtML(attr.contribution_ml)} ML</span>
-                <span class="label">PN PROXY</span>
-                <span class="val ${pnClass}">${attr.pn.toFixed(2)}</span>
-                <span class="label">Q FACT</span>
-                <span class="val">${fmtML(attr.q_factual)}</span>
-                <span class="label">Q CF</span>
-                <span class="val">${fmtML(attr.q_counterfactual)}</span>
+                <span class="label">CATE</span>
+                <span class="val ${isNeg ? 'neg-contribution' : 'pos-contribution'}">${fmtML(attr.cate_ml)} ML</span>
+                <span class="label">95% CI</span>
+                <span class="val">[${ciLo}, ${ciHi}]</span>
+                <span class="label">Q*(A)</span>
+                <span class="val">${fmtML(attr.q_targeted)}</span>
+                <span class="label">Q*(0)</span>
+                <span class="val">${fmtML(attr.q_cf_targeted)}</span>
               </div>
             </div>
           `;

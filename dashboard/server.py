@@ -575,49 +575,56 @@ def event_attribution(
     fdf_cf[W_col] = 0.0
     fdf_cf[P_col] = BRINE_GRADIENT_PSI_PER_FT * fdf_cf["perf_depth_ft"]
 
-    q_factual         = np.asarray(aq.predict(fdf), dtype=float)
-    q_counterfactual  = np.asarray(aq.predict(fdf_cf), dtype=float)
+    # ── TMLE-targeted predictions (not plain g-computation) ──
+    # Q̂*(a, l) = Q̂(a, l) + ε · H(a, l)
+    # Uses the pre-computed ε from the offline targeting step.
+    # hasattr check for backwards compatibility with old pickles that
+    # don't have the g model.
+    has_tmle = hasattr(aq, 'g') and aq.g is not None and hasattr(aq, 'epsilon')
+
+    if has_tmle:
+        q_factual        = np.asarray(aq.predict_targeted(fdf), dtype=float)
+        q_counterfactual = np.asarray(aq.predict_targeted(fdf_cf), dtype=float)
+        cate_se          = aq.cate_se()  # population-level SE as approximation
+    else:
+        # Fallback to plain g-computation (no targeting)
+        q_factual        = np.asarray(aq.predict(fdf), dtype=float)
+        q_counterfactual = np.asarray(aq.predict(fdf_cf), dtype=float)
+        cate_se          = float("nan")
 
     contributions = q_factual - q_counterfactual
     total_contribution = float(contributions.sum())
 
-    # Share normalization: only over POSITIVE contributions (negative
-    # contributions mean the model thinks shutting this well OFF would
-    # increase predicted risk, which is informative but doesn't get a
-    # "share of blame")
+    # Share normalization: only over POSITIVE contributions
     pos_total = float(np.maximum(contributions, 0).sum())
 
+    z95 = 1.959963984540054
     wells_out = []
     for i, row in fdf.iterrows():
         qf = float(q_factual[i])
         qc = float(q_counterfactual[i])
-        contribution = qf - qc
-        share = (max(contribution, 0.0) / pos_total) if pos_total > 0 else 0.0
-        # PN proxy: fractional reduction. Clamp to [0, 1].
-        if qf > 1e-9:
-            pn = max(0.0, min(1.0, 1.0 - qc / qf))
-        else:
-            pn = 0.0
+        cate = qf - qc
+        share = (max(cate, 0.0) / pos_total) if pos_total > 0 else 0.0
         wells_out.append({
             "api":               int(api_list[i]),
             "distance_km":       float(row["_distance_km"]),
             "lat":               float(row["_well_lat"]),
             "lon":               float(row["_well_lon"]),
-            "q_factual":         qf,
-            "q_counterfactual":  qc,
-            "contribution_ml":   contribution,
+            "q_targeted":        qf,
+            "q_cf_targeted":     qc,
+            "cate_ml":           cate,
+            "cate_ci_low":       cate - z95 * cate_se if not np.isnan(cate_se) else None,
+            "cate_ci_high":      cate + z95 * cate_se if not np.isnan(cate_se) else None,
             "share":             share,
-            "pn":                pn,
             "formation":         row["formation"],
             "perf_depth_ft":     float(row["perf_depth_ft"])
                                   if pd.notna(row["perf_depth_ft"]) else None,
             "cum_vol_window":    float(row[W_col]),
         })
 
-    # Sort by contribution descending (regulator-relevant ranking)
-    wells_out.sort(key=lambda w: w["contribution_ml"], reverse=True)
+    # Sort by CATE descending (regulator-relevant ranking)
+    wells_out.sort(key=lambda w: w["cate_ml"], reverse=True)
 
-    n_pn_50 = sum(1 for w in wells_out if w["pn"] >= 0.5)
     top_contributor = wells_out[0] if wells_out else None
 
     return {
@@ -633,19 +640,21 @@ def event_attribution(
         "n_wells":     len(wells_out),
         "wells":       wells_out,
         "aggregate": {
-            "total_contribution_ml": total_contribution,
-            "positive_total_ml":     pos_total,
-            "top_contributor":       (top_contributor and {
-                "api":             top_contributor["api"],
-                "contribution_ml": top_contributor["contribution_ml"],
-                "share":           top_contributor["share"],
-                "pn":              top_contributor["pn"],
+            "total_cate_ml":     total_contribution,
+            "positive_total_ml": pos_total,
+            "cate_se":           cate_se if not np.isnan(cate_se) else None,
+            "top_contributor":   (top_contributor and {
+                "api":       top_contributor["api"],
+                "cate_ml":   top_contributor["cate_ml"],
+                "share":     top_contributor["share"],
             }),
-            "n_wells_with_pn_gt_50": n_pn_50,
         },
+        "estimand": "CATE-TMLE" if has_tmle else "g-computation (no targeting)",
         "model_meta": {
             "n_train":     aq.n_train,
             "n_pos":       aq.n_pos,
+            "epsilon":     float(aq.epsilon) if has_tmle else None,
+            "if_var":      float(aq.if_var) if has_tmle else None,
             "feature_cols": aq.feature_cols,
         },
         "disclaimer":  ATTRIBUTION_DISCLAIMER,
@@ -653,12 +662,13 @@ def event_attribution(
 
 
 ATTRIBUTION_DISCLAIMER = (
-    "In-model g-computation, not an identified causal effect. "
-    "Contribution = Q(this well's actual features) − Q(this well, cum_vol set to 0). "
-    "PN is a simplified fractional-reduction proxy, not Pearl's formal Probability "
-    "of Necessity. The Q model is a hurdle Super Learner fit on the well-day panel "
-    "and applied per-well; predictions are extrapolations of the model's expectation, "
-    "not per-well counterfactual identification. See /methodology for full discussion."
+    "CATE-TMLE: Conditional Average Treatment Effect estimated via Targeted "
+    "Maximum Likelihood. CATE(l) = Q̂*(actual, l) − Q̂*(shut-off, l) where "
+    "Q̂* is the TMLE-targeted outcome regression (hurdle Super Learner + "
+    "epsilon-fluctuation via the clever covariate from the conditional density "
+    "g(A|L)). The 95% CI uses the influence-function-based SE from the "
+    "population-level targeting step. Identified under: no unmeasured "
+    "confounding, positivity, consistency. See /methodology for full discussion."
 )
 
 

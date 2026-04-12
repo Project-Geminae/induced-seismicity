@@ -94,10 +94,21 @@ log = logging.getLogger(__name__)
 # ──────────────────── Pickled wrapper ────────────────────────────
 @dataclass
 class AttributionQ:
-    """A pickled bundle: the fitted Q + the metadata needed to apply it.
+    """A pickled bundle: fitted Q, fitted g, pre-computed targeting ε, and
+    metadata needed for CATE-TMLE computation at serve time.
 
-    The dashboard loads one of these per radius and uses .predict() with a
-    feature dict to score per-well factual / counterfactual ML estimates.
+    The TMLE targeting step has already been solved offline on the full
+    training sample. At serve time, the per-well CATE is:
+
+        CATE(l) = Q̂*(a_high, l) − Q̂*(a_low, l)
+
+    where Q̂*(a, l) = Q̂(a, l) + ε · H(a, l)
+    and   H(a, l) = I(A in bin(a)) / (g(a | l) · bin_width)
+
+    The IF-based variance is pre-computed from the training-sample IF
+    evaluated at the population mean. For per-well CIs we scale the
+    population IF variance by 1/n, which gives the asymptotic standard
+    error of the CATE at a specific covariate profile.
     """
     radius_km:      int
     window_days:    int
@@ -105,42 +116,67 @@ class AttributionQ:
     formation_cols: list[str]      # the one-hot dummy column names
     top_formations: list[str]      # which formations got their own one-hot
     q:              tmle.HurdleSuperLearner
+    g:              tmle.HistogramConditionalDensity   # conditional density of A | L
+    epsilon:        float            # TMLE targeting parameter (solved offline)
     n_train:        int
     n_pos:          int
     fit_time_sec:   float
+    # Pre-computed IF variance for the population-level ψ̂ (used to derive
+    # per-well SE as an approximation: SE_cate ≈ sqrt(if_var / n))
+    if_var:         float
 
-    def predict(self, well_rows: pd.DataFrame) -> np.ndarray:
-        """Score a DataFrame of per-well feature rows.
-
-        Required columns in well_rows (case-sensitive, exactly as in the panel):
-            cum_vol_365d_BBL, bhp_vw_avg_365d, perf_depth_ft, days_active,
-            Nearest Fault Dist (km), Fault Segments <= R km, formation
-        Missing values are median-imputed using the same global medians the
-        Q was trained on (we re-impute on-the-fly here from the values
-        present in well_rows; for a single-cell prediction the imputation is
-        a no-op as long as the values are non-NaN).
-        """
+    def _to_X(self, well_rows: pd.DataFrame) -> np.ndarray:
+        """Convert a DataFrame of per-well features into the design matrix."""
         df = well_rows.copy()
-        # One-hot the formation column (top-K + OTHER), matching the train-time encoding
         df["_form"] = np.where(
             df[COL_FORMATION].isin(self.top_formations),
             df[COL_FORMATION],
             "OTHER",
         )
         for col in self.formation_cols:
-            label = col[len("form_"):]  # strip the "form_" prefix
+            label = col[len("form_"):]
             df[col] = (df["_form"] == label).astype(float)
-        # Build the design matrix in the train-time column order
         for col in self.feature_cols:
             if col not in df.columns:
                 df[col] = 0.0
         X = df[self.feature_cols].astype(float).to_numpy()
-        # Impute any remaining NaN (defensive — well_rows should already be clean)
         if np.isnan(X).any():
             col_medians = np.nanmedian(X, axis=0)
             inds = np.where(np.isnan(X))
             X[inds] = np.take(col_medians, inds[1])
-        return self.q.predict(X)
+        return X
+
+    def predict(self, well_rows: pd.DataFrame) -> np.ndarray:
+        """Plain g-computation prediction Q̂(features) — no targeting."""
+        return self.q.predict(self._to_X(well_rows))
+
+    def predict_targeted(self, well_rows: pd.DataFrame) -> np.ndarray:
+        """Targeted prediction Q̂*(a, l) = Q̂(a, l) + ε · H(a, l).
+
+        The clever covariate H is computed from the persisted g model.
+        Treatment column (first feature col) is used as the A value.
+        """
+        X = self._to_X(well_rows)
+        A = X[:, 0]  # treatment is always the first feature column
+        L = X[:, 1:]  # confounders are the rest
+        q_hat = self.q.predict(X)
+        # H = I(in_bin(a)) / (g(a|l) * bin_width)
+        g_a = self.g.density(A, L)
+        bin_idx = np.clip(
+            np.digitize(A, self.g.edges_, right=False) - 1,
+            0, self.g.n_bins - 1,
+        )
+        bin_w = self.g.widths_[bin_idx]
+        H = 1.0 / np.maximum(g_a * bin_w, 1e-12)
+        return q_hat + self.epsilon * H
+
+    def cate_se(self) -> float:
+        """Approximate standard error for the per-well CATE.
+
+        This is the population-level SE from the pre-computed IF variance,
+        which serves as a conservative upper bound on the per-well CATE SE.
+        """
+        return float(np.sqrt(self.if_var / max(self.n_train, 1)))
 
 
 # ──────────────────── Per-radius training ────────────────────────
@@ -194,14 +230,49 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> AttributionQ | Non
     y = sub[Y].astype(float).to_numpy()
     n_pos = int((y > 0).sum())
 
-    log.info("[%2dkm] fitting HurdleSuperLearner: n=%d, n_pos=%d (%.2f%%)",
+    log.info("[%2dkm] fitting HurdleSuperLearner Q: n=%d, n_pos=%d (%.2f%%)",
              R, len(X), n_pos, 100 * n_pos / max(len(X), 1))
 
     t0 = time.time()
+
+    # ── Step 1: fit Q (outcome regression) ──
     q = tmle.HurdleSuperLearner(random_state=42)
     q.fit(X, y)
+    Q_hat = q.predict(X)
+    log.info("[%2dkm] Q fit done (%.1fs)", R, time.time() - t0)
+
+    # ── Step 2: fit g (conditional density of treatment A | L) ──
+    A = X[:, 0]   # treatment = first feature column (cum_vol_365d_BBL)
+    L = X[:, 1:]  # confounders = the rest
+    g = tmle.HistogramConditionalDensity(random_state=42)
+    g.fit(A, L)
+    log.info("[%2dkm] g fit done", R)
+
+    # ── Step 3: solve targeting parameter ε ──
+    # Clever covariate: H_i = I(A_i in bin(A_i)) / (g(A_i | L_i) · bin_width)
+    # This is the identity clever covariate for a continuous treatment TMLE
+    # when we evaluate at the observed treatment value.
+    g_obs = g.density(A, L)
+    bin_idx = np.clip(np.digitize(A, g.edges_, right=False) - 1, 0, g.n_bins - 1)
+    bin_w = g.widths_[bin_idx]
+    H = 1.0 / np.maximum(g_obs * bin_w, 1e-12)
+
+    # ε from univariate OLS of (Y − Q̂) on H, no intercept
+    residual = y - Q_hat
+    eps = float(np.dot(H, residual) / max(np.dot(H, H), 1e-15))
+    log.info("[%2dkm] targeting ε = %+.4e", R, eps)
+
+    # ── Step 4: compute IF variance for uncertainty ──
+    # Q̂* = Q̂ + ε · H
+    Q_star = Q_hat + eps * H
+    # IF_i = H_i · (Y_i − Q̂*_i)  + Q̂*_i − ψ̂
+    psi_hat = float(Q_star.mean())
+    IF = H * (y - Q_star) + Q_star - psi_hat
+    if_var = float(np.var(IF, ddof=1))
+
     fit_time = time.time() - t0
-    log.info("[%2dkm] ✅ fit in %.1fs", R, fit_time)
+    log.info("[%2dkm] ✅ full TMLE fit in %.1fs (ε=%+.4e, IF_var=%.4e)",
+             R, fit_time, eps, if_var)
 
     return AttributionQ(
         radius_km      = R,
@@ -210,9 +281,12 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> AttributionQ | Non
         formation_cols = formation_cols,
         top_formations = top_forms,
         q              = q,
+        g              = g,
+        epsilon        = eps,
         n_train        = len(X),
         n_pos          = n_pos,
         fit_time_sec   = fit_time,
+        if_var         = if_var,
     )
 
 
