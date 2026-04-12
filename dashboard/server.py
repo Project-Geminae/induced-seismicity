@@ -56,7 +56,8 @@ EVENT_INDEX_JSON   = REPO_ROOT / "event_index.json"
 LINKS_PARQUET      = REPO_ROOT / "event_well_links.parquet"
 LINKS_CSV_FALLBACK = REPO_ROOT / "event_well_links.csv"  # only if pyarrow missing
 PANEL_CSV          = REPO_ROOT / "well_day_panel.csv"
-Q_PKL_FMT          = "q_attribution_{R}km.pkl"
+Q_PKL_FMT          = "q_attribution_{R}km.pkl"    # legacy TMLE pickles (unused)
+CF_PKL_FMT         = "cf_cate_{R}km.pkl"          # Causal Forest DML pickles
 
 RADII_KM = list(range(1, 21))
 
@@ -129,31 +130,47 @@ def _load_event_index() -> dict:
     return json.loads(EVENT_INDEX_JSON.read_text())
 
 
-def _load_attribution_qs() -> dict[int, object]:
-    """Load the per-radius attribution Q models, if any are on disk.
+def _load_causal_forests() -> dict[int, object]:
+    """Load per-radius CausalForestDML bundles from cf_cate_<R>km.pkl.
 
-    These are produced by build_attribution_q.py and are optional —
-    the dashboard works without them, but the per-event attribution
-    endpoint will return an error if the requested radius's Q is missing.
-
-    Pickle dispatch: the AttributionQ class is defined in
-    build_attribution_q.py, which on the build side runs as `__main__`. To
-    let pickle find the class regardless of how the build script was
-    invoked, we register the class under both `__main__` AND
-    `build_attribution_q` namespaces before unpickling.
+    These are produced by build_causal_forest.py. Falls back to the old
+    TMLE AttributionQ pickles if no CF pickles are found.
     """
     out: dict[int, object] = {}
 
-    # Make `build_attribution_q.AttributionQ` AND `__main__.AttributionQ`
-    # both resolve to the same class object
+    # Register build classes for pickle dispatch
+    try:
+        import build_causal_forest as bcf
+        import __main__ as main_mod
+        if not hasattr(main_mod, "CausalForestBundle"):
+            main_mod.CausalForestBundle = bcf.CausalForestBundle
+    except Exception as e:
+        log.warning("Could not register CausalForestBundle: %s", e)
+
+    # Try Causal Forest pickles first
+    for R in RADII_KM:
+        path = REPO_ROOT / CF_PKL_FMT.format(R=R)
+        if not path.exists():
+            continue
+        try:
+            with path.open("rb") as f:
+                out[R] = pickle.load(f)
+            log.info("📄  Loaded CausalForest: %s", path.name)
+        except Exception as e:
+            log.warning("Failed to load %s: %s", path.name, e)
+
+    if out:
+        return out
+
+    # Fallback: try old TMLE AttributionQ pickles
+    log.warning("No cf_cate_*.pkl found — trying legacy q_attribution_*.pkl")
     try:
         import build_attribution_q as baq
         import __main__ as main_mod
         if not hasattr(main_mod, "AttributionQ"):
             main_mod.AttributionQ = baq.AttributionQ
-    except Exception as e:
-        log.warning("Could not register AttributionQ for pickle: %s", e)
-
+    except Exception:
+        pass
     for R in RADII_KM:
         path = REPO_ROOT / Q_PKL_FMT.format(R=R)
         if not path.exists():
@@ -161,13 +178,12 @@ def _load_attribution_qs() -> dict[int, object]:
         try:
             with path.open("rb") as f:
                 out[R] = pickle.load(f)
-            log.info("📄  Loaded Q model: %s", path.name)
+            log.info("📄  Loaded legacy Q model: %s", path.name)
         except Exception as e:
             log.warning("Failed to load %s: %s", path.name, e)
+
     if not out:
-        log.warning("⚠️   No q_attribution_*.pkl files found — "
-                    "attribution endpoint will be unavailable. "
-                    "Run `python build_attribution_q.py` to fit them.")
+        log.warning("⚠️   No CATE models found. Run build_causal_forest.py.")
     return out
 
 
@@ -265,7 +281,7 @@ def _startup() -> None:
     state.links         = _load_links()
     state.panel         = _load_panel()
     state.tmle_summary  = _load_tmle_summary()
-    state.attribution_q = _load_attribution_qs()
+    state.attribution_q = _load_causal_forests()
     state.loaded_at     = datetime.now()
     log.info("✅  Dashboard ready (loaded at %s)", state.loaded_at.isoformat())
     log.info("    %d attribution Q models available: %s",
@@ -575,48 +591,43 @@ def event_attribution(
     fdf_cf[W_col] = 0.0
     fdf_cf[P_col] = BRINE_GRADIENT_PSI_PER_FT * fdf_cf["perf_depth_ft"]
 
-    # ── Localized TMLE-targeted predictions ──
-    # Uses the van der Laan & Luedtke (2015) localized TMLE: a separate ε
-    # is solved per-well using a Gaussian kernel on standardized confounders.
-    has_tmle = (hasattr(aq, 'g') and aq.g is not None
-                and hasattr(aq, 'L_std') and aq.L_std is not None)
+    # ── Causal Forest DML CATE estimation ──
+    # If aq is a CausalForestBundle (from build_causal_forest.py), use the
+    # forest's .estimate_cate() which gives honest per-well CIs from sample
+    # splitting. Falls back to plain g-computation for legacy TMLE pickles.
+    is_cf = hasattr(aq, 'estimate_cate')
 
-    if has_tmle:
-        q_fact, eps_fact, se_fact = aq.predict_targeted(fdf)
-        q_cf, eps_cf, se_cf       = aq.predict_targeted(fdf_cf)
-        q_factual        = np.asarray(q_fact, dtype=float)
-        q_counterfactual = np.asarray(q_cf, dtype=float)
-        # Per-well SE: combine the two targeting SEs in quadrature
-        se_per_well = np.sqrt(np.asarray(se_fact, dtype=float) ** 2
-                             + np.asarray(se_cf, dtype=float) ** 2)
+    if is_cf:
+        treatment_vals = fdf[W_col].to_numpy()
+        result = aq.estimate_cate(fdf, treatment_vals)
+        cate_arr  = result["cate"]
+        ci_lo_arr = result["ci_low"]
+        ci_hi_arr = result["ci_high"]
     else:
+        # Legacy fallback: plain g-computation (no CIs)
         q_factual        = np.asarray(aq.predict(fdf), dtype=float)
         q_counterfactual = np.asarray(aq.predict(fdf_cf), dtype=float)
-        se_per_well      = np.full(len(fdf), float("nan"))
+        cate_arr  = q_factual - q_counterfactual
+        ci_lo_arr = np.full(len(fdf), float("nan"))
+        ci_hi_arr = np.full(len(fdf), float("nan"))
 
-    contributions = q_factual - q_counterfactual
-    total_contribution = float(contributions.sum())
-    pos_total = float(np.maximum(contributions, 0).sum())
+    total_contribution = float(cate_arr.sum())
+    pos_total = float(np.maximum(cate_arr, 0).sum())
 
-    z95 = 1.959963984540054
     wells_out = []
     for i, row in fdf.iterrows():
-        qf = float(q_factual[i])
-        qc = float(q_counterfactual[i])
-        cate = qf - qc
-        se = float(se_per_well[i])
+        cate = float(cate_arr[i])
+        ci_lo = float(ci_lo_arr[i])
+        ci_hi = float(ci_hi_arr[i])
         share = (max(cate, 0.0) / pos_total) if pos_total > 0 else 0.0
         wells_out.append({
             "api":               int(api_list[i]),
             "distance_km":       float(row["_distance_km"]),
             "lat":               float(row["_well_lat"]),
             "lon":               float(row["_well_lon"]),
-            "q_targeted":        qf,
-            "q_cf_targeted":     qc,
             "cate_ml":           cate,
-            "cate_se":           se if not np.isnan(se) else None,
-            "cate_ci_low":       cate - z95 * se if not np.isnan(se) else None,
-            "cate_ci_high":      cate + z95 * se if not np.isnan(se) else None,
+            "cate_ci_low":       ci_lo if not np.isnan(ci_lo) else None,
+            "cate_ci_high":      ci_hi if not np.isnan(ci_hi) else None,
             "share":             share,
             "formation":         row["formation"],
             "perf_depth_ft":     float(row["perf_depth_ft"])
@@ -650,27 +661,25 @@ def event_attribution(
                 "share":     top_contributor["share"],
             }),
         },
-        "estimand": "Localized CATE-TMLE (van der Laan & Luedtke 2015)" if has_tmle else "g-computation (no targeting)",
+        "estimand": "Causal Forest DML (Athey, Tibshirani & Wager 2019)" if is_cf else "g-computation (legacy)",
         "model_meta": {
-            "n_train":     aq.n_train,
-            "n_pos":       aq.n_pos,
-            "bandwidth":   float(aq.bandwidth) if has_tmle else None,
-            "n_subsample": len(aq.L_std) if has_tmle else None,
-            "feature_cols": aq.feature_cols,
+            "n_train":      aq.n_train,
+            "n_pos":        aq.n_pos,
+            "method":       "CausalForestDML" if is_cf else "HurdleSuperLearner",
+            "feature_cols": aq.confounder_cols if is_cf else getattr(aq, "feature_cols", []),
         },
         "disclaimer":  ATTRIBUTION_DISCLAIMER,
     }
 
 
 ATTRIBUTION_DISCLAIMER = (
-    "Localized CATE-TMLE (van der Laan & Luedtke 2015): Conditional Average "
-    "Treatment Effect estimated via kernel-localized Targeted Maximum Likelihood. "
-    "For each well, a separate targeting parameter ε(l₀) is solved using a "
-    "Gaussian kernel on standardized confounders, weighting nearby training "
-    "observations more heavily. This avoids the global-ε overcorrection that "
-    "can make per-well CATEs implausible at the edges of the covariate "
-    "distribution. CIs are from the localized influence function. Identified "
-    "under: no unmeasured confounding, positivity, consistency. "
+    "Causal Forest DML (Athey, Tibshirani & Wager 2019; Chernozhukov et al. "
+    "2018): per-well CATE estimated via honest Causal Forest with Double "
+    "Machine Learning. Cross-fitted XGBoost nuisance models for E[Y|L] and "
+    "E[A|L]; the forest splits on treatment-effect heterogeneity with sample "
+    "splitting for valid CIs. Doubly robust: misspecify the outcome or "
+    "treatment model (not both) and the CATE is still consistent. "
+    "Identified under: no unmeasured confounding, positivity, consistency. "
     "See /methodology for full discussion."
 )
 

@@ -826,7 +826,7 @@
     const top = a.top_contributor;
     el.style.display = "block";
     el.innerHTML = `
-      <div class="header-bar">PER-WELL CATE · TMLE-TARGETED</div>
+      <div class="header-bar">PER-WELL CATE · CAUSAL FOREST DML</div>
       <div class="body">
         <div class="total">
           Σ CATE = ${fmtML(a.positive_total_ml)}<span class="unit">ML  (positive contributors)</span>
@@ -910,10 +910,10 @@
                 <span class="val ${isNeg ? 'neg-contribution' : 'pos-contribution'}">${fmtML(attr.cate_ml)} ML</span>
                 <span class="label">95% CI</span>
                 <span class="val">[${ciLo}, ${ciHi}]</span>
-                <span class="label">Q*(A)</span>
-                <span class="val">${fmtML(attr.q_targeted)}</span>
-                <span class="label">Q*(0)</span>
-                <span class="val">${fmtML(attr.q_cf_targeted)}</span>
+                <span class="label">VOL 365D</span>
+                <span class="val">${fmtVol(attr.cum_vol_window)} BBL</span>
+                <span class="label"></span>
+                <span class="val"></span>
               </div>
             </div>
           `;
