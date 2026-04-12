@@ -925,3 +925,110 @@ Comparison artifact saved to [tmle_r_crossvalidation_7km_20260411.csv](tmle_r_cr
   unrelated bug in the comparison-row construction; the comparison numbers
   were captured from the R log file directly and reformatted into the CSV.
   Not critical to fix.
+
+---
+
+# Dashboard MVP
+
+The TMLE pipeline produces aggregate per-radius numbers; the dashboard
+exposes the *per-event context* that those numbers were fit on. The
+question it answers: **"I see this earthquake on the map. Which wells were
+nearby and what were they doing in the year leading up to it?"**
+
+## What it does
+
+A FastAPI backend + Leaflet HTML frontend running as a long-lived service
+on minitim, accessed over Tailscale. The user clicks an event marker on
+the Midland-Basin map; the sidebar populates with:
+
+- **Event metadata** — EventID, magnitude, date, location, depth
+- **Wells within R km** — sorted by distance, each with a card showing:
+  - API number + distance (km)
+  - Formation tag (color-coded by stratigraphic unit)
+  - Perforation depth, days_active
+  - Same-day injection volume + wellhead pressure
+  - **Cumulative injection volume at 30/90/180/365-day lookbacks**
+  - **Volume-weighted average pressure at 30/365-day lookbacks**
+  - **Depth-corrected BHP (via the `0.45 psi/ft × perf_depth_ft` model)**
+- **TMLE context panel** — population-level numbers at the chosen radius:
+  - Total Effect (p90 vs p10 cumulative-volume contrast)
+  - Natural Direct / Indirect Effects
+  - % pressure-mediated
+  - Dose-response E[Y_a] at a = 10⁷ BBL
+
+The radius slider is a live re-fetch — drag it from 1 to 20 km to see how
+many wells fall into the event neighborhood at each scale, and how the
+TMLE context changes accordingly.
+
+## Architecture
+
+**Two new files** make the dashboard data available:
+- [spatiotemporal_join.py](spatiotemporal_join.py) was extended to persist
+  the per-(event, well) link table that it was already computing internally
+  but throwing away. New CLI flag `--links-only` skips the heavy panel
+  rewrite and just generates the dashboard data files in ~70 seconds.
+- The link table is written as both per-radius CSVs
+  (`event_well_links_{1..20}km.csv`) and a consolidated parquet
+  (`event_well_links.parquet`, 2.4M rows across all radii). The parquet is
+  what the dashboard queries.
+- A small `event_index.json` is also written with one entry per event:
+  lat, lon, date, magnitude, depth, RMS, phase count, and per-radius
+  nearby-well counts. The frontend uses this for map markers and tooltips
+  without needing to load the full link table.
+
+**Three new dashboard files:**
+- [dashboard/server.py](dashboard/server.py) — FastAPI app (~350 lines).
+  Loads everything into memory at startup (events, link parquet, well-day
+  panel, TMLE summary CSVs) and exposes JSON endpoints for the frontend.
+  Resident memory ~500 MB.
+- [dashboard/templates/index.html](dashboard/templates/index.html) — single
+  HTML file (~525 lines) with vanilla JS + Leaflet 1.9.4. No build step,
+  no React, no npm. Dark theme, color-coded magnitude markers, color-coded
+  formation tags.
+- [dashboard/__init__.py](dashboard/__init__.py) — empty, makes
+  `dashboard` a Python package so `uvicorn dashboard.server:app` works.
+
+## Endpoints
+
+```
+GET  /                                              renders the Leaflet HTML
+GET  /api/health                                    liveness + row counts
+GET  /api/events?since=&until=&min_ml=&limit=       events for the map
+GET  /api/event/{event_id}                          single-event metadata
+GET  /api/event/{event_id}/wells?radius_km=7        wells + panel features
+GET  /api/tmle/summary?radius_km=7                  population TMLE at radius
+GET  /api/tmle/all                                  full TMLE table (all radii)
+GET  /api/wells/{api}/timeseries?around=&days=      well injection time series
+GET  /docs                                          auto-generated FastAPI docs
+```
+
+## Deployment
+
+Running on **minitim** under tmux session `dashboard`. Accessible from any
+device on Lewis's Tailnet at:
+
+- `http://100.65.23.59:8765/`
+- `http://minitim-lambda-vector:8765/`
+
+Memory footprint: ~500 MB resident. Startup time: ~3 seconds (parquet load).
+Per-click latency: ~50 ms for the wells endpoint, ~10 ms for everything
+else (all data is in-memory).
+
+Recipe + restart instructions in
+[MIGRATING_TO_MINITIM.md](MIGRATING_TO_MINITIM.md).
+
+## What this dashboard is NOT (deferred)
+
+- **Per-well counterfactual TMLE.** The TMLE estimates remain
+  population-level. The dashboard shows a well's *features* in the context
+  of an event, not its *causal contribution* to that event. A real
+  counterfactual would require leave-one-out TMLE refits per well per
+  event, which is computationally prohibitive at the current scale.
+- **Time slider for event evolution.** The events are static markers; you
+  can filter by year-from / year-to but you can't scrub through time.
+- **Per-formation filters.** Formation is shown as a color-coded tag but
+  there's no filter to "show only Ellenburger events" yet.
+- **PDF / CSV export.** No download buttons. The raw CSVs are committed
+  in the repo if anyone needs them.
+- **User auth.** None. The Tailnet is the auth boundary; anyone on
+  Lewis's tailnet can access the dashboard.

@@ -143,6 +143,88 @@ rsync -av minitim@100.65.23.59:~/induced-seismicity/tmle_*_365d_*.csv \
    all 20 radii at this scale; CIs from the minitim run are 10-30% tighter,
    which is the bias-variance gain you'd expect from more cross-fit folds.
 
+---
+
+## Dashboard deployment on minitim
+
+The web dashboard (`dashboard/server.py` + `dashboard/templates/index.html`)
+runs as a long-running uvicorn service on minitim, accessed from any device
+on the Tailnet via Tailscale. **Recipe:**
+
+```bash
+# 1. From local Mac — sync code + run the link-table generator on minitim
+rsync -av ~/induced-seismicity/spatiotemporal_join.py \
+          ~/induced-seismicity/dashboard/server.py \
+          ~/induced-seismicity/dashboard/__init__.py \
+          minitim@100.65.23.59:~/induced-seismicity/dashboard/
+rsync -av ~/induced-seismicity/dashboard/templates/ \
+          minitim@100.65.23.59:~/induced-seismicity/dashboard/templates/
+
+# 2. SSH in and install dashboard deps if not already there
+ssh minitim@100.65.23.59
+cd ~/induced-seismicity
+.venv/bin/pip install fastapi uvicorn pyarrow
+
+# 3. Generate the event-well link tables (one-time, ~70 sec)
+.venv/bin/python spatiotemporal_join.py --links-only
+# This writes:
+#   event_well_links_{1..20}km.csv         (per-radius CSVs, ~150 MB total)
+#   event_well_links.parquet               (consolidated across radii)
+#   event_index.json                       (per-event metadata + per-radius well counts)
+
+# 4. Launch the dashboard in tmux so it survives disconnect
+tmux new-session -d -s dashboard "bash -lc \"cd ~/induced-seismicity && \
+  .venv/bin/uvicorn dashboard.server:app \
+    --host 0.0.0.0 --port 8765 --log-level info \
+  &> dashboard.log\""
+
+# 5. Verify
+curl -s http://100.65.23.59:8765/api/health
+# {"status":"ok","loaded_at":"...","n_events":5233,"n_panel":689213,"n_links":2401199,...}
+```
+
+**Access from any device on the Tailnet:**
+
+| URL                                            | When |
+|---|---|
+| `http://100.65.23.59:8765/`                    | Direct Tailscale IP |
+| `http://minitim-lambda-vector:8765/`           | Tailscale MagicDNS hostname |
+| `http://minitim-lambda-vector:8765/docs`       | Auto-generated FastAPI OpenAPI docs |
+| `http://minitim-lambda-vector:8765/api/health` | Liveness check |
+
+**Memory footprint:** ~500 MB resident on minitim startup (events table,
+event index, link parquet, panel CSV, TMLE summary CSVs). Negligible on
+minitim's 125 GB.
+
+**Endpoints exposed:**
+- `GET /` — renders the Leaflet HTML
+- `GET /api/health` — liveness + row counts
+- `GET /api/events?since=YYYY-MM-DD&until=YYYY-MM-DD&min_ml=2.0&limit=10000`
+- `GET /api/event/{event_id}` — single event metadata
+- `GET /api/event/{event_id}/wells?radius_km=7` — wells within R km, with
+  full panel features (cum vol at 4 windows, vw pressure, BHP, formation,
+  perf depth, days_active) on the event date
+- `GET /api/tmle/summary?radius_km=7` — population-level TMLE numbers
+  (TE, NDE, NIE, dose-response @ 1e7 BBL) at the chosen radius
+- `GET /api/tmle/all` — full per-radius TMLE summary table
+- `GET /api/wells/{api_number}/timeseries?around=YYYY-MM-DD&days=180`
+  — daily volume + pressure + cum_365d for a single well around a date
+  (intended for a future "well timeline" panel; currently unused by the UI)
+
+**Restart / debug:**
+```bash
+ssh minitim@100.65.23.59
+tmux ls                          # confirm 'dashboard' session is up
+tmux attach -t dashboard         # see uvicorn live; Ctrl-b d to detach
+tail -f ~/induced-seismicity/dashboard.log
+tmux kill-session -t dashboard   # kill cleanly
+```
+
+**Stopping:**
+```bash
+ssh minitim@100.65.23.59 "tmux kill-session -t dashboard"
+```
+
 ## What NOT to migrate
 
 - The `.venv/` directory — do not rsync it. macOS arm64 wheels won't run

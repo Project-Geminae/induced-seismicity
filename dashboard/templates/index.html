@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Induced Seismicity TMLE Dashboard</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="" />
+<style>
+  :root {
+    --bg: #0e1117;
+    --panel: #161b22;
+    --panel-2: #1f2630;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --warn: #f0883e;
+    --danger: #f85149;
+    --good: #56d364;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+  }
+  header {
+    padding: 10px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); }
+  header .meta { color: var(--muted); font-size: 11px; }
+  header .meta strong { color: var(--text); }
+  main {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    height: calc(100vh - 47px);
+    gap: 0;
+  }
+  #map-container {
+    position: relative;
+    border-right: 1px solid var(--border);
+  }
+  #map { width: 100%; height: 100%; background: #0a0e14; }
+  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.85); }
+  .leaflet-control-attribution { background: rgba(0,0,0,0.5); color: var(--muted); }
+  .leaflet-control-attribution a { color: var(--accent); }
+
+  #controls {
+    position: absolute; top: 12px; left: 12px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px; z-index: 1000;
+    min-width: 220px;
+  }
+  #controls label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  #controls .row { margin-bottom: 8px; }
+  #controls .row:last-child { margin-bottom: 0; }
+  #controls input[type=range] { width: 100%; }
+  #controls input[type=number] {
+    width: 60px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px; padding: 3px 5px;
+    font-family: inherit; font-size: 12px;
+  }
+  #controls .value { color: var(--accent); font-weight: 600; font-size: 14px; }
+
+  #sidebar {
+    background: var(--panel);
+    overflow-y: auto;
+    padding: 16px;
+  }
+  #sidebar h2 { font-size: 13px; font-weight: 600; margin: 0 0 12px 0;
+                color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  #sidebar .empty {
+    text-align: center; color: var(--muted); padding: 40px 0;
+    font-style: italic;
+  }
+
+  .event-card {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px; margin-bottom: 16px;
+  }
+  .event-card .id {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; color: var(--accent);
+    word-break: break-all;
+  }
+  .event-card .ml {
+    font-size: 22px; font-weight: 700; margin-top: 4px;
+  }
+  .ml-color-1 { color: #5fb3b3; }
+  .ml-color-2 { color: #62a0ea; }
+  .ml-color-3 { color: #ffa657; }
+  .ml-color-4 { color: #f0883e; }
+  .ml-color-5 { color: #f85149; }
+  .event-card .meta { color: var(--muted); font-size: 11px; line-height: 1.6; }
+
+  .well-list { display: flex; flex-direction: column; gap: 8px; }
+  .well-card {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px;
+  }
+  .well-card .header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .well-card .api {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; color: var(--text); font-weight: 600;
+  }
+  .well-card .distance { color: var(--accent); font-size: 11px; }
+  .well-card .formation {
+    display: inline-block; padding: 2px 6px; border-radius: 3px;
+    font-size: 10px; font-weight: 600; margin-bottom: 6px;
+  }
+  .formation-SAN-ANDRES   { background: #1f4d8a; color: #cfe1f5; }
+  .formation-ELLENBURGER  { background: #6b1e1e; color: #f5c8c8; }
+  .formation-DEVONIAN     { background: #5a4a1d; color: #f0deaa; }
+  .formation-CLEAR-FORK   { background: #1d5a3c; color: #aef0c8; }
+  .formation-GLORIETA     { background: #5a1d4a; color: #f0aade; }
+  .formation-GRAYBURG     { background: #4a3a1d; color: #e0c4a0; }
+  .formation-OTHER        { background: #3a3a3a; color: #c8c8c8; }
+
+  .well-card .features { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11px; }
+  .well-card .features .label { color: var(--muted); }
+  .well-card .features .val { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+
+  #tmle-context {
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px; margin-top: 16px;
+    font-size: 11px;
+  }
+  #tmle-context h3 { margin: 0 0 6px 0; font-size: 11px; color: var(--muted);
+                     text-transform: uppercase; letter-spacing: 0.05em; }
+  #tmle-context .row { display: flex; justify-content: space-between; padding: 2px 0; }
+  #tmle-context .label { color: var(--muted); }
+  #tmle-context .val { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Induced Seismicity TMLE Dashboard</h1>
+  <div class="meta">
+    <span id="loaded-meta">Loading…</span>
+  </div>
+  <div class="meta" style="margin-left:auto">
+    Project Geminae • TMLE rebuild
+  </div>
+</header>
+
+<main>
+  <div id="map-container">
+    <div id="controls">
+      <div class="row">
+        <label>Radius (km): <span class="value" id="radius-value">7</span></label>
+        <input type="range" id="radius-slider" min="1" max="20" step="1" value="7" />
+      </div>
+      <div class="row">
+        <label>Min magnitude (ML): <span class="value" id="ml-value">2.0</span></label>
+        <input type="range" id="ml-slider" min="1.0" max="5.5" step="0.1" value="2.0" />
+      </div>
+      <div class="row">
+        <label>Date range (year):</label>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <input type="number" id="year-from" min="2017" max="2025" value="2017" />
+          <span style="color:var(--muted)">→</span>
+          <input type="number" id="year-to"   min="2017" max="2025" value="2025" />
+        </div>
+      </div>
+      <div class="row" style="border-top:1px solid var(--border); padding-top:6px;">
+        <div class="legend-item"><span class="legend-dot" style="background:#5fb3b3"></span>ML 1–2</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#62a0ea"></span>ML 2–3</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#ffa657"></span>ML 3–4</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#f0883e"></span>ML 4–5</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#f85149"></span>ML ≥ 5</div>
+      </div>
+    </div>
+    <div id="map"></div>
+  </div>
+
+  <aside id="sidebar">
+    <h2>Selected Event</h2>
+    <div id="event-detail" class="empty">Click an event on the map.</div>
+
+    <h2 style="margin-top:24px">Wells within radius</h2>
+    <div id="well-list" class="empty">—</div>
+
+    <div id="tmle-context" style="display:none">
+      <h3>TMLE context @ <span id="tmle-radius">7</span> km</h3>
+      <div class="row">
+        <span class="label">Total effect (p90 vs p10)</span>
+        <span class="val" id="tmle-te">—</span>
+      </div>
+      <div class="row">
+        <span class="label">Direct (NDE)</span>
+        <span class="val" id="tmle-nde">—</span>
+      </div>
+      <div class="row">
+        <span class="label">Indirect (NIE)</span>
+        <span class="val" id="tmle-nie">—</span>
+      </div>
+      <div class="row">
+        <span class="label">% pressure-mediated</span>
+        <span class="val" id="tmle-pct">—</span>
+      </div>
+      <div class="row">
+        <span class="label">E[Y | a=1e7 BBL]</span>
+        <span class="val" id="tmle-dose">—</span>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+<script>
+  // ──────────────────── State ──────────────────────────────────
+  const state = {
+    radius:    7,
+    minML:     2.0,
+    yearFrom:  2017,
+    yearTo:    2025,
+    events:    [],
+    selected:  null,
+    eventLayer: null,
+    wellLayer:  null,
+    radiusCircle: null,
+  };
+
+  // ──────────────────── Map setup ──────────────────────────────
+  const map = L.map("map", {
+    center: [32.0, -101.7],
+    zoom: 8,
+    preferCanvas: true,
+    zoomControl: true,
+  });
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 18,
+  }).addTo(map);
+
+  // ──────────────────── Color helpers ──────────────────────────
+  function mlColor(ml) {
+    if (ml >= 5) return "#f85149";
+    if (ml >= 4) return "#f0883e";
+    if (ml >= 3) return "#ffa657";
+    if (ml >= 2) return "#62a0ea";
+    return "#5fb3b3";
+  }
+  function mlClass(ml) {
+    if (ml >= 5) return "ml-color-5";
+    if (ml >= 4) return "ml-color-4";
+    if (ml >= 3) return "ml-color-3";
+    if (ml >= 2) return "ml-color-2";
+    return "ml-color-1";
+  }
+  function mlRadius(ml) {
+    // Roughly area ∝ 10^ml, but capped for visibility
+    return Math.max(3, Math.min(18, Math.pow(2, ml - 1) + 1));
+  }
+
+  // ──────────────────── Number formatters ──────────────────────
+  function fmtVol(v) {
+    if (v == null || isNaN(v)) return "—";
+    if (Math.abs(v) >= 1e9) return (v / 1e9).toFixed(2) + "B";
+    if (Math.abs(v) >= 1e6) return (v / 1e6).toFixed(2) + "M";
+    if (Math.abs(v) >= 1e3) return (v / 1e3).toFixed(1) + "k";
+    return v.toFixed(0);
+  }
+  function fmtPsi(v)   { return v == null || isNaN(v) ? "—" : v.toFixed(0); }
+  function fmtKm(v)    { return v == null || isNaN(v) ? "—" : v.toFixed(2); }
+  function fmtFt(v)    { return v == null || isNaN(v) ? "—" : v.toFixed(0); }
+  function fmtML(v)    { return v == null || isNaN(v) ? "—" : v.toFixed(2); }
+  function fmtDays(v)  { return v == null || isNaN(v) ? "—" : v.toFixed(0); }
+  function fmtSci(v)   { return v == null || isNaN(v) ? "—" : v.toExponential(2); }
+
+  // ──────────────────── API ────────────────────────────────────
+  async function fetchEvents() {
+    const params = new URLSearchParams({
+      since:  state.yearFrom + "-01-01",
+      until:  state.yearTo   + "-12-31",
+      min_ml: state.minML,
+      limit:  10000,
+    });
+    const r = await fetch("/api/events?" + params);
+    const j = await r.json();
+    return j.events;
+  }
+
+  async function fetchEventWells(eventId, radiusKm) {
+    const r = await fetch(`/api/event/${eventId}/wells?radius_km=${radiusKm}`);
+    return r.json();
+  }
+
+  async function fetchTmleSummary(radiusKm) {
+    const r = await fetch(`/api/tmle/summary?radius_km=${radiusKm}`);
+    return r.json();
+  }
+
+  async function fetchHealth() {
+    const r = await fetch("/api/health");
+    return r.json();
+  }
+
+  // ──────────────────── Render: events on map ──────────────────
+  function renderEvents() {
+    if (state.eventLayer) map.removeLayer(state.eventLayer);
+    state.eventLayer = L.layerGroup();
+    for (const ev of state.events) {
+      const marker = L.circleMarker([ev.lat, ev.lon], {
+        radius:      mlRadius(ev.ml),
+        fillColor:   mlColor(ev.ml),
+        color:       "#fff",
+        weight:      0.5,
+        opacity:     0.9,
+        fillOpacity: 0.75,
+      });
+      marker.eventId = ev.id;
+      marker.eventML = ev.ml;
+      marker.bindTooltip(
+        `<b>${ev.id}</b><br>ML ${ev.ml.toFixed(1)} • ${ev.date}`,
+        { sticky: true, opacity: 0.95 }
+      );
+      marker.on("click", () => selectEvent(ev));
+      marker.addTo(state.eventLayer);
+    }
+    state.eventLayer.addTo(map);
+    document.getElementById("loaded-meta").innerHTML =
+      `<strong>${state.events.length}</strong> events visible &middot; ` +
+      `radius=<strong>${state.radius} km</strong> &middot; ` +
+      `min ML=<strong>${state.minML.toFixed(1)}</strong>`;
+  }
+
+  // ──────────────────── Render: selected event sidebar ─────────
+  async function selectEvent(ev) {
+    state.selected = ev;
+
+    // Highlight: pan + zoom slightly
+    map.flyTo([ev.lat, ev.lon], Math.max(10, map.getZoom()), { duration: 0.5 });
+
+    // Draw radius circle
+    if (state.radiusCircle) map.removeLayer(state.radiusCircle);
+    state.radiusCircle = L.circle([ev.lat, ev.lon], {
+      radius: state.radius * 1000,  // metres
+      color: "#58a6ff",
+      weight: 1.5,
+      fillColor: "#58a6ff",
+      fillOpacity: 0.05,
+      dashArray: "4 4",
+    }).addTo(map);
+
+    // Sidebar event header
+    const detailEl = document.getElementById("event-detail");
+    detailEl.classList.remove("empty");
+    detailEl.innerHTML = `
+      <div class="event-card">
+        <div class="id">${ev.id}</div>
+        <div class="ml ${mlClass(ev.ml)}">M${ev.ml.toFixed(1)}</div>
+        <div class="meta">
+          <div>📅 ${ev.date}</div>
+          <div>📍 ${ev.lat.toFixed(4)}°N, ${ev.lon.toFixed(4)}°W</div>
+          <div>📏 depth ${ev.depth_km == null ? "—" : ev.depth_km.toFixed(2) + " km MSL"}</div>
+        </div>
+      </div>
+    `;
+
+    // Fetch + render wells
+    document.getElementById("well-list").innerHTML =
+      `<div class="empty">Loading wells within ${state.radius} km…</div>`;
+    const data = await fetchEventWells(ev.id, state.radius);
+    renderWells(data);
+
+    // TMLE context
+    const tmle = await fetchTmleSummary(state.radius);
+    renderTmleContext(tmle);
+  }
+
+  function renderWells(data) {
+    const container = document.getElementById("well-list");
+
+    // Draw well dots on the map
+    if (state.wellLayer) map.removeLayer(state.wellLayer);
+    state.wellLayer = L.layerGroup();
+    for (const w of data.wells) {
+      L.circleMarker([w.lat, w.lon], {
+        radius: 4,
+        fillColor: "#58a6ff",
+        color: "#fff",
+        weight: 0.5,
+        fillOpacity: 0.8,
+      }).bindTooltip(
+        `API ${w.api}<br>${w.distance_km.toFixed(2)} km<br>` +
+        `${w.panel.formation || "—"}`,
+        { sticky: true, opacity: 0.95 }
+      ).addTo(state.wellLayer);
+    }
+    state.wellLayer.addTo(map);
+
+    if (data.n_wells === 0) {
+      container.innerHTML = `<div class="empty">No wells within ${state.radius} km.</div>`;
+      return;
+    }
+
+    container.classList.remove("empty");
+    container.innerHTML =
+      `<div style="color:var(--muted); font-size:11px; margin-bottom:8px;">
+         ${data.n_wells} well${data.n_wells === 1 ? "" : "s"} sorted by distance
+       </div>` +
+      `<div class="well-list">` +
+      data.wells.map(w => {
+        const p = w.panel || {};
+        const formClass = "formation-" + (p.formation || "OTHER").replace(/\s+/g, "-");
+        return `
+          <div class="well-card">
+            <div class="header">
+              <span class="api">API ${w.api}</span>
+              <span class="distance">${w.distance_km.toFixed(2)} km</span>
+            </div>
+            <span class="formation ${formClass}">${p.formation || "UNKNOWN"}</span>
+            <div class="features">
+              <span class="label">Perf depth</span>
+              <span class="val">${fmtFt(p.perf_depth_ft)} ft</span>
+              <span class="label">Days active</span>
+              <span class="val">${fmtDays(p.days_active)}</span>
+
+              <span class="label">Vol same-day</span>
+              <span class="val">${fmtVol(p["Volume Injected (BBLs)"])} BBL</span>
+              <span class="label">PSIG same-day</span>
+              <span class="val">${fmtPsi(p["Injection Pressure Average PSIG"])}</span>
+
+              <span class="label">cum 30d</span>
+              <span class="val">${fmtVol(p.cum_vol_30d_BBL)} BBL</span>
+              <span class="label">cum 90d</span>
+              <span class="val">${fmtVol(p.cum_vol_90d_BBL)} BBL</span>
+
+              <span class="label">cum 180d</span>
+              <span class="val">${fmtVol(p.cum_vol_180d_BBL)} BBL</span>
+              <span class="label">cum 365d</span>
+              <span class="val">${fmtVol(p.cum_vol_365d_BBL)} BBL</span>
+
+              <span class="label">vw PSIG 30d</span>
+              <span class="val">${fmtPsi(p.vw_avg_psig_30d)}</span>
+              <span class="label">vw PSIG 365d</span>
+              <span class="val">${fmtPsi(p.vw_avg_psig_365d)}</span>
+
+              <span class="label">BHP 30d (psi)</span>
+              <span class="val">${fmtPsi(p.bhp_vw_avg_30d)}</span>
+              <span class="label">BHP 365d (psi)</span>
+              <span class="val">${fmtPsi(p.bhp_vw_avg_365d)}</span>
+            </div>
+          </div>
+        `;
+      }).join("") +
+      `</div>`;
+  }
+
+  function renderTmleContext(tmle) {
+    const el = document.getElementById("tmle-context");
+    el.style.display = "block";
+    document.getElementById("tmle-radius").textContent = tmle.radius_km;
+    document.getElementById("tmle-te").textContent  = fmtSci(tmle.TE);
+    document.getElementById("tmle-nde").textContent = fmtSci(tmle.NDE);
+    document.getElementById("tmle-nie").textContent = fmtSci(tmle.NIE);
+    document.getElementById("tmle-pct").textContent = tmle.pct_mediated == null ?
+      "—" : tmle.pct_mediated.toFixed(1) + "%";
+    document.getElementById("tmle-dose").textContent = fmtSci(tmle.dose_at_1e7);
+  }
+
+  // ──────────────────── Wire up controls ───────────────────────
+  const radiusSlider = document.getElementById("radius-slider");
+  const radiusValue  = document.getElementById("radius-value");
+  const mlSlider     = document.getElementById("ml-slider");
+  const mlValue      = document.getElementById("ml-value");
+  const yearFromInput = document.getElementById("year-from");
+  const yearToInput   = document.getElementById("year-to");
+
+  radiusSlider.addEventListener("input", (e) => {
+    state.radius = parseInt(e.target.value, 10);
+    radiusValue.textContent = state.radius;
+    if (state.selected) selectEvent(state.selected);
+  });
+  mlSlider.addEventListener("input", (e) => {
+    state.minML = parseFloat(e.target.value);
+    mlValue.textContent = state.minML.toFixed(1);
+  });
+  mlSlider.addEventListener("change", async () => {
+    state.events = await fetchEvents();
+    renderEvents();
+  });
+  yearFromInput.addEventListener("change", async (e) => {
+    state.yearFrom = parseInt(e.target.value, 10);
+    state.events = await fetchEvents();
+    renderEvents();
+  });
+  yearToInput.addEventListener("change", async (e) => {
+    state.yearTo = parseInt(e.target.value, 10);
+    state.events = await fetchEvents();
+    renderEvents();
+  });
+
+  // ──────────────────── Boot ───────────────────────────────────
+  (async () => {
+    try {
+      const health = await fetchHealth();
+      console.log("Dashboard health:", health);
+      state.events = await fetchEvents();
+      renderEvents();
+    } catch (e) {
+      console.error("Boot failed:", e);
+      document.getElementById("loaded-meta").textContent = "Error loading events.";
+    }
+  })();
+</script>
+</body>
+</html>
