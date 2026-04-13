@@ -7,6 +7,66 @@ step** in the original code, plus a stack of aggregation and column-mapping
 bugs that compounded on each other. This file documents what changed and
 why, and gives a side-by-side of the OLD and NEW headline results.
 
+---
+
+## 2026-04-13: Dashboard tooltips, CATE waterfall redesign, presentation
+
+### Dashboard (`dashboard/templates/index.html`)
+
+- **Info tooltips (i)** added throughout the dashboard with plain-language
+  (7th-grade reading level) hover explanations for every control, panel,
+  chart, and metric:
+  - Filter controls: radius, min ML
+  - Map legend: what dots mean, how to interact
+  - Panel headers: Event Detail, Well Attribution, Analytics
+  - TMLE population context: TE, NDE, NIE, % mediated, E[Y|A=1E7]
+  - Per-well card fields: CATE, 95% CI, CATE share, depth, days active,
+    CUM 365D, BHP
+  - All 4 chart headers: CATE waterfall, dose-response, injection timeline,
+    volume threshold curve
+  - Ticker bar: TMLE 5-fold/200-boot validation badge
+
+- **CATE waterfall chart redesigned:**
+  - Horizontal bars with readable labels: `#01 · 1240 · 5.5km`
+    (rank + last 4 API digits + distance)
+  - Capped at top 25 wells (title shows "TOP 25 OF N" if truncated)
+  - Negative CATEs colored blue; positive colored by depth class
+    (red = deep >10k ft, amber = mid, blue = shallow)
+  - Removed misleading 0.03 ML threshold line (belongs on per-well
+    threshold curve, not the population waterfall)
+
+- **Timeline chart:** removed "DATE" x-axis label to prevent visual
+  confusion with the threshold chart below it
+
+- **Threshold chart:** added "VOLUME THRESHOLD CURVE" header label and
+  margin separation from the timeline above
+
+### Presentation (`~/Downloads/spe228051_tmle_presentation.html`)
+
+Stand-alone HTML presentation: "From OLS to TMLE: Advancing Causal
+Inference for Induced Seismicity." Bloomberg terminal theme. Crawl-walk-run
+structure with 9 interactive Plotly charts, all using real data:
+
+1. **Map** — 7,424 TexNet earthquakes + 1,056 RRC SWD wells (scattergl)
+2. **OLS vs TMLE linearity** — real TMLE dose-response at 7 km vs OLS line
+3. **Dose-response curves** — 6 radii, real data from TMLE sweep
+4. **10% shift policy** — real TMLE shift estimates, 20 radii
+5. **NDE vs NIE mediation** — real mediation decomposition, 20 radii
+6. **CATE waterfall (M4.8)** — real Causal Forest output, texnet2025edml
+7. **Threshold curve** — real per-well curve for API 31741240
+8. **CATE waterfall (M5.2)** — real data, texnet2022yplg, distributed causation
+9. All charts have real 95% CIs from influence functions or honest forests
+
+New section: **"Two Types of Events, Two Regulatory Playbooks"**
+- Contrasts concentrated causation (M4.8: targeted shut-in) vs distributed
+  causation (M5.2: area-wide volume reduction)
+- Explains why the largest earthquake has the smallest per-well CATEs
+- Table mapping scenario → tool → regulatory action
+
+36 info tooltips in the presentation; 27 in the dashboard.
+
+---
+
 ## Summary
 
 | Aspect | OLD | NEW |
