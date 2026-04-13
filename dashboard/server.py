@@ -747,3 +747,103 @@ def well_timeseries(
             for d, row in sub.iterrows()
         ],
     }
+
+
+def _safe_float(v, fallback=0.0):
+    """Coerce to float, replacing None/NaN with fallback."""
+    if v is None:
+        return fallback
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return fallback
+    return fallback if (f != f) else f
+
+
+@app.get("/api/wells/{api_number}/threshold")
+def well_threshold(
+    api_number: int,
+    radius_km: int   = Query(7, ge=1, le=20),
+    event_date: str  = Query(..., description="Event date YYYY-MM-DD (for panel lookup)"),
+    n_points:   int  = Query(25, ge=5, le=100),
+    max_vol:    float = Query(0, description="Max volume for grid (0 = auto 2× current)"),
+    cate_threshold: float = Query(0.03, description="Regulatory CATE threshold (ML)"),
+) -> dict:
+    """Well-specific dose-response curve: CATE vs cumulative volume at this
+    well's covariate profile, evaluated by the Causal Forest at a grid of
+    treatment levels.
+
+    The regulator uses this to find: "at what cumulative volume does this
+    well's CATE become statistically significant (CI lower bound > 0) or
+    exceed a regulatory threshold?"
+
+    Returns the curve + the intersection point (max allowable volume).
+    """
+    if radius_km not in state.attribution_q:
+        raise HTTPException(503, f"No CausalForest model for {radius_km}km")
+
+    aq = state.attribution_q[radius_km]
+    is_cf = hasattr(aq, 'estimate_cate')
+    if not is_cf:
+        raise HTTPException(503, "Threshold curve requires CausalForest model")
+
+    ev_date = pd.Timestamp(event_date)
+    feats = _well_features_at(api_number, ev_date)
+    if not feats:
+        raise HTTPException(404, f"No panel data for API {api_number} on {event_date}")
+
+    W_col = f"cum_vol_{aq.window_days}d_BBL"
+    current_vol = _safe_float(feats.get(W_col), 0.0)
+    depth_ft    = _safe_float(feats.get("perf_depth_ft"), 7000.0)
+
+    if max_vol <= 0:
+        max_vol = max(current_vol * 2.5, 1_000_000)
+
+    # Build the confounder row (same for all grid points — only treatment changes)
+    well_row = pd.DataFrame([{
+        "perf_depth_ft":               depth_ft,
+        "days_active":                 _safe_float(feats.get("days_active")),
+        "Nearest Fault Dist (km)":     _safe_float(_well_static(api_number, "Nearest Fault Dist (km)")),
+        f"Fault Segments <= {radius_km} km": _safe_float(_well_static(api_number, f"Fault Segments <= {radius_km} km")),
+        "formation":                   feats.get("formation", "UNKNOWN"),
+    }])
+
+    # Volume grid: 0 to max_vol, linearly spaced
+    vol_grid = np.linspace(0, max_vol, n_points)
+
+    # Evaluate CATE at each grid point by replicating the well row
+    well_rows = pd.concat([well_row] * n_points, ignore_index=True)
+    result = aq.estimate_cate(well_rows, vol_grid)
+
+    curve = []
+    threshold_vol = None
+    significance_vol = None
+
+    for i in range(n_points):
+        v = float(vol_grid[i])
+        c = float(result["cate"][i])
+        lo = float(result["ci_low"][i])
+        hi = float(result["ci_high"][i])
+        curve.append({"vol": v, "cate": c, "ci_low": lo, "ci_high": hi})
+
+        # Find where CATE exceeds the regulatory threshold
+        if threshold_vol is None and c >= cate_threshold:
+            threshold_vol = v
+
+        # Find where CI lower bound > 0 (statistical significance)
+        if significance_vol is None and lo > 0:
+            significance_vol = v
+
+    return {
+        "api":              api_number,
+        "radius_km":        radius_km,
+        "event_date":       event_date,
+        "current_vol":      current_vol,
+        "current_cate":     float(result["cate"][np.argmin(np.abs(vol_grid - current_vol))]) if current_vol > 0 else 0.0,
+        "depth_ft":         depth_ft,
+        "cate_threshold":   cate_threshold,
+        "threshold_vol":    threshold_vol,
+        "significance_vol": significance_vol,
+        "max_vol":          max_vol,
+        "curve":            curve,
+    }
