@@ -497,6 +497,43 @@
     0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--green); }
     50%      { opacity: 0.3; box-shadow: 0 0 0 transparent; }
   }
+
+  /* ── Info tooltips ── */
+  .info {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: rgba(255,153,0,0.12); border: 1px solid rgba(255,153,0,0.35);
+    color: var(--amber); font-size: 8px; font-weight: 700; font-style: italic;
+    cursor: help; margin-left: 3px; vertical-align: middle;
+    line-height: 1; user-select: none; flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .info:hover { background: rgba(255,153,0,0.3); border-color: var(--amber); }
+  .info::after {
+    content: attr(data-tip);
+    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%); width: 240px;
+    background: #1a1a1a; border: 1px solid var(--amber); border-radius: 4px;
+    padding: 8px 10px; font-family: "IBM Plex Mono", monospace;
+    font-size: 10px; font-weight: 400; font-style: normal;
+    color: #ccc; line-height: 1.5; text-align: left;
+    white-space: normal; pointer-events: none;
+    opacity: 0; visibility: hidden; transition: opacity 0.15s;
+    z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+  }
+  .info:hover::after { opacity: 1; visibility: visible; }
+  .info::before {
+    content: ''; position: absolute; bottom: calc(100% + 1px); left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent; border-top-color: var(--amber);
+    opacity: 0; visibility: hidden; transition: opacity 0.15s;
+    z-index: 10000;
+  }
+  .info:hover::before { opacity: 1; visibility: visible; }
+  .info.below::after { bottom: auto; top: calc(100% + 6px); }
+  .info.below::before { bottom: auto; top: calc(100% + 1px); border-top-color: transparent; border-bottom-color: var(--amber); }
+  .info.left::after { left: auto; right: 0; transform: none; }
+  .info.right::after { left: 0; right: auto; transform: none; }
 </style>
 </head>
 <body>
@@ -529,11 +566,11 @@
       </div>
       <div class="body">
         <div class="row">
-          <label>RADIUS [KM] <span class="value" id="radius-value">7</span></label>
+          <label>RADIUS [KM]<span class="info below" data-tip="How far from the earthquake to look for wells (in kilometers). A bigger radius includes more wells but weakens the signal. 7 km is a good default -- close enough for pressure effects to matter.">i</span> <span class="value" id="radius-value">7</span></label>
           <input type="range" id="radius-slider" min="1" max="20" step="1" value="7" />
         </div>
         <div class="row">
-          <label>MIN ML <span class="value" id="ml-value">2.0</span></label>
+          <label>MIN ML<span class="info below" data-tip="Only show earthquakes this big or bigger. ML stands for Local Magnitude (like the Richter scale). An M2 is a tiny rumble you can't feel. An M4+ rattles windows. An M5+ can cause damage.">i</span> <span class="value" id="ml-value">2.0</span></label>
           <input type="range" id="ml-slider" min="1.0" max="5.5" step="0.1" value="2.0" />
         </div>
         <div class="row">
@@ -550,6 +587,7 @@
           <div class="legend-item"><span class="legend-dot" style="background:#ff9900"></span>3–4</div>
           <div class="legend-item"><span class="legend-dot" style="background:#ff6600"></span>4–5</div>
           <div class="legend-item"><span class="legend-dot" style="background:#ff3030"></span>≥5</div>
+          <span class="info below" data-tip="Each dot on the map is a TexNet earthquake, colored by magnitude (ML). Bigger dots = bigger earthquakes. Click any dot to select it and see its attribution analysis in the sidebar. When you select an event, amber dots appear showing the disposal wells within your search radius.">i</span>
         </div>
       </div>
     </div>
@@ -558,7 +596,7 @@
 
   <aside id="sidebar">
     <div class="panel-section">
-      <div class="panel-header"><span>EVENT DETAIL</span><span class="meta">[F6]</span></div>
+      <div class="panel-header"><span>EVENT DETAIL<span class="info below" data-tip="Click any earthquake on the map to see its details here: location, magnitude, depth, date, and how many disposal wells are nearby at your chosen radius.">i</span></span><span class="meta">[F6]</span></div>
       <div id="event-detail" class="panel-body empty">
         <span class="blink">▎</span> AWAITING EVENT SELECTION
       </div>
@@ -567,43 +605,56 @@
     <div id="attribution-summary" style="display:none"></div>
 
     <div class="panel-section">
-      <div class="panel-header"><span>WELL ATTRIBUTION</span><span class="meta" id="well-list-meta">[F7]</span></div>
+      <div class="panel-header"><span>WELL ATTRIBUTION<span class="info below" data-tip="This lists every disposal well within the search radius of the selected earthquake. Each well shows its estimated causal contribution (CATE) to the quake's magnitude. Wells are sorted by contribution -- biggest contributors first.">i</span></span><span class="meta" id="well-list-meta">[F7]</span></div>
       <div id="well-list" class="panel-body empty">—</div>
     </div>
 
     <!-- ─── Charts ─── -->
     <div class="panel-section" id="charts-section" style="display:none">
-      <div class="panel-header"><span>ANALYTICS</span><span class="meta">[F9]</span></div>
+      <div class="panel-header"><span>ANALYTICS<span class="info below" data-tip="Three charts that break down the selected earthquake: (1) CATE waterfall showing each well's causal contribution, (2) dose-response curve showing how magnitude changes with volume, (3) injection timeline for the selected well. Click a well card to add its threshold curve.">i</span></span><span class="meta">[F9]</span></div>
+      <div style="padding:6px 8px 0; font-size:10px; color:var(--amber); letter-spacing:0.08em; font-weight:600;">
+        CATE BY WELL<span class="info below right" data-tip="Each horizontal bar shows one well's estimated causal contribution (CATE) to the selected earthquake. Longer bars = bigger contribution. Red bars are deep wells (>10,000 ft), amber are mid-depth, blue are shallow or negative. Error bars show the 95% confidence interval — if the error bar crosses zero, we can't be sure the well contributed at all. Wells are ranked from top (biggest contributor) to bottom.">i</span>
+      </div>
       <div id="chart-waterfall" style="height:260px; padding:4px 8px;"></div>
-      <div id="chart-dose-response" style="height:260px; padding:4px 8px; border-top:1px solid #2a2a2a;"></div>
-      <div id="chart-timeline" style="height:260px; padding:4px 8px; border-top:1px solid #2a2a2a;"></div>
-      <div id="chart-threshold" style="height:300px; padding:4px 8px; border-top:2px solid #ff9900; display:none;"></div>
+      <div style="padding:6px 8px 0; font-size:10px; color:var(--amber); letter-spacing:0.08em; font-weight:600; border-top:1px solid #2a2a2a;">
+        DOSE-RESPONSE CURVE<span class="info below right" data-tip="The amber curve shows the population-level relationship between injection volume (x-axis) and expected earthquake magnitude (y-axis) from the TMLE analysis. The shaded band is the 95% confidence interval. Colored dots show where each well in this event sits on the curve. Hover a dot to see the well's API number and volume. This curve is nonlinear — a straight line would miss the steep section at moderate volumes.">i</span>
+      </div>
+      <div id="chart-dose-response" style="height:260px; padding:4px 8px;"></div>
+      <div style="padding:6px 8px 0; font-size:10px; color:var(--amber); letter-spacing:0.08em; font-weight:600; border-top:1px solid #2a2a2a;">
+        INJECTION TIMELINE<span class="info below right" data-tip="Shows cumulative 365-day injection volume over time for the top 5 contributing wells. The red dashed vertical line marks the earthquake date. Look for wells that were ramping up volume in the months before the event — those are the ones building pressure. If a well's line is flat or declining before the event, it was less likely to be driving pressure buildup.">i</span>
+      </div>
+      <div id="chart-timeline" style="height:260px; padding:4px 8px;"></div>
+      <div id="chart-threshold" style="height:300px; padding:4px 8px; border-top:2px solid #ff9900; margin-top:8px; display:none;">
+        <div style="font-size:10px; color:var(--amber); letter-spacing:0.08em; font-weight:600; padding:4px 0 0 4px;">
+          VOLUME THRESHOLD CURVE<span class="info below right" data-tip="This is a per-well dose-response curve. Click any well card to see it. The amber line shows how that well's CATE changes as you vary its injection volume (holding everything else constant). The cyan vertical line is the well's current volume. The red dashed horizontal line is the regulatory threshold (e.g. 0.03 ML). Where the amber curve crosses the red line tells you the maximum allowable volume for that well. If the curve stays below the threshold at all volumes, the well is low-risk.">i</span>
+        </div>
+      </div>
     </div>
 
     <div id="tmle-context" style="display:none">
       <div class="header-bar">
-        <span>TMLE POPULATION CONTEXT @ <span id="tmle-radius">7</span> KM</span>
+        <span>TMLE POPULATION CONTEXT<span class="info below" data-tip="These numbers come from the population-level TMLE analysis -- the average causal effect across ALL wells and events at the selected radius. Think of it as the big-picture view before you zoom into individual wells.">i</span> @ <span id="tmle-radius">7</span> KM</span>
         <span class="right">[F8]</span>
       </div>
       <div class="body">
         <div class="row">
-          <span class="label">TE (P90 vs P10)</span>
+          <span class="label">TE (P90 vs P10)<span class="info below" data-tip="Total Effect: the difference in expected earthquake magnitude between a high-volume well (90th percentile) and a low-volume well (10th percentile). A bigger number means injection volume has a larger overall impact on earthquake size.">i</span></span>
           <span class="val" id="tmle-te">—</span>
         </div>
         <div class="row">
-          <span class="label">DIRECT (NDE)</span>
+          <span class="label">DIRECT (NDE)<span class="info below" data-tip="Natural Direct Effect: the part of the causal effect that does NOT go through pressure. This could be mechanical stress changes in the rock from the weight of injected fluid, or pressure effects not captured by wellhead gauges.">i</span></span>
           <span class="val" id="tmle-nde">—</span>
         </div>
         <div class="row">
-          <span class="label">INDIRECT (NIE)</span>
+          <span class="label">INDIRECT (NIE)<span class="info below" data-tip="Natural Indirect Effect: the part of the causal effect that works THROUGH pressure. Injection -> higher underground pressure -> fault slips -> earthquake. This is the pathway most people think of.">i</span></span>
           <span class="val" id="tmle-nie">—</span>
         </div>
         <div class="row">
-          <span class="label">% MEDIATED</span>
+          <span class="label">% MEDIATED<span class="info below" data-tip="What percentage of the total effect goes through the pressure pathway (NIE / TE). If 30% is mediated, it means 30% of the causal effect works through pressure buildup, and 70% works through other mechanisms.">i</span></span>
           <span class="val" id="tmle-pct">—</span>
         </div>
         <div class="row">
-          <span class="label">E[Y | A=1E7 BBL]</span>
+          <span class="label">E[Y | A=1E7 BBL]<span class="info below" data-tip="The expected maximum earthquake magnitude if a well injects 10 million barrels over the lookback window. This is one point on the dose-response curve -- it tells you what earthquake size to expect at a specific volume level.">i</span></span>
           <span class="val" id="tmle-dose">—</span>
         </div>
       </div>
@@ -632,7 +683,7 @@
     <span class="key">SEL</span> <span class="val" id="tk-sel">—</span>
   </span>
   <span class="seg" style="margin-left:auto; border-right:none">
-    <span class="key">TMLE</span> <span class="val green">5-FOLD · 200 BOOT</span>
+    <span class="key">TMLE</span> <span class="val green">5-FOLD · 200 BOOT<span class="info" data-tip="The TMLE model was validated with 5-fold cross-validation (train on 80%, test on 20%, repeat 5 times) and 200 bootstrap iterations for mediation confidence intervals. This ensures the results are stable and not just a lucky fit.">i</span></span>
   </span>
 </div>
 
@@ -837,10 +888,10 @@
     const top = a.top_contributor;
     el.style.display = "block";
     el.innerHTML = `
-      <div class="header-bar">PER-WELL CATE · CAUSAL FOREST DML</div>
+      <div class="header-bar">PER-WELL CATE<span class="info below" data-tip="CATE = each well's individual causal contribution to this earthquake's magnitude. Computed by a Causal Forest model that accounts for well depth, fault distance, and injection history. Positive = contributed to the quake. Negative = may have reduced stress.">i</span> · CAUSAL FOREST DML<span class="info below" data-tip="Causal Forest with Double Machine Learning: a method that estimates per-well effects while correcting for confounders. 'Honest' means it uses separate data to build the model vs estimate effects, so it can't cheat. 'DML' means it's doubly robust.">i</span></div>
       <div class="body">
         <div class="total">
-          Σ CATE = ${fmtML(a.positive_total_ml)}<span class="unit">ML  (positive contributors)</span>
+          Σ CATE = ${fmtML(a.positive_total_ml)}<span class="unit">ML  (positive contributors)<span class="info below" data-tip="The sum of all POSITIVE per-well causal contributions. This is the total estimated anthropogenic (human-caused) addition to the earthquake's magnitude from all nearby disposal wells.">i</span></span>
         </div>
         <div class="top-line">
           <span class="key">TOP</span>
@@ -912,16 +963,16 @@
           attrBlock = `
             <div class="attribution">
               <div class="attr-label">
-                <span>CATE SHARE</span>
+                <span>CATE SHARE<span class="info below" data-tip="What percentage of the total positive causal effect comes from this well. If one well has 25% share, it's responsible for a quarter of the estimated anthropogenic contribution.">i</span></span>
                 <span class="share-pct">${sharePct.toFixed(0)}%</span>
               </div>
               <div class="attr-bar">
                 <div class="fill" style="width:${Math.min(100, sharePct).toFixed(1)}%"></div>
               </div>
               <div class="attr-detail">
-                <span class="label">CATE</span>
+                <span class="label">CATE<span class="info" data-tip="Conditional Average Treatment Effect: this well's estimated causal contribution to the earthquake magnitude (in ML units). Positive = added to the quake. Negative = may have relieved stress.">i</span></span>
                 <span class="val ${isNeg ? 'neg-contribution' : 'pos-contribution'}">${fmtML(attr.cate_ml)} ML</span>
-                <span class="label">95% CI</span>
+                <span class="label">95% CI<span class="info" data-tip="95% Confidence Interval: we're 95% sure the true CATE is between these two numbers. If this range includes zero, we can't be confident this well contributed at all.">i</span></span>
                 <span class="val">[${ciLo}, ${ciHi}]</span>
                 <span class="label">VOL 365D</span>
                 <span class="val">${fmtVol(attr.cum_vol_window)} BBL</span>
@@ -943,9 +994,9 @@
             </div>
             <span style="display:inline-block;padding:1px 6px;font-size:9px;font-weight:700;letter-spacing:0.05em;border:1px solid ${depthColor};color:${depthColor};margin-bottom:4px;">${depthFt > 0 ? fmtFt(depthFt) + ' FT · ' + depthClass : 'UNKNOWN DEPTH'}</span>
             <div class="features">
-              <span class="label">DEPTH</span>
+              <span class="label">DEPTH<span class="info" data-tip="Perforation depth: how far underground the well injects water, measured in feet. Deeper wells (>10,000 ft) are closer to basement rock where most earthquakes happen.">i</span></span>
               <span class="val">${fmtFt(p.perf_depth_ft)} FT</span>
-              <span class="label">DAYS ON</span>
+              <span class="label">DAYS ON<span class="info" data-tip="How many days this well has been actively injecting since it first started. Longer-running wells have had more time to build up pressure in the surrounding rock.">i</span></span>
               <span class="val">${fmtDays(p.days_active)}</span>
 
               <span class="label">VOL D</span>
@@ -960,7 +1011,7 @@
 
               <span class="label">CUM 180D</span>
               <span class="val">${fmtVol(p.cum_vol_180d_BBL)}</span>
-              <span class="label">CUM 365D</span>
+              <span class="label">CUM 365D<span class="info" data-tip="Total volume of water this well injected over the past 365 days (in barrels). This is the main 'treatment' variable in the causal analysis -- the number the model uses to estimate how much the well contributed.">i</span></span>
               <span class="val">${fmtVol(p.cum_vol_365d_BBL)}</span>
 
               <span class="label">PSI VW 30D</span>
@@ -968,7 +1019,7 @@
               <span class="label">PSI VW 365D</span>
               <span class="val">${fmtPsi(p.vw_avg_psig_365d)}</span>
 
-              <span class="label">BHP 30D</span>
+              <span class="label">BHP 30D<span class="info" data-tip="Bottom-Hole Pressure: the estimated pressure at the bottom of the well (not at the surface). Calculated by adding the weight of the water column to the surface pressure. This is more physically meaningful than surface pressure for triggering faults.">i</span></span>
               <span class="val">${fmtPsi(p.bhp_vw_avg_30d)}</span>
               <span class="label">BHP 365D</span>
               <span class="val">${fmtPsi(p.bhp_vw_avg_365d)}</span>
@@ -1013,40 +1064,58 @@
 
     // ── Plot 1: CATE Waterfall ──
     const wells = attribution.wells.filter(w => w.cate_ml != null);
-    const apis  = wells.map(w => `${w.api}`);
+    // Build readable labels: rank + last 4 of API + distance
+    const labels = wells.map((w, i) => {
+      const rank = String(i + 1).padStart(2, '0');
+      const shortApi = String(w.api).slice(-4);
+      const dist = w.distance_km != null ? w.distance_km.toFixed(1) : '?';
+      return `#${rank} · ${shortApi} · ${dist}km`;
+    });
     const cates = wells.map(w => w.cate_ml);
     const ciLow = wells.map(w => w.cate_ci_low != null ? w.cate_ml - w.cate_ci_low : 0);
     const ciHigh = wells.map(w => w.cate_ci_high != null ? w.cate_ci_high - w.cate_ml : 0);
+    const fullApis = wells.map(w => String(w.api));
     const colors = wells.map(w => {
+      if (w.cate_ml < 0) return "rgba(68,153,255,0.6)";
       const d = w.perf_depth_ft || 7000;
       if (d >= 10000) return "#ff3030";   // deep
       if (d >= 6000)  return "#ff9900";   // mid
       return "#4499ff";                    // shallow
     });
 
+    // Show top 25 max to keep chart readable; reverse for bottom-up Plotly rendering
+    const maxShow = Math.min(wells.length, 25);
+    const rLabels = labels.slice(0, maxShow).reverse();
+    const rCates = cates.slice(0, maxShow).reverse();
+    const rCiLow = ciLow.slice(0, maxShow).reverse();
+    const rCiHigh = ciHigh.slice(0, maxShow).reverse();
+    const rColors = colors.slice(0, maxShow).reverse();
+    const rApis = fullApis.slice(0, maxShow).reverse();
+
     Plotly.newPlot("chart-waterfall", [{
       type: "bar",
-      x: cates,
-      y: apis,
+      x: rCates,
+      y: rLabels,
       orientation: "h",
-      marker: { color: colors },
+      marker: { color: rColors, line: { color: rColors.map(c => c.includes('rgba') ? '#446' : c), width: 0.5 } },
       error_x: {
         type: "data",
         symmetric: false,
-        array: ciHigh,
-        arrayminus: ciLow,
-        color: "#666",
+        array: rCiHigh,
+        arrayminus: rCiLow,
+        color: "#444",
         thickness: 1,
-        width: 3,
+        width: 2,
       },
-      hovertemplate: "API %{y}<br>CATE: %{x:.4f} ML<extra></extra>",
+      text: rApis,
+      hovertemplate: "API %{text}<br>CATE: %{x:+.4f} ML<extra></extra>",
     }], {
       ...plotlyLayout,
-      title: { text: "CATE BY WELL (ML)", font: { size: 11, color: "#ff9900" } },
+      title: { text: "CATE BY WELL (ML)" + (wells.length > maxShow ? ` · TOP ${maxShow} OF ${wells.length}` : ""), font: { size: 11, color: "#ff9900" } },
       xaxis: { ...plotlyLayout.xaxis, title: "CATE (ML)", zeroline: true, zerolinecolor: "#ff9900", zerolinewidth: 1 },
-      yaxis: { ...plotlyLayout.yaxis, autorange: "reversed", tickfont: { size: 8 } },
-      margin: { l: 80, r: 20, t: 30, b: 40 },
-      height: Math.max(200, wells.length * 22 + 60),
+      yaxis: { ...plotlyLayout.yaxis, tickfont: { size: 9, family: '"IBM Plex Mono", monospace' }, automargin: false },
+      margin: { l: 130, r: 20, t: 30, b: 40 },
+      height: Math.max(220, maxShow * 20 + 60),
     }, plotlyConfig);
 
     // ── Plot 2: Dose-response curve with well dots ──
@@ -1142,7 +1211,7 @@
           Plotly.newPlot("chart-timeline", traces, {
             ...plotlyLayout,
             title: { text: "INJECTION TIMELINE — TOP 5 WELLS (CUM 365D)", font: { size: 11, color: "#ff9900" } },
-            xaxis: { ...plotlyLayout.xaxis, title: "DATE" },
+            xaxis: { ...plotlyLayout.xaxis, title: "" },
             yaxis: { ...plotlyLayout.yaxis, title: "CUM 365D VOL (M BBL)" },
             legend: { font: { size: 9, color: "#888" }, bgcolor: "transparent",
                       x: 0, y: 1, xanchor: "left" },
