@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDMyIDMyIj48cmVjdCB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIGZpbGw9IiMwMDAiIHJ4PSI0Ii8+PHBvbHlsaW5lIHBvaW50cz0iMiwxNiA2LDE2IDgsOCAxMCwyNCAxMiwxMiAxNCwyMCAxNiwxNCAxOCwxOCAyMCwxMCAyMiwyMiAyNCwxNSAyNiwxNyAyOCwxNiAzMCwxNiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY5OTAwIiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SEIS — Traffic Terminal</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<style>
+  :root {
+    --bg: #000; --panel: #060606; --panel2: #0c0c0c; --border: #1a1a1a;
+    --amber: #ff9900; --amber-dim: #996600; --green: #00ff66; --red: #ff3030;
+    --cyan: #00ddff; --blue: #4499ff; --magenta: #ff44dd;
+    --text: #ff9900; --muted: #555; --bright: #fff;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'IBM Plex Mono', monospace;
+    background: var(--bg); color: var(--amber);
+    font-size: 11px; overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--amber); color: #000; }
+
+  /* ── Header ── */
+  header {
+    background: var(--bg); border-bottom: 1px solid var(--amber);
+    padding: 4px 12px; display: flex; align-items: center; gap: 10px;
+    height: 32px;
+  }
+  header .brand { color: var(--amber); font-weight: 700; font-size: 12px; letter-spacing: 1px; }
+  header .brand .go { background: var(--amber); color: #000; padding: 1px 4px; font-weight: 700; margin-left: 3px; }
+  header a {
+    color: var(--muted); text-decoration: none; font-size: 10px;
+    padding: 2px 6px; border: 1px solid var(--border);
+  }
+  header a:hover { color: var(--amber); border-color: var(--amber); }
+  header .spacer { flex:1; }
+  header .live { display: flex; align-items: center; gap: 4px; }
+  header .pulse {
+    width: 6px; height: 6px; background: var(--green); display: inline-block;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;box-shadow:0 0 4px var(--green)} 50%{opacity:0.3;box-shadow:none} }
+  header .clock { color: var(--green); font-weight: 600; }
+
+  /* ── Grid layout ── */
+  main {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto 1fr 1fr auto;
+    gap: 1px; background: var(--border);
+    height: calc(100vh - 32px - 20px);
+  }
+
+  .cell {
+    background: var(--bg); padding: 0; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .cell-header {
+    background: var(--amber); color: #000; padding: 2px 8px;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; display: flex; justify-content: space-between;
+  }
+  .cell-body { flex: 1; padding: 6px 8px; overflow-y: auto; }
+
+  /* ── Stat boxes ── */
+  .stats { grid-column: 1 / -1; display: flex; background: var(--bg); }
+  .stat-item {
+    flex: 1; text-align: center; padding: 8px 4px;
+    border-right: 1px solid var(--border);
+  }
+  .stat-item:last-child { border-right: none; }
+  .stat-val { font-size: 22px; font-weight: 700; color: var(--amber); }
+  .stat-val.green { color: var(--green); }
+  .stat-val.cyan { color: var(--cyan); }
+  .stat-val.red { color: var(--red); }
+  .stat-lbl { font-size: 8px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .stat-delta { font-size: 9px; margin-top: 1px; }
+  .stat-delta.up { color: var(--green); }
+  .stat-delta.down { color: var(--red); }
+
+  /* ── Ticker ── */
+  .ticker {
+    grid-column: 1 / -1; background: var(--bg);
+    border-top: 1px solid var(--amber);
+    padding: 2px 10px; font-size: 10px;
+    display: flex; gap: 16px; align-items: center;
+    height: 20px; overflow: hidden;
+  }
+  .ticker .seg { display: flex; gap: 4px; align-items: center; white-space: nowrap; }
+  .ticker .key { color: var(--amber); font-weight: 600; }
+  .ticker .val { color: var(--bright); }
+  .ticker .val.green { color: var(--green); }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  th {
+    text-align: left; padding: 3px 6px; color: var(--amber);
+    font-size: 8px; letter-spacing: 1px; text-transform: uppercase;
+    border-bottom: 1px solid var(--border); font-weight: 600;
+  }
+  td {
+    padding: 2px 6px; border-bottom: 1px solid rgba(255,153,0,0.05);
+    color: var(--amber); white-space: nowrap;
+  }
+  tr:hover td { background: rgba(255,153,0,0.03); }
+  .dim { color: var(--muted); }
+  .bright { color: var(--bright); }
+  .green { color: var(--green); }
+  .red { color: var(--red); }
+  .cyan { color: var(--cyan); }
+
+  .tag {
+    display: inline-block; font-size: 8px; padding: 0px 4px;
+    font-weight: 600; letter-spacing: 0.5px;
+  }
+  .tag-mobile { color: var(--cyan); border: 1px solid var(--cyan); }
+  .tag-desktop { color: var(--amber); border: 1px solid var(--amber); }
+  .tag-bot { color: var(--red); border: 1px solid var(--red); }
+
+  /* ── Location flag ── */
+  .loc { color: var(--muted); font-size: 9px; }
+
+  /* ── Flash animation for new rows ── */
+  @keyframes flashRow {
+    0% { background: rgba(255,153,0,0.15); }
+    100% { background: transparent; }
+  }
+  .flash { animation: flashRow 1s ease-out; }
+
+  /* ── Charts ── */
+  .chart-fill { flex: 1; min-height: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="brand">SEIS<span class="go">ANALYTICS</span></span>
+  <a href="/">HOME</a>
+  <a href="/dashboard">MAP</a>
+  <span class="spacer"></span>
+  <span class="live"><span class="pulse"></span> <span id="rps">0</span> req/s</span>
+  <span class="clock" id="clock">--:--:--</span>
+</header>
+
+<main>
+  <!-- Row 1: Stats -->
+  <div class="stats">
+    <div class="stat-item"><div class="stat-val" id="s-total">-</div><div class="stat-lbl">Requests</div><div class="stat-delta" id="d-total"></div></div>
+    <div class="stat-item"><div class="stat-val cyan" id="s-unique">-</div><div class="stat-lbl">Unique IPs</div><div class="stat-delta" id="d-unique"></div></div>
+    <div class="stat-item"><div class="stat-val" id="s-pages">-</div><div class="stat-lbl">Page Views</div></div>
+    <div class="stat-item"><div class="stat-val" id="s-api">-</div><div class="stat-lbl">API Calls</div></div>
+    <div class="stat-item"><div class="stat-val green" id="s-desktop">-</div><div class="stat-lbl">Desktop</div></div>
+    <div class="stat-item"><div class="stat-val cyan" id="s-mobile">-</div><div class="stat-lbl">Mobile</div></div>
+    <div class="stat-item"><div class="stat-val red" id="s-bot">-</div><div class="stat-lbl">Bot/CLI</div></div>
+    <div class="stat-item"><div class="stat-val" id="s-avgms">-</div><div class="stat-lbl">Avg Latency</div></div>
+  </div>
+
+  <!-- Row 2: Timeline (full width) -->
+  <div class="cell" style="grid-column: 1 / -1;">
+    <div class="cell-header"><span>REQUEST VOLUME</span><span id="tl-range"></span></div>
+    <div class="chart-fill" id="chart-timeline"></div>
+  </div>
+
+  <!-- Row 3: Live feed + visitors + pages -->
+  <div class="cell">
+    <div class="cell-header"><span>LIVE FEED</span><span id="feed-count">0</span></div>
+    <div class="cell-body" style="padding:0;">
+      <table><thead><tr><th>Time</th><th>IP</th><th>Loc</th><th>Path</th><th>St</th></tr></thead><tbody id="feed-table"></tbody></table>
+    </div>
+  </div>
+
+  <div class="cell">
+    <div class="cell-header"><span>VISITORS</span></div>
+    <div class="cell-body" style="padding:0;">
+      <table><thead><tr><th>IP</th><th>Loc</th><th>Reqs</th><th>Type</th></tr></thead><tbody id="ip-table"></tbody></table>
+    </div>
+  </div>
+
+  <div class="cell">
+    <div class="cell-header"><span>TOP PAGES</span></div>
+    <div class="cell-body" style="padding:0;">
+      <table><thead><tr><th>Path</th><th>Hits</th><th>Avg ms</th></tr></thead><tbody id="pages-table"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Row 4: User activity (from beacon) -->
+  <div class="cell">
+    <div class="cell-header"><span>ACTIVE SESSIONS</span><span class="green" id="s-active">0</span></div>
+    <div class="cell-body" style="padding:0;">
+      <table><thead><tr><th>Session</th><th>TZ</th><th>Screen</th><th>Page</th><th>Dur</th></tr></thead><tbody id="session-table"></tbody></table>
+    </div>
+  </div>
+
+  <div class="cell">
+    <div class="cell-header"><span>EVENT CLICKS</span><span id="s-evclicks">0</span></div>
+    <div class="cell-body" style="padding:0;">
+      <table><thead><tr><th>Time</th><th>Event</th><th>ML</th><th>Session</th></tr></thead><tbody id="evclick-table"></tbody></table>
+    </div>
+  </div>
+
+  <div class="cell">
+    <div class="cell-header"><span>WELL CLICKS</span><span id="s-wellclicks">0</span></div>
+    <div class="cell-body" style="padding:0;">
+      <table><thead><tr><th>Time</th><th>API</th><th>Session</th></tr></thead><tbody id="wellclick-table"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Row 4: Ticker -->
+  <div class="ticker">
+    <div class="seg"><span class="pulse"></span><span class="key">LIVE</span></div>
+    <div class="seg"><span class="key">REFRESH</span> <span class="val green">3s</span></div>
+    <div class="seg"><span class="key">LOG</span> <span class="val" id="tk-lines">0</span> <span class="dim">lines</span></div>
+    <div class="seg"><span class="key">LAST</span> <span class="val" id="tk-last">-</span></div>
+    <div class="seg"><span class="key">PEAK</span> <span class="val" id="tk-peak">-</span> <span class="dim">req/min</span></div>
+  </div>
+</main>
+
+<script>
+// ── IP Geolocation cache ──
+const geoCache = {};
+async function geoLookup(ip) {
+  if (geoCache[ip]) return geoCache[ip];
+  if (ip.startsWith('127.') || ip === '-') { geoCache[ip] = 'Local'; return 'Local'; }
+  try {
+    const r = await fetch(`https://ipapi.co/${ip}/json/`, { signal: AbortSignal.timeout(2000) });
+    if (!r.ok) { geoCache[ip] = '?'; return '?'; }
+    const d = await r.json();
+    const loc = d.city && d.region ? `${d.city}, ${d.region_code || d.region}` : (d.country_name || '?');
+    geoCache[ip] = loc;
+    return loc;
+  } catch {
+    geoCache[ip] = '?';
+    return '?';
+  }
+}
+
+// ── Helpers ──
+function parseDevice(ua) {
+  if (!ua || ua === '-') return 'bot';
+  const l = ua.toLowerCase();
+  if (l.includes('bot') || l.includes('crawler') || l.includes('spider') || l.includes('curl') || l.includes('python')) return 'bot';
+  if (l.includes('mobile') || l.includes('android') || l.includes('iphone') || l.includes('ipad')) return 'mobile';
+  return 'desktop';
+}
+
+function deviceTag(d) {
+  return `<span class="tag tag-${d}">${d.toUpperCase()}</span>`;
+}
+
+function utcToLocal(utcStr) { return new Date(utcStr + 'Z'); }
+function fmtTime(d) { return d.toLocaleTimeString(); }
+function fmtDateTime(d) {
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function statusColor(s) { return s < 300 ? 'green' : s < 400 ? '' : 'red'; }
+
+// ── Clock ──
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+}, 1000);
+
+// ── State ──
+let prevTotal = 0;
+let prevUnique = 0;
+let lastLineCount = 0;
+let chartInitialized = false;
+let lastChartDataLen = 0;
+
+const PLOTLY_LAYOUT = {
+  paper_bgcolor: '#000', plot_bgcolor: '#000',
+  font: { family: 'IBM Plex Mono', color: '#ff9900', size: 9 },
+  margin: { l: 40, r: 10, t: 5, b: 25 },
+  xaxis: { gridcolor: '#111', linecolor: '#222', tickfont: { size: 8 } },
+  yaxis: { gridcolor: '#111', linecolor: '#222', tickfont: { size: 8 } },
+};
+const PCFG = { displayModeBar: false, responsive: true };
+
+async function refresh() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const key = params.get('key') || '';
+    const r = await fetch('/api/analytics?key=' + encodeURIComponent(key));
+    const data = await r.json();
+    await render(data);
+  } catch(e) { console.error(e); }
+}
+
+async function render(data) {
+  const lines = data.lines || [];
+  if (!lines.length) return;
+
+  const entries = lines.map(line => {
+    const m = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+(\S+)\s+(\S+ \S+)\s+(\d+)\s+(\d+)ms\s+"(.*)"/);
+    if (!m) return null;
+    const [_, ts, ip, req, status, ms, ua] = m;
+    const [method, path] = req.split(' ', 2);
+    const localDate = utcToLocal(ts);
+    return { ts, localDate, ip, method, path: path||'/', status:+status, ms:+ms, ua, device: parseDevice(ua) };
+  }).filter(Boolean);
+
+  const total = entries.length;
+  const ips = [...new Set(entries.map(e => e.ip))];
+  const uniqueIPs = ips.length;
+  const pageViews = entries.filter(e => !e.path.startsWith('/api/')).length;
+  const apiCalls = entries.filter(e => e.path.startsWith('/api/')).length;
+  const devCounts = { desktop: 0, mobile: 0, bot: 0 };
+  entries.forEach(e => devCounts[e.device]++);
+  const avgMs = Math.round(entries.reduce((a,e) => a+e.ms, 0) / total);
+
+  // Deltas
+  const dTotal = total - prevTotal;
+  const dUnique = uniqueIPs - prevUnique;
+  prevTotal = total; prevUnique = uniqueIPs;
+
+  document.getElementById('s-total').textContent = total.toLocaleString();
+  document.getElementById('s-unique').textContent = uniqueIPs;
+  document.getElementById('s-pages').textContent = pageViews.toLocaleString();
+  document.getElementById('s-api').textContent = apiCalls.toLocaleString();
+  document.getElementById('s-desktop').textContent = devCounts.desktop;
+  document.getElementById('s-mobile').textContent = devCounts.mobile;
+  document.getElementById('s-bot').textContent = devCounts.bot;
+  document.getElementById('s-avgms').textContent = avgMs + 'ms';
+
+  if (dTotal > 0 && lastLineCount > 0) {
+    document.getElementById('d-total').textContent = '+' + dTotal;
+    document.getElementById('d-total').className = 'stat-delta up';
+  }
+  if (dUnique > 0 && lastLineCount > 0) {
+    document.getElementById('d-unique').textContent = '+' + dUnique + ' new';
+    document.getElementById('d-unique').className = 'stat-delta up';
+  }
+
+  // RPS (last 60 seconds)
+  const now = Date.now();
+  const recent60 = entries.filter(e => now - e.localDate.getTime() < 60000).length;
+  document.getElementById('rps').textContent = (recent60 / 60).toFixed(1);
+
+  // Geo-lookup unique IPs (async, cached — first pass may show "?" until cache fills)
+  const ipGeos = {};
+  const lookupPromises = ips.slice(0, 50).map(async ip => {
+    ipGeos[ip] = await geoLookup(ip);
+  });
+  await Promise.all(lookupPromises);
+
+  // Timeline with rich hover
+  const buckets = {};
+  const bucketDetail = {};  // key → {ips, devices}
+  entries.forEach(e => {
+    const key = fmtDateTime(e.localDate).slice(0, 15) + '0';
+    buckets[key] = (buckets[key] || 0) + 1;
+    if (!bucketDetail[key]) bucketDetail[key] = { ips: {}, devices: {} };
+    bucketDetail[key].ips[e.ip] = (bucketDetail[key].ips[e.ip] || 0) + 1;
+    bucketDetail[key].devices[e.device] = (bucketDetail[key].devices[e.device] || 0) + 1;
+  });
+  const bKeys = Object.keys(buckets).sort();
+
+  // Build hover text per bar
+  const hoverTexts = bKeys.map(k => {
+    const d = bucketDetail[k];
+    const count = buckets[k];
+    const ipList = Object.entries(d.ips).sort((a,b) => b[1]-a[1]);
+    const devList = Object.entries(d.devices).sort((a,b) => b[1]-a[1]);
+    let text = `<b>${k}</b><br>${count} requests<br><br>`;
+    text += `<b>Visitors:</b><br>`;
+    ipList.slice(0, 6).forEach(([ip, c]) => {
+      const loc = geoCache[ip] || '?';
+      text += `  ${ip} (${loc}) × ${c}<br>`;
+    });
+    if (ipList.length > 6) text += `  +${ipList.length - 6} more<br>`;
+    text += `<br><b>Platform:</b><br>`;
+    devList.forEach(([dev, c]) => { text += `  ${dev}: ${c}<br>`; });
+    return text;
+  });
+
+  if (!chartInitialized) {
+    Plotly.newPlot('chart-timeline', [{
+      x: bKeys, y: bKeys.map(k => buckets[k]),
+      type: 'bar',
+      marker: { color: 'rgba(255,153,0,0.6)', line: { color: '#ff9900', width: 0.5 } },
+      hovertext: hoverTexts,
+      hoverinfo: 'text',
+    }], { ...PLOTLY_LAYOUT, hoverlabel: { bgcolor: '#111', bordercolor: '#ff9900', font: { family: 'IBM Plex Mono', size: 10, color: '#ff9900' }, align: 'left' } }, PCFG);
+    chartInitialized = true;
+    lastChartDataLen = bKeys.length;
+  } else if (bKeys.length !== lastChartDataLen) {
+    // New bars added — full data update
+    lastChartDataLen = bKeys.length;
+    Plotly.update('chart-timeline', { x: [bKeys], y: [bKeys.map(k => buckets[k])], hovertext: [hoverTexts] });
+  } else {
+    // Same bars, just update hover text (geo may have resolved)
+    Plotly.update('chart-timeline', { hovertext: [hoverTexts] });
+  }
+
+  const range = bKeys.length ? `${bKeys[0]} — ${bKeys[bKeys.length-1]}` : '';
+  document.getElementById('tl-range').textContent = range;
+
+  // Peak req/min
+  const peakMin = Math.max(...Object.values(buckets), 0);
+  document.getElementById('tk-peak').textContent = peakMin;
+  document.getElementById('tk-lines').textContent = total.toLocaleString();
+  if (entries.length) {
+    document.getElementById('tk-last').textContent = fmtTime(entries[entries.length-1].localDate);
+  }
+
+
+  // Live feed (last 40, newest first)
+  const isNew = total > lastLineCount;
+  const newCount = total - lastLineCount;
+  lastLineCount = total;
+  const feed = entries.slice(-30).reverse();
+  document.getElementById('feed-count').textContent = total.toLocaleString();
+  document.getElementById('feed-table').innerHTML = feed.map((e, i) => {
+    const flash = isNew && i < newCount ? ' class="flash"' : '';
+    const loc = ipGeos[e.ip] || geoCache[e.ip] || '...';
+    return `<tr${flash}>
+      <td class="dim">${fmtTime(e.localDate)}</td>
+      <td>${e.ip}</td>
+      <td class="loc">${loc}</td>
+      <td>${e.path.slice(0,25)}</td>
+      <td class="${statusColor(e.status)}">${e.status}</td>
+    </tr>`;
+  }).join('');
+
+  // IP table
+  const ipData = {};
+  entries.forEach(e => {
+    if (!ipData[e.ip]) ipData[e.ip] = { count: 0, device: e.device };
+    ipData[e.ip].count++;
+    if (e.device !== 'bot') ipData[e.ip].device = e.device;
+  });
+  const topIPs = Object.entries(ipData).sort((a,b) => b[1].count - a[1].count).slice(0, 25);
+  document.getElementById('ip-table').innerHTML = topIPs.map(([ip, d]) => {
+    const loc = ipGeos[ip] || geoCache[ip] || '...';
+    return `<tr>
+      <td>${ip}</td>
+      <td class="loc">${loc}</td>
+      <td>${d.count}</td>
+      <td>${deviceTag(d.device)}</td>
+    </tr>`;
+  }).join('');
+
+  // Top pages
+  const pageCounts = {};
+  const pageTimes = {};
+  entries.forEach(e => {
+    const p = e.path.split('?')[0];
+    pageCounts[p] = (pageCounts[p] || 0) + 1;
+    pageTimes[p] = (pageTimes[p] || []).concat(e.ms);
+  });
+  const topPages = Object.entries(pageCounts).sort((a,b) => b[1]-a[1]).slice(0, 20);
+  document.getElementById('pages-table').innerHTML = topPages.map(([p, c]) => {
+    const avg = Math.round(pageTimes[p].reduce((a,b)=>a+b,0) / pageTimes[p].length);
+    return `<tr><td>${p.slice(0,30)}</td><td>${c}</td><td class="dim">${avg}</td></tr>`;
+  }).join('');
+
+  // ── Beacon data (user activity) ──
+  const beacons = data.beacons || [];
+  // Parse: "ts\tip\tsid\tevent\tjson_data\tpage\ttz\tscreen\tlang\tref"
+  const bEntries = beacons.map(line => {
+    const parts = line.split('\t');
+    if (parts.length < 10) return null;
+    const [ts, ip, sid, event, dataStr, page, tz, scr, lang, ref] = parts;
+    let d = {};
+    try { d = JSON.parse(dataStr); } catch(e) {}
+    return { ts, localDate: utcToLocal(ts), ip, sid, event, data: d, page, tz, screen: scr, lang, ref };
+  }).filter(Boolean);
+
+  // Active sessions (heartbeat in last 60s)
+  const nowMs = Date.now();
+  const sessions = {};
+  bEntries.forEach(b => {
+    if (!sessions[b.sid]) sessions[b.sid] = { tz: b.tz, screen: b.screen, page: b.page, lastSeen: b.localDate, dur: 0 };
+    sessions[b.sid].lastSeen = b.localDate;
+    sessions[b.sid].page = b.page;
+    // Prefer active_s (new), fall back to duration_s (old beacons)
+    const active = b.data.active_s ?? b.data.duration_s;
+    if (active) sessions[b.sid].dur = active;
+    if (b.data.wall_s) sessions[b.sid].wall = b.data.wall_s;
+  });
+  const activeSessions = Object.entries(sessions).filter(([_, s]) => nowMs - s.lastSeen.getTime() < 90000);
+  document.getElementById('s-active').textContent = activeSessions.length;
+  document.getElementById('session-table').innerHTML = activeSessions.map(([sid, s]) => {
+    const isActive = nowMs - s.lastSeen.getTime() < 45000;
+    const dot = isActive ? '<span class="green">●</span>' : '<span class="dim">○</span>';
+    const durStr = s.dur > 0 ? Math.floor(s.dur/60) + 'm' + (s.dur%60) + 's' : '-';
+    return `<tr>
+      <td>${dot} ${sid.slice(0,6)}</td>
+      <td class="dim">${s.tz.split('/').pop() || s.tz}</td>
+      <td class="dim">${s.screen}</td>
+      <td>${s.page}</td>
+      <td class="dim">${durStr}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" class="dim">No active sessions</td></tr>';
+
+  // Event clicks
+  const evClicks = bEntries.filter(b => b.event === 'event_click').slice(-20).reverse();
+  document.getElementById('s-evclicks').textContent = bEntries.filter(b => b.event === 'event_click').length;
+  document.getElementById('evclick-table').innerHTML = evClicks.map(b => {
+    return `<tr>
+      <td class="dim">${fmtTime(b.localDate)}</td>
+      <td class="bright">${b.data.event_id || '-'}</td>
+      <td>M${b.data.ml || '-'}</td>
+      <td class="dim">${b.sid.slice(0,6)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="4" class="dim">No event clicks yet</td></tr>';
+
+  // Well clicks
+  const wellClicks = bEntries.filter(b => b.event === 'well_click').slice(-20).reverse();
+  document.getElementById('s-wellclicks').textContent = bEntries.filter(b => b.event === 'well_click').length;
+  document.getElementById('wellclick-table').innerHTML = wellClicks.map(b => {
+    return `<tr>
+      <td class="dim">${fmtTime(b.localDate)}</td>
+      <td class="bright">${b.data.api || '-'}</td>
+      <td class="dim">${b.sid.slice(0,6)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="3" class="dim">No well clicks yet</td></tr>';
+}
+
+// ── Boot ──
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

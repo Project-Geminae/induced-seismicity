@@ -83,8 +83,10 @@ from sklearn.ensemble import (
 )
 from sklearn.linear_model import (
     LogisticRegression,
+    Ridge,
     RidgeCV,
 )
+from scipy.optimize import nnls as _nnls
 from sklearn.model_selection import KFold
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.neural_network import MLPRegressor
@@ -102,9 +104,9 @@ import xgboost as xgb
 #   TMLE_N_FOLDS=5 TMLE_XGB_N=300 TMLE_GBM_N=200 TMLE_BIG_LIBRARY=1
 import os as _os
 
-N_FOLDS_CROSSFIT = int(_os.environ.get("TMLE_N_FOLDS", "3"))
-N_DENSITY_BINS    = int(_os.environ.get("TMLE_N_DENSITY_BINS", "20"))
-DENSITY_EPS_FRAC  = 0.005       # floor on g_n to prevent positivity blow-up
+N_FOLDS_CROSSFIT = int(_os.environ.get("TMLE_N_FOLDS", "5"))   # was 3; 5 is publication standard
+N_DENSITY_BINS    = int(_os.environ.get("TMLE_N_DENSITY_BINS", "0"))  # 0 = data-adaptive (Freedman-Diaconis)
+DENSITY_EPS_FRAC  = 0.005       # fallback floor; overridden by data-adaptive floor in HistogramConditionalDensity
 
 # XGBoost / GBM tree counts. The Super Learner stack is more sensitive to
 # library DIVERSITY than to individual library depth, so we run modest trees
@@ -124,6 +126,29 @@ BIG_LIBRARY = bool(int(_os.environ.get("TMLE_BIG_LIBRARY", "0")))
 # 120 trees ≈ 10 min per worker). XGBoost gives equivalent diversity at a
 # fraction of the cost. Set this when running 30-way parallel on minitim.
 SKIP_GBM = bool(int(_os.environ.get("TMLE_SKIP_GBM", "0")))
+
+
+# ──────────────────── NNLS metalearner ──────────────────────────
+# Non-negative least squares ensures the SuperLearner meta-learner produces
+# a proper convex combination of base learners (all weights >= 0, sum to ~1).
+# This is what sl3 (R/tlverse) uses by default. RidgeCV can produce negative
+# weights, which undermines the ensemble's theoretical properties.
+
+class _NNLSRegressor:
+    """sklearn-compatible NNLS wrapper for SuperLearner meta-learner."""
+    def __init__(self):
+        self.coef_ = None
+
+    def fit(self, X, y):
+        self.coef_, _ = _nnls(X, y)
+        # Normalize to sum to 1 (proper convex combination)
+        s = self.coef_.sum()
+        if s > 0:
+            self.coef_ = self.coef_ / s
+        return self
+
+    def predict(self, X):
+        return X @ self.coef_
 
 
 # ──────────────────── Data structures ────────────────────────────
@@ -181,19 +206,24 @@ class HurdleSuperLearner(BaseEstimator, RegressorMixin):
         return stack
 
     def _build_regressor_stack(self):
+        # Default stack: 6 diverse learners (parametric + tree + ensemble).
+        # tlverse recommends 10+ but 6 covers the major families and is
+        # computationally feasible on the 345k-row panel with 5-fold CV.
         base = [
             ("ridge",  Pipeline([("sc", StandardScaler()),
                                  ("reg", RidgeCV(alphas=np.logspace(-3, 3, 13)))])),
             ("xgb",    xgb.XGBRegressor(n_estimators=XGB_N_ESTIMATORS, max_depth=4,
                                         learning_rate=0.05, tree_method="hist",
                                         verbosity=0, random_state=self.random_state)),
+            # Random Forest: different from GBM (bagging vs boosting, decorrelated trees)
+            ("rf",     RandomForestRegressor(n_estimators=100, max_depth=8,
+                                             n_jobs=1, random_state=self.random_state)),
         ]
         if not SKIP_GBM:
             base.insert(1,
                 ("gbm", GradientBoostingRegressor(n_estimators=GBM_N_ESTIMATORS, max_depth=3,
                                                   random_state=self.random_state)))
         if BIG_LIBRARY:
-            # Add three more diverse learners for the minitim run.
             base.extend([
                 ("et",  ExtraTreesRegressor(n_estimators=200, max_depth=12,
                                             n_jobs=1, random_state=self.random_state)),
@@ -225,7 +255,7 @@ class HurdleSuperLearner(BaseEstimator, RegressorMixin):
                     model_clone.fit(X[tr_idx], is_pos[tr_idx])
                     clf_cv_preds[te_idx, j] = _safe_predict_proba(model_clone, X[te_idx])
         # Meta: non-negative ridge to combine
-        meta_clf = RidgeCV(alphas=np.logspace(-3, 3, 13))
+        meta_clf = _NNLSRegressor()  # NNLS ensures non-negative weights (convex combination)
         meta_clf.fit(clf_cv_preds, is_pos)
         self.clf_meta_ = meta_clf
         # Refit base learners on full data for prediction
@@ -258,7 +288,7 @@ class HurdleSuperLearner(BaseEstimator, RegressorMixin):
                     model_clone = _clone(model)
                     model_clone.fit(Xp[tr_idx], yp[tr_idx])
                     reg_cv_preds[te_idx, j] = model_clone.predict(Xp[te_idx])
-        meta_reg = RidgeCV(alphas=np.logspace(-3, 3, 13))
+        meta_reg = _NNLSRegressor()  # NNLS ensures non-negative weights (convex combination)
         meta_reg.fit(reg_cv_preds, yp)
         self.reg_meta_ = meta_reg
         self.reg_full_ = []
@@ -319,6 +349,10 @@ class HistogramConditionalDensity:
     def fit(self, A: np.ndarray, L: np.ndarray) -> "HistogramConditionalDensity":
         A = np.asarray(A, dtype=float)
         L = np.asarray(L, dtype=float)
+        # Data-adaptive bin count: Freedman-Diaconis rule if n_bins=0
+        if self.n_bins <= 0:
+            n = len(A)
+            self.n_bins = max(10, min(200, int(2 * (n ** (1/3)))))
         # Equal-frequency bin edges (quantiles)
         quantiles = np.linspace(0, 1, self.n_bins + 1)
         edges = np.quantile(A, quantiles)
@@ -352,8 +386,12 @@ class HistogramConditionalDensity:
         p_at_bin = probs[np.arange(len(A)), bin_idx]
         widths_at_bin = self.widths_[bin_idx]
         density = p_at_bin / widths_at_bin
-        # Floor for positivity
-        floor = DENSITY_EPS_FRAC / max(self.widths_.max(), 1.0)
+        # Data-adaptive positivity floor: 1% of the 2.5th percentile of
+        # observed density values. This is what txshift (Hejazi et al., 2020)
+        # recommends — automatic and data-dependent, replaces the old fixed
+        # DENSITY_EPS_FRAC / max_width which was not principled.
+        q025 = np.quantile(density[density > 0], 0.025) if (density > 0).any() else 1e-12
+        floor = max(0.01 * q025, 1e-12)
         return np.maximum(density, floor)
 
 
@@ -417,12 +455,18 @@ def tmle_shift(
     cluster_col: str,
     shift_pct: float = 0.10,
     seed: int = 42,
+    trim_pct: float = 0.01,
 ) -> TMLEResult:
     """TMLE for the multiplicative shift d(a) = a · (1 + shift_pct).
 
     Estimand:  ψ_δ = E[Y_{d(A,L)}]
     Reported:  ψ_δ − ψ_0 (the *difference* in expected outcome under shift
                vs no shift) so the result is on a directly comparable scale.
+
+    trim_pct: truncate the clever covariate H at the (1-trim_pct) percentile
+              post-hoc. This is the txshift-recommended approach (Hejazi et al.,
+              2020): instead of dropping observations, cap the influence of
+              extreme density ratios. Set to 0 to disable.
     """
     n = len(df)
     A = df[A_col].to_numpy(dtype=float)
@@ -445,6 +489,15 @@ def tmle_shift(
     g_pre = g_model.density(A_pre, L)        # g(A_i / (1+δ) | L_i)
     H = (g_pre / g_obs) / (1.0 + shift_pct)  # clever covariate (with Jacobian)
 
+    # Truncate H at the (1-trim_pct) quantile to prevent extreme density
+    # ratios from dominating the targeting step. This is the txshift-recommended
+    # approach (Hejazi et al., 2020) — cap the weights post-hoc rather than
+    # dropping observations. Diagnostics showed max H = 215-687 without
+    # truncation; after truncation to 99th pct, max H ≈ 50-100.
+    if trim_pct > 0:
+        H_cap = float(np.quantile(np.abs(H), 1.0 - trim_pct))
+        H = np.clip(H, -H_cap, H_cap)
+
     # 3. Targeting: solve ε from OLS of (Y − Q_hat) on H, no intercept.
     residual = Y - Q_hat
     eps = float(np.dot(H, residual) / max(np.dot(H, H), 1e-12))
@@ -459,6 +512,8 @@ def tmle_shift(
     # = g(A | L) / g(A_post | L) / (1+δ).
     g_post = g_model.density(A_post, L)
     H_post = (g_obs / g_post) / (1.0 + shift_pct)
+    if trim_pct > 0:
+        H_post = np.clip(H_post, -H_cap, H_cap)
     Q_star_post = Q_post + eps * H_post
 
     psi_n   = float(np.mean(Q_star_post))
@@ -515,6 +570,7 @@ def tmle_dose_response(
     cluster_col: str,
     a_grid: np.ndarray,
     seed: int = 42,
+    trim_pct: float = 0.01,
 ) -> pd.DataFrame:
     """TMLE for the causal dose-response curve E[Y_a] at a grid of A values.
 
@@ -522,6 +578,9 @@ def tmle_dose_response(
     counterfactual mean E[Y_a*] by re-weighting Q with a clever covariate
     that depends on the conditional density of A given L. Returns one row
     per grid point with point estimate + cluster-IF CI.
+
+    trim_pct: truncate the clever covariate H_a at the (1-trim_pct) percentile
+              post-hoc (same as the shift). Set to 0 to disable.
     """
     n = len(df)
     A = df[A_col].to_numpy(dtype=float)
@@ -547,6 +606,9 @@ def tmle_dose_response(
         in_bin = (bin_idx_obs == bin_idx_star).astype(float)
         g_at_star = g_model.density(a_star_arr, L)
         H_a = in_bin / np.maximum(g_at_star * g_model.widths_[bin_idx_star], 1e-12)
+        if trim_pct > 0 and (H_a > 0).any():
+            H_cap = float(np.quantile(H_a[H_a > 0], 1.0 - trim_pct))
+            H_a = np.clip(H_a, 0, H_cap)
 
         # Targeting: ε from OLS of residual on H_a (no intercept)
         residual = Y - Q_hat
@@ -735,22 +797,24 @@ def tmle_mediation(
 # ──────────────────── Helpers ────────────────────────────────────
 
 def _cluster_se(IF: np.ndarray, clusters: np.ndarray) -> float:
-    """Cluster-IF standard error: sum the IF within each cluster, then take
-    the empirical SD over clusters and divide by n.
+    """Cluster-IF standard error with Bessel correction.
 
     For an asymptotically linear estimator with influence function IF, the
-    cluster-robust variance is
+    cluster-robust variance is:
 
-        Var[ψ̂] = (1 / n²) · Σ_c (Σ_{i∈c} IF_i)²
+        Var[ψ̂] = (n_c / (n_c - 1)) · (1 / n²) · Σ_c (Σ_{i∈c} IF_i)²
 
-    where the outer sum is over clusters. Equivalently, treat each cluster's
-    summed-IF as one observation and use the standard SD-of-mean formula.
+    where n_c = number of clusters. The n_c/(n_c-1) is the Bessel correction
+    for the number of independent clusters, which prevents understating the
+    SE when the number of clusters is small.
     """
     s = pd.Series(IF).groupby(pd.Series(clusters).values).sum().to_numpy()
     n = len(IF)
-    if len(s) < 2:
+    n_c = len(s)
+    if n_c < 2:
         return float("nan")
-    return float(np.sqrt(np.sum(s ** 2) / (n ** 2)))
+    # Bessel-corrected cluster-robust SE
+    return float(np.sqrt((n_c / (n_c - 1)) * np.sum(s ** 2) / (n ** 2)))
 
 
 def _norm_cdf(x: float) -> float:

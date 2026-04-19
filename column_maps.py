@@ -77,13 +77,20 @@ def confounder_columns(radius_km: int) -> list[str]:
     G3 = Injection interval midpoint depth (ft)
     G4 = Days since well first injected
 
-    Note: formation was previously G5 (one-hot encoded from operator-reported
-    `Current Injection Formations`). Dropped because the RRC formation labels
-    are self-reported and unreliable. Replaced with a depth-class proxy
-    (shallow/mid/deep bins from measured perf_depth_ft) computed inside
-    causal_core.build_design_matrix(). The depth proxy captures the same
-    physical distinction (shallow carbonate vs basement-coupled) without
-    depending on potentially wrong labels.
+    Note 1: formation was previously a confounder (one-hot from operator-reported
+    `Current Injection Formations`). Dropped because RRC labels are unreliable.
+    Replaced with a depth-class proxy (shallow/mid/deep) computed in
+    causal_core.build_design_matrix(). Sensitivity analysis (formation_sensitivity.csv)
+    shows the indirect (pressure-mediated) effect is robust to this substitution,
+    but the direct effect is sensitive.
+
+    Note 2: avg_rate_365d (avg daily injection rate) was tested as a confounder
+    but rejected (rate_definition_check.py). Cumulative volume = rate × duration,
+    so any rate definition is mechanically near-collinear with the treatment
+    (correlation 0.84-0.89, VIF 3.7-5.5). Adding it inflated CATE estimates 12×
+    with proportionally wider CIs, leaving zero wells statistically significant.
+    The current model interprets effects as policy-relevant cumulative-volume
+    effects averaged over the rate distribution.
     """
     return [
         COL_NEAREST_FAULT_KM,

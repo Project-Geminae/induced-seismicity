@@ -1,366 +1,284 @@
-=====================================================================
- D  A  G   O  V  E  R  V  I  E  W
-=====================================================================
+# Causal Inference for Injection-Induced Seismicity
 
-                W
-               / \
-              /   \
-             v     v
-G₁ --------> P ---> S <------ G₂
+**A doubly-robust TMLE + Causal Forest framework for attributing Permian Basin earthquakes to specific saltwater disposal wells.**
 
-Legend
-------
-G₁ : Nearest Fault Distance
-G₂ : Fault Segments
-W  : Volume Injected
-P  : Injection Pressure
-S  : Local Magnitude
-(→ : Causal connection)
+[![Live Dashboard](https://img.shields.io/badge/Dashboard-Live-brightgreen)](https://tinyurl.com/ywf39tmv)
+[![SPE-228051](https://img.shields.io/badge/SPE-228051-blue)](https://doi.org/10.2118/228051-MS)
 
-The causal model shows
-  1. Geology factors (G₁, G₂) influence all variables
-  2. Injection Volume (W) affects Pressure (P) and Magnitude (S)
-  3. Injection Pressure (P) directly affects Magnitude (S)
-  4. Direct path W → S
-  5. Indirect path W → P → S
+> **Paper:** Matthews, Hennings & Lund Snee (2025). *A Causal Inference Framework for Assessing the Relationship Between Saltwater Disposal and Induced Seismicity in the Permian Basin.* SPE-228051-MS.
 
-## EXECUTIVE SUMMARY
-────────────────────────────────────────────────────────────────
-**Key Finding**: Injection volume causes seismic activity through two mechanisms
-that vary by distance:
-- Near-field (≤5km): Mixed direct mechanical and pressure-mediated effects
-- Far-field (>10km): Exclusively pressure-mediated effects
+---
 
-**Strongest Effects**: 3-4km radius shows 20× stronger effects than 20km
-**Optimal Monitoring**: 5-7km radius balances effect size and predictive accuracy
-**Policy Implication**: Spatially-targeted regulation within 7km of faults recommended
-────────────────────────────────────────────────────────────────
+## What This Does
 
-STEP 0 · ENVIRONMENT & CONSTANTS
-───────────────────────────────────────────────────────────────────
-| Parameter                    | Value                            |
-|------------------------------|----------------------------------|
-| Geographic CRS               | EPSG 4326  (WGS-84)              |
-| Planar CRS for distances     | EPSG 3857  (Web Mercator)        |
-| Well–event link distance     | 1-20 km (varied)                 |
-| Fault-segment length         | ~1 km                            |
-| Injection look-back window   | 30 days                          |
-| Random seed (DoWhy)          | 42                               |
+This pipeline takes publicly available earthquake and injection data from the Permian Basin and answers three questions a regulator or operator would ask:
 
-DATA SOURCES:
+1. **Population level:** "If all wells reduce volume by 10%, how much does earthquake risk drop?" → **TMLE shift intervention**
+2. **Per-well level:** "How much did *this specific well* contribute to *this specific earthquake?*" → **Causal Forest CATE**
+3. **Threshold level:** "At what volume does this well's contribution cross the regulatory limit?" → **Per-well dose-response curve**
 
-swd_data.csv = https://drive.google.com/file/d/1O2a61OQI9iMkuLjLC39GHHqYesjYhqg3/view?usp=sharing
+### Live Dashboard
 
-texnet_events.csv = https://drive.google.com/file/d/1vaky_Tk-brHWi_Mxd8e090BR6JgAdz1E/view?usp=sharing
+**https://tinyurl.com/ywf39tmv**
 
-STEP 1 · IMPORT & FILTER RAW TABLES
-──────────────────────────────────────────────────────────────────────────────────────
-| Script                     | Purpose                | Output                       |
-|----------------------------|------------------------|------------------------------|
-| swd_data_import.py         | Subset SWD records     | swd_data_filtered.csv        |
-|                            |                        | ( 663,917 rows × 7 cols )    |
-| seismic_data_import.py     | Subset TexNet catalog  | texnet_events_filtered.csv   |
-|                            |                        | (  6,264 rows × 7 cols )     |
+Interactive map of 7,424 TexNet earthquakes + 1,056 RRC SWD wells. Click any event → per-well CATE waterfall, dose-response curve, injection timeline, threshold curve. PDF report export. Mobile-friendly.
 
-STEP 2 · SPATIAL JOIN (WELLS ↔ EVENTS)
-──────────────────────────────────────────────────────────────────────────────────────────────
-| Script                  | Output                      | Rows (per radius)                  |
-|-------------------------|-----------------------------|------------------------------------|
-| merge_seismic_swd.py	  | event_well_links_1km.csv	| 1,177 (radius = 1 km)              |
-|                         | event_well_links_2km.csv	| 4,775 (radius = 2 km)              |
-|                         | event_well_links_3km.csv	| 11,645 (radius = 3 km)             |
-|                         | event_well_links_4km.csv	| 20,274 (radius = 4 km)             |
-|                         | event_well_links_5km.csv	| 30,417 (radius = 5 km)             |
-|                         | event_well_links_6km.csv	| 42,127 (radius = 6 km)             |
-|                         | event_well_links_7km.csv	| 55,872 (radius = 7 km)             |
-|                         | event_well_links_8km.csv	| 71,996 (radius = 8 km)             |
-|                         | event_well_links_9km.csv	| 90,575 (radius = 9 km)             |
-|                         | event_well_links_10km.csv	| 109,825 (radius = 10 km)           |
-|                         | event_well_links_11km.csv	| 129,984 (radius = 11 km)           |
-|                         | event_well_links_12km.csv	| 149,935 (radius = 12 km)           |
-|                         | event_well_links_13km.csv	| 170,563 (radius = 13 km)           |
-|                         | event_well_links_14km.csv	| 191,820 (radius = 14 km)           |
-|                         | event_well_links_15km.csv	| 214,728 (radius = 15 km)           |
-|                         | event_well_links_16km.csv	| 237,644 (radius = 16 km)           |
-|                         | event_well_links_17km.csv	| 262,373 (radius = 17 km)           |
-|                         | event_well_links_18km.csv	| 289,297 (radius = 18 km)           |
-|                         | event_well_links_19km.csv	| 315,984 (radius = 19 km)           |
-|                         | event_well_links_20km.csv	| 341,614 (radius = 20 km)           |
+---
 
-Columns retained → event metadata · well metadata · Distance_from_Well_to_Event
+## Causal DAG
 
-STEP 3 · SAME-DAY & N-DAY INJECTION LOOKBACK
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-| Script                                   | Output                                       | Rows (example)  |
-|------------------------------------------|--------------------------------------------- |-----------------|
-| filter_active_wells_before_events.py     | event_well_links_with_injection_<R>km.csv    | 220,739 (20km)  |
-|                                          | innocent_wells_<R>km.csv                     | 121,724 (20km)  |
-| filter_merge_events_and_nonevents.py     | innocent_wells_with_fakeids_<R>km.csv        | 121,724 (20km)  |
-|                                          | combined_event_well_links_<R>km.csv          | 342,463 (20km)  |
-|                                          |                                              |                 |
+```
+        G₁   G₂   G₃   G₄
+        (fault dist, fault count, depth, days active)
+         ↓     ↓    ↓    ↓     ← controlled for
+         W  →  P  →  S
+      (volume) (pressure) (seismicity)
+```
 
-New columns added
-  • Volume Injected (BBLs) – same day
-  • Injection Pressure Average PSIG – same day
-  • Injection Pressure Max PSIG – same day
-  • Vol Prev N (BBLs)      – 30-day total before event
-  • Avg Press Prev N (PSIG) – 30-day mean before event
-  • Max Press Prev N (PSIG) – 30-day max before event
+- **W → P → S**: Injection volume builds pore pressure, which triggers fault slip
+- **G → W, G → S**: Geology confounds both injection location and fault activity
+- By controlling for G₁–G₄, the remaining W→P→S link is **causal, not correlational**
 
-"Innocent wells" are those linked to events but not actively injecting on the event day (magnitude set to 0).
-For these wells, the most recent injection date before the event is identified, with second script
-replacing their EventID prefix from "texnet" to "faknet" before merging them with active wells.
+---
 
-STEP 4 · FAULT-PROXIMITY FEATURES
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-| Script                                               | Output                                  | Rows (example)   |
-|------------------------------------------------------|-----------------------------------------|------------------|
-| add_geoscience_to_event_well_links_with_injection.py | event_well_links_with_faults_<R>km.csv  | 342,463 (20km)   |
-|                                                      | wells_vs_faults_<R>km.png               |                  |
-|                                                      | wells_with_missing_xy_<R>km.csv         |                  |
-|                                                      | wells_no_fault_match_<R>km.csv          |                  |
+## Key Results (TMLE v2, April 2026)
 
-Added columns
-  • Nearest Fault Dist (km) - distance to closest fault segment
-  • Fault Segments ≤ R km (count) - number of ~1km fault segments within radius R
+### Shift Intervention (10% volume reduction)
 
-Process details:
-  • Preserves ALL rows including those with missing coordinates
-  • Fault shapefile auto-detection for coordinate reference system (CRS)
-  • All wells were successfully matched to ≥1 fault in the example run
-  • Wells with missing/invalid coordinates are identified but retained
-  • Generates visual diagnostics of wells vs. fault lines (only for first radius processed)
+| Radii significant | Mean ψ (ML) | Mean CI width | Mean max H |
+|---|---|---|---|
+| **17 / 20** | +8.8e-3 | 6.7e-3 | **5.3** |
 
-Magnitude statistics were preserved across processing (no data loss):
-  • 20km radius: 64.5% of rows have non-zero magnitude (220,739/342,463)
+*Previous TMLE (v1) had 0/20 significant radii due to positivity violations (max H = 335). Seven methodological fixes resolved this.*
 
-STEP 5 · MULTI-RADIUS CAUSAL SENSITIVITY ANALYSIS
-─────────────────────────────────────────────────────────────────────────────────────
-Primary script : dowhy_simple_all.py   (DoWhy 0.12)
-Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
-─────────────────────────────────────────────────────────────────────────────────────
-| Radius | Total Effect   | Direct Effect   | Indirect Effect  | % Mediated | R²    |
-|--------|----------------|-----------------|------------------|------------|-------|
-| 1 km   | +6.47 × 10⁻⁶   | -3.39 × 10⁻⁶    | +9.86 × 10⁻⁶     | 152.3%     | 0.092 |
-| 2 km   | +2.34 × 10⁻⁵   | +3.73 × 10⁻⁶    | +1.96 × 10⁻⁵     | 84.0%      | 0.194 |
-| 3 km   | +3.03 × 10⁻⁵   | +1.14 × 10⁻⁵    | +1.90 × 10⁻⁵     | 62.5%      | 0.180 |
-| 4 km   | +3.14 × 10⁻⁵   | +1.63 × 10⁻⁵    | +1.51 × 10⁻⁵     | 48.2%      | 0.189 |
-| 5 km   | +2.46 × 10⁻⁵   | +8.99 × 10⁻⁶    | +1.56 × 10⁻⁵     | 63.4%      | 0.170 |
-| 6 km   | +1.42 × 10⁻⁵   | +2.93 × 10⁻⁶    | +1.12 × 10⁻⁵     | 79.3%      | 0.171 |
-| 7 km   | +1.46 × 10⁻⁵   | +3.17 × 10⁻⁶    | +1.14 × 10⁻⁵     | 78.3%      | 0.171 |
-| 8 km   | +7.61 × 10⁻⁶   | +3.88 × 10⁻⁷    | +7.22 × 10⁻⁶     | 94.9%      | 0.153 |
-| 9 km   | +7.97 × 10⁻⁶   | +3.42 × 10⁻⁷    | +7.63 × 10⁻⁶     | 95.7%      | 0.160 |
-| 10 km  | +9.10 × 10⁻⁶   | +7.40 × 10⁻⁷    | +8.36 × 10⁻⁶     | 91.9%      | 0.156 |
-| 11 km  | +8.18 × 10⁻⁶   | +2.52 × 10⁻⁷    | +7.92 × 10⁻⁶     | 96.9%      | 0.155 |
-| 12 km  | +6.20 × 10⁻⁶   | -4.07 × 10⁻⁷    | +6.61 × 10⁻⁶     | 106.6%     | 0.156 |
-| 13 km  | +4.73 × 10⁻⁶   | -4.84 × 10⁻⁷    | +5.21 × 10⁻⁶     | 110.3%     | 0.162 |
-| 14 km  | +4.73 × 10⁻⁶   | -2.74 × 10⁻⁷    | +5.00 × 10⁻⁶     | 105.8%     | 0.170 |
-| 15 km  | +4.46 × 10⁻⁶   | -3.45 × 10⁻⁷    | +4.81 × 10⁻⁶     | 107.7%     | 0.171 |
-| 16 km  | +4.12 × 10⁻⁶   | -3.37 × 10⁻⁷    | +4.45 × 10⁻⁶     | 108.2%     | 0.171 |
-| 17 km  | +4.11 × 10⁻⁶   | -3.57 × 10⁻⁷    | +4.46 × 10⁻⁶     | 108.7%     | 0.178 |
-| 18 km  | +3.90 × 10⁻⁶   | -4.38 × 10⁻⁷    | +4.34 × 10⁻⁶     | 111.2%     | 0.171 |
-| 19 km  | +4.09 × 10⁻⁶   | -3.98 × 10⁻⁷    | +4.49 × 10⁻⁶     | 109.7%     | 0.184 |
-| 20 km  | +4.17 × 10⁻⁶   | -4.16 × 10⁻⁷    | +4.59 × 10⁻⁶     | 110.0%     | 0.186 |
+### Per-Well Attribution (M4.8 event, texnet2025edml, 10 km)
 
-DAG Structure
-  • Treatment (W): Volume Injected (BBLs)
-  • Mediator (P): Injection Pressure Average PSIG
-  • Outcome (S): Local Magnitude
-  • Confounders: Nearest Fault Dist (km), Fault Segments ≤R km
+| Wells | Σ CATE | Top contributor | Significant wells |
+|---|---|---|---|
+| 44 | +0.51 ML | API 31741240 (+0.10 ML) | 6 (CI excludes zero) |
 
-Radius Sensitivity Summary
-  • Strongest total effect observed at 4km radius (3.14 × 10⁻⁵)
-  • Pronounced shift in causal pathways with increasing radius:
-    - Small radii (1-5km): Mixed direct and indirect effects
-    - Medium radii (6-10km): Strong pressure mediation (75-95%)
-    - Large radii (11-20km): Complete mediation with pressure (>100%)
-  • Direct effect changes from positive to negative at larger distances
-  • All results are statistically significant with p-values near zero
-  • Refutation tests confirm robustness of the causal estimates
+### TMLE v2 Methodological Improvements
 
-Plain-English interpretation
-  • Near-field effects (1-5km): Both direct mechanical influence and pressure-mediated effects
-  • Mid-field effects (6-10km): Pressure transmission becomes primary mechanism
-  • Far-field effects (11-20km): Pressure diffusion completely mediates the relationship
-  • Direct effects become negative at large distances, suggesting offsetting mechanisms
-  • The radius analysis reveals different physical mechanisms operating at different spatial scales
+| Fix | Impact |
+|---|---|
+| NNLS metalearner (was RidgeCV) | Enforces convex combination of base learners |
+| Data-adaptive density bins (was 20 fixed) | ~140 bins via Freedman-Diaconis rule |
+| Data-adaptive positivity floor | 1% of 2.5th percentile (was fixed 0.5%) |
+| H truncation at 99th percentile | Max H: 335 → 5.3 (targeting step stabilized) |
+| Bessel-corrected cluster SE | Honest SEs with finite-cluster correction |
+| 5-fold CV (was 3-fold) | More honest cross-fitted Q estimates |
+| RandomForest added to SuperLearner | 4 diverse base learners (was 3) |
 
-STEP 6 · MULTI-RADIUS EVENT-LEVEL CAUSAL ANALYSIS
-─────────────────────────────────────────────────────────────────────────────────────────────────
-Primary script : dowhy_simple_all_aggregate.py   (DoWhy 0.12)
-Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-| Radius | n_events | avg_well_count | Total Effect   | Direct Effect   | Indirect Effect  | % Mediated | p-value | R²    |
-|--------|----------|----------------|----------------|-----------------|------------------|------------|---------|-------|
-| 1 km   | 1,058    | 1.11           | +5.72 × 10⁻⁶   | -9.06 × 10⁻⁷    | +6.63 × 10⁻⁶     | 115.8%     | 1.6e-02 | 0.180 |
-| 2 km   | 3,162    | 1.51           | +1.75 × 10⁻⁵   | +3.12 × 10⁻⁶    | +1.44 × 10⁻⁵     | 82.2%      | 1.8e-22 | 0.294 |
-| 3 km   | 4,921    | 2.37           | +2.13 × 10⁻⁵   | +1.13 × 10⁻⁵    | +1.01 × 10⁻⁵     | 47.2%      | 1.6e-71 | 0.362 |
-| 4 km   | 6,192    | 3.28           | +1.72 × 10⁻⁵   | +9.77 × 10⁻⁶    | +7.47 × 10⁻⁶     | 43.3%      | 2.2e-97 | 0.496 |
-| 5 km   | 7,102    | 4.29           | +1.15 × 10⁻⁵   | +5.01 × 10⁻⁶    | +6.53 × 10⁻⁶     | 56.6%      | 1.2e-88 | 0.509 |
-| 6 km   | 7,943    | 5.31           | +5.87 × 10⁻⁶   | +1.62 × 10⁻⁶    | +4.25 × 10⁻⁶     | 72.4%      | 2.3e-53 | 0.524 |
-| 7 km   | 8,653    | 6.47           | +4.95 × 10⁻⁶   | +1.24 × 10⁻⁶    | +3.72 × 10⁻⁶     | 75.0%      | 7.5e-59 | 0.545 |
-| 8 km   | 9,231    | 7.81           | +2.14 × 10⁻⁶   | +1.66 × 10⁻⁷    | +1.98 × 10⁻⁶     | 92.3%      | 1.8e-26 | 0.526 |
-| 9 km   | 9,658    | 9.39           | +1.85 × 10⁻⁶   | +1.06 × 10⁻⁷    | +1.74 × 10⁻⁶     | 94.3%      | 8.1e-27 | 0.498 |
-| 10 km  | 9,928    | 11.08          | +1.84 × 10⁻⁶   | +1.14 × 10⁻⁷    | +1.72 × 10⁻⁶     | 93.8%      | 2.3e-31 | 0.493 |
-| 11 km  | 10,079   | 12.92          | +1.63 × 10⁻⁶   | +9.20 × 10⁻⁸    | +1.54 × 10⁻⁶     | 94.4%      | 2.0e-30 | 0.452 |
-| 12 km  | 10,179   | 14.76          | +1.28 × 10⁻⁶   | -5.12 × 10⁻⁸    | +1.33 × 10⁻⁶     | 104.0%     | 1.1e-23 | 0.440 |
-| 13 km  | 10,286   | 16.61          | +9.93 × 10⁻⁷   | -4.92 × 10⁻⁸    | +1.04 × 10⁻⁶     | 105.0%     | 3.2e-20 | 0.452 |
-| 14 km  | 10,380   | 18.52          | +1.07 × 10⁻⁶   | +7.18 × 10⁻⁹    | +1.06 × 10⁻⁶     | 99.3%      | 4.8e-26 | 0.448 |
-| 15 km  | 10,429   | 20.64          | +1.01 × 10⁻⁶   | +1.77 × 10⁻⁸    | +9.90 × 10⁻⁷     | 98.2%      | 4.2e-28 | 0.438 |
-| 16 km  | 10,488   | 22.72          | +9.29 × 10⁻⁷   | +2.44 × 10⁻⁸    | +9.05 × 10⁻⁷     | 97.4%      | 1.9e-28 | 0.446 |
-| 17 km  | 10,527   | 24.99          | +1.00 × 10⁻⁶   | +8.16 × 10⁻⁸    | +9.19 × 10⁻⁷     | 91.8%      | 9.4e-37 | 0.395 |
-| 18 km  | 10,565   | 27.45          | +9.93 × 10⁻⁷   | +1.32 × 10⁻⁷    | +8.61 × 10⁻⁷     | 86.7%      | 9.9e-43 | 0.420 |
-| 19 km  | 10,606   | 29.87          | +1.05 × 10⁻⁶   | +1.71 × 10⁻⁷    | +8.77 × 10⁻⁷     | 83.7%      | 3.3e-52 | 0.416 |
-| 20 km  | 10,635   | 32.20          | +1.07 × 10⁻⁶   | +2.12 × 10⁻⁷    | +8.60 × 10⁻⁷     | 80.3%      | 8.7e-61 | 0.422 |
+### Sensitivity Analyses
 
-Event-Level Aggregation Method
-  • Group by EventID and compute:
-    - Sum of Volume Injected (BBLs) across all wells within radius
-    - Median Injection Pressure Average across all wells
-    - Minimum Nearest Fault Distance across all wells
-    - Sum of Fault Segments within radius
-    - Count of wells within radius (added as control variable)
+- **Formation vs depth-class proxy**: Total effect ±6–169% across radii; indirect (pressure) pathway robust (±7–18%). Direct effect is sensitive — use population-level results for policy. ([`formation_sensitivity.csv`](formation_sensitivity.csv))
+- **Injection rate as confounder**: Rejected due to multicollinearity (corr=0.89 with treatment). Rate is a deterministic function of cumulative volume. ([`rate_definition_check.py`](rate_definition_check.py))
+- **W×M interaction**: Not significant (p=0.91 at 7km). Mediation decomposition is defensible. ([`model_improvements.py`](model_improvements.py))
+- **Positivity diagnostics**: Dose-response at 10⁸ BBL is pure extrapolation (0 observations). 10⁷ BBL is P99. ([`positivity_diagnostics.csv`](positivity_diagnostics.csv))
 
-Amplification factors compared to 20 km radius:
-  • 1 km:  5.3×
-  • 2 km: 16.4×
-  • 3 km: 19.9× (strongest)
-  • 4 km: 16.1×
-  • 5 km: 10.8×
-  • 6 km:  5.5×
-  • 7 km:  4.6×
-  • 8 km:  2.0×
-  • 9 km:  1.7×
-  • 10 km: 1.7×
-  • 11 km: 1.5×
-  • 12 km: 1.2×
-  • 13 km: 0.9×
+---
 
-Additional Outputs:
-  • Earthquake probability curves for 20km radius (as PNG and CSV)
-  • DAG images for each radius (when graphviz available)
+## Data
 
-Radius Sensitivity Summary
-  • Strongest total effect observed at 3km radius (2.13 × 10⁻⁵)
-  • Predictive performance (R²) increases with radius until peaking at 7km (R² ≈ 0.55)
-  • Clear transition in causal mechanisms:
-    - Near-field (1-2 km): High pressure mediation (82-116%)
-    - Mid-field (3-5 km): Balanced direct and indirect effects (43-57% mediation)
-    - Far-field (6-10 km): Predominantly pressure-mediated (72-94%)
-    - Ultra-far (15+ km): Complete mediation through pressure (>95%)
-  • Direct effect becomes statistically insignificant at 8-10km and negligible at 15km
-  • All total effects remain highly statistically significant (p < 10⁻²⁰) except at 1km (p = 0.016)
+All data comes from public sources:
 
-Plain-English interpretation
-  • Proximity matters greatly: injection wells within 3-5 km have 10-20× stronger effects than distant wells
-  • Strongest effect radius (3km) and best predictive model radius (7km) are different
-  • Pressure is the dominant mechanism in all cases, but direct mechanical effects are substantial at 3-5km
-  • Wells beyond 10km have minimal direct effects but still contribute through pressure pathways
-  • The 5-7km radius offers optimal balance of effect size and model performance (R² > 0.5)
-  • These findings support spatially-targeted regulation focused on wells within 5-7km of faults
-  • Different physical mechanisms appear to operate at different spatial scales
+| Source | Records | Date |
+|---|---|---|
+| [TexNet](https://texnet.beg.utexas.edu) earthquake catalog | 7,424 quality-filtered events | Apr 2026 |
+| [RRC](https://www.rrc.texas.gov/) H-10 injection reports | 1,056 SWD wells, 903,887 well-day cells | Apr 2026 |
+| Horne et al. (2023) fault maps | Midland Basin basement fault segments | Static |
 
-STEP 7 · ENHANCED WELL-LEVEL DOWHY ANALYSIS WITH BOOTSTRAP CI
-─────────────────────────────────────────────────────────────────────────────────────────────────
-Primary script : dowhy_ci.py   (DoWhy 0.12)
-Bootstrap iterations : 50
-Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km }
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-| Radius |  n_rows  | Total Effect   | 95% CI                       | Direct Effect  | 95% CI                       | Indirect Effect | % Mediated | p-value    | Bootstrap | VIF  | Refute  |
-|--------|----------|----------------|------------------------------|----------------|------------------------------|-----------------|------------|------------|-----------|------|---------|
-| 1 km   |   1,177  | +6.472e-06     | [+4.12e-07,+4.06e-05]        | -3.386e-06     | [-5.65e-06,+2.09e-05]        | +9.86e-06       | 152.3%     | 2.07e-02   | 100.0%    | 1.77 | ⚠️ CAUTION |
-| 2 km   |   4,778  | +2.337e-05     | [+1.56e-05,+4.38e-05]        | +3.731e-06     | [-7.00e-07,+1.89e-05]        | +1.96e-05       | 84.0%      | 3.10e-30   | 100.0%    | 2.68 | ✅ PASS |
-| 3 km   |  11,649  | +3.031e-05     | [+2.21e-05,+4.12e-05]        | +1.136e-05     | [+5.51e-06,+2.01e-05]        | +1.90e-05       | 62.5%      | 8.46e-100  | 100.0%    | 2.96 | ✅ PASS |
-| 4 km   |  20,292  | +3.137e-05     | [+2.59e-05,+3.68e-05]        | +1.626e-05     | [+9.51e-06,+2.31e-05]        | +1.51e-05       | 48.2%      | 2.61e-183  | 100.0%    | 3.27 | ✅ PASS |
-| 5 km   |  30,460  | +2.456e-05     | [+1.92e-05,+3.11e-05]        | +8.988e-06     | [+4.29e-06,+1.43e-05]        | +1.56e-05       | 63.4%      | 1.26e-200  | 100.0%    | 3.59 | ✅ PASS |
-| 6 km   |  42,185  | +1.417e-05     | [+1.07e-05,+1.97e-05]        | +2.929e-06     | [+1.10e-06,+6.45e-06]        | +1.12e-05       | 79.3%      | 7.79e-146  | 100.0%    | 3.58 | ✅ PASS |
-| 7 km   |  55,955  | +1.461e-05     | [+1.09e-05,+1.98e-05]        | +3.173e-06     | [+1.66e-06,+5.62e-06]        | +1.14e-05       | 78.3%      | 1.62e-202  | 100.0%    | 3.63 | ✅ PASS |
-| 8 km   |  72,116  | +7.607e-06     | [+5.62e-06,+1.09e-05]        | +3.877e-07     | [-3.74e-07,+1.89e-06]        | +7.22e-06       | 94.9%      | 3.13e-116  | 100.0%    | 3.62 | ✅ PASS |
-| 9 km   |  90,728  | +7.969e-06     | [+6.47e-06,+1.02e-05]        | +3.420e-07     | [-3.52e-07,+1.29e-06]        | +7.63e-06       | 95.7%      | 1.06e-157  | 100.0%    | 3.63 | ✅ PASS |
-| 10 km  | 110,014  | +9.095e-06     | [+7.17e-06,+1.19e-05]        | +7.399e-07     | [+6.18e-08,+1.77e-06]        | +8.36e-06       | 91.9%      | 2.86e-234  | 100.0%    | 3.63 | ✅ PASS |
-| 11 km  | 130,215  | +8.176e-06     | [+6.30e-06,+9.78e-06]        | +2.520e-07     | [-3.92e-07,+9.35e-07]        | +7.92e-06       | 96.9%      | 9.62e-248  | 100.0%    | 3.52 | ✅ PASS |
-| 12 km  | 150,203  | +6.199e-06     | [+4.86e-06,+7.23e-06]        | -4.069e-07     | [-8.45e-07,+4.07e-08]        | +6.61e-06       | 106.6%     | 1.58e-203  | 100.0%    | 3.48 | ✅ PASS |
-| 13 km  | 170,893  | +4.725e-06     | [+3.79e-06,+6.05e-06]        | -4.844e-07     | [-8.47e-07,-5.90e-08]        | +5.21e-06       | 110.3%     | 3.67e-170  | 100.0%    | 3.47 | ✅ PASS |
-| 14 km  | 192,249  | +4.727e-06     | [+3.89e-06,+5.57e-06]        | -2.739e-07     | [-5.35e-07,+1.02e-07]        | +5.00e-06       | 105.8%     | 2.96e-199  | 100.0%    | 3.45 | ✅ PASS |
-| 15 km  | 215,258  | +4.464e-06     | [+3.61e-06,+5.30e-06]        | -3.448e-07     | [-6.63e-07,-3.50e-08]        | +4.81e-06       | 107.7%     | 2.70e-215  | 100.0%    | 3.47 | ✅ PASS |
-| 16 km  | 238,280  | +4.115e-06     | [+3.50e-06,+5.18e-06]        | -3.370e-07     | [-5.91e-07,-1.74e-08]        | +4.45e-06       | 108.2%     | 1.38e-224  | 100.0%    | 3.50 | ✅ PASS |
-| 17 km  | 263,078  | +4.105e-06     | [+3.52e-06,+4.93e-06]        | -3.573e-07     | [-5.66e-07,-7.95e-08]        | +4.46e-06       | 108.7%     | 1.28e-256  | 100.0%    | 3.57 | ✅ PASS |
-| 18 km  | 290,036  | +3.901e-06     | [+3.14e-06,+4.74e-06]        | -4.376e-07     | [-6.73e-07,-1.65e-07]        | +4.34e-06       | 111.2%     | 1.14e-275  | 100.0%    | 3.64 | ✅ PASS |
-| 19 km  | 316,778  | +4.087e-06     | [+3.51e-06,+4.79e-06]        | -3.980e-07     | [-6.42e-07,-1.40e-07]        | +4.49e-06       | 109.7%     | 0.00e+00   | 100.0%    | 3.72 | ✅ PASS |
-| 20 km  | 342,463  | +4.170e-06     | [+3.60e-06,+4.72e-06]        | -4.159e-07     | [-6.50e-07,-1.54e-07]        | +4.59e-06       | 110.0%     | 0.00e+00   | 100.0%    | 3.78 | ✅ PASS |
+### Automated Ingestion
 
-Quality Control Metrics
-  • 100% bootstrap success rate across all radii
-  • 95% refutation test pass rate (19/20 analyses)
-  • VIF values range 1.77-3.78 indicating acceptable to moderate multicollinearity
-  • Confidence intervals provide precise effect estimates
-  • Near-field mediation: 69.0% average (≤5km)
-  • Far-field mediation: 106.1% average (≥10km)
+```bash
+# Daily: fetch new earthquakes from IRIS FDSN + check Google Drive for updated injection data
+python auto_ingest.py --events-only --check-drive
 
-Enhanced Statistical Insights
-  • Bootstrap confidence intervals provide robust uncertainty quantification
-  • Direct effects become non-significant (CIs include zero) at 8-9km radius
-  • Indirect effects consistently positive and significant across all radii
-  • Strongest causal identification at 4km radius with tightest confidence intervals
+# Full rebuild (after new injection data):
+python auto_ingest.py --full --parallel 16
+```
 
-STEP 8 · ENHANCED EVENT-LEVEL DOWHY ANALYSIS WITH BOOTSTRAP CI
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Primary script : dowhy_ci_aggregated.py   (DoWhy 0.12)
-Bootstrap iterations : 50
-Adjustment set : { Nearest Fault Dist (km), Fault Segments ≤R km, well_count }
-─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-| Radius | n_events | avg_wells | Total Effect   | 95% CI                       | Direct Effect  | 95% CI                       | Indirect Effect | % Mediated | p-value    | Bootstrap | VIF  | Refute     |
-|--------|----------|-----------|----------------|------------------------------|----------------|------------------------------|-----------------|------------|------------|-----------|------|------------|
-| 1 km   | 1,058    | 1.1       | +5.720e-06     | [+6.21e-07,+3.94e-05]        | -9.059e-07     | [-3.51e-06,+2.08e-05]        | +6.63e-06       | 115.8%     | 1.65e-02   | 100.0%    | 3.33 | ⚠️ CAUTION |
-| 2 km   | 3,162    | 1.5       | +1.753e-05     | [+9.59e-06,+3.64e-05]        | +3.115e-06     | [-6.44e-07,+1.47e-05]        | +1.44e-05       | 82.2%      | 1.78e-22   | 100.0%    | 2.48 | ✅ PASS     |
-| 3 km   | 4,921    | 2.4       | +2.132e-05     | [+1.56e-05,+2.83e-05]        | +1.126e-05     | [+6.31e-06,+1.78e-05]        | +1.01e-05       | 47.2%      | 1.60e-71   | 100.0%    | 2.42 | ✅ PASS     |
-| 4 km   | 6,192    | 3.3       | +1.724e-05     | [+1.41e-05,+2.09e-05]        | +9.765e-06     | [+7.38e-06,+1.29e-05]        | +7.47e-06       | 43.3%      | 2.20e-97   | 100.0%    | 2.56 | ✅ PASS     |
-| 5 km   | 7,102    | 4.3       | +1.154e-05     | [+9.50e-06,+1.44e-05]        | +5.014e-06     | [+3.40e-06,+7.18e-06]        | +6.53e-06       | 56.6%      | 1.23e-88   | 100.0%    | 2.75 | ✅ PASS     |
-| 6 km   | 7,943    | 5.3       | +5.865e-06     | [+4.20e-06,+8.10e-06]        | +1.620e-06     | [+6.26e-07,+3.09e-06]        | +4.25e-06       | 72.4%      | 2.29e-53   | 100.0%    | 2.68 | ✅ PASS     |
-| 7 km   | 8,653    | 6.5       | +4.951e-06     | [+3.70e-06,+6.82e-06]        | +1.235e-06     | [+5.95e-07,+2.35e-06]        | +3.72e-06       | 75.0%      | 7.46e-59   | 100.0%    | 2.78 | ✅ PASS     |
-| 8 km   | 9,231    | 7.8       | +2.142e-06     | [+1.35e-06,+3.07e-06]        | +1.657e-07     | [-1.88e-07,+6.07e-07]        | +1.98e-06       | 92.3%      | 1.76e-26   | 100.0%    | 2.72 | ✅ PASS     |
-| 9 km   | 9,658    | 9.3       | +1.848e-06     | [+1.29e-06,+2.44e-06]        | +1.059e-07     | [-2.00e-07,+4.64e-07]        | +1.74e-06       | 94.3%      | 8.05e-27   | 100.0%    | 2.95 | ✅ PASS     |
-| 10 km  | 9,928    | 11.0      | +1.835e-06     | [+1.42e-06,+2.82e-06]        | +1.144e-07     | [-1.13e-07,+6.06e-07]        | +1.72e-06       | 93.8%      | 2.33e-31   | 100.0%    | 3.24 | ✅ PASS     |
-| 11 km  | 10,079   | 12.9      | +1.633e-06     | [+1.10e-06,+2.12e-06]        | +9.195e-08     | [-1.79e-07,+4.01e-07]        | +1.54e-06       | 94.4%      | 2.05e-30   | 100.0%    | 3.43 | ✅ PASS     |
-| 12 km  | 10,179   | 14.8      | +1.276e-06     | [+9.19e-07,+1.67e-06]        | -5.123e-08     | [-2.35e-07,+1.41e-07]        | +1.33e-06       | 104.0%     | 1.09e-23   | 100.0%    | 3.61 | ✅ PASS     |
-| 13 km  | 10,286   | 16.6      | +9.934e-07     | [+6.82e-07,+1.33e-06]        | -4.919e-08     | [-1.81e-07,+1.79e-07]        | +1.04e-06       | 105.0%     | 3.15e-20   | 100.0%    | 3.78 | ✅ PASS     |
-| 14 km  | 10,380   | 18.5      | +1.070e-06     | [+8.02e-07,+1.45e-06]        | +7.183e-09     | [-8.89e-08,+1.19e-07]        | +1.06e-06       | 99.3%      | 4.79e-26   | 100.0%    | 4.03 | ✅ PASS     |
-| 15 km  | 10,429   | 20.6      | +1.008e-06     | [+7.14e-07,+1.32e-06]        | +1.768e-08     | [-1.10e-07,+1.09e-07]        | +9.90e-07       | 98.2%      | 4.20e-28   | 100.0%    | 4.30 | ✅ PASS     |
-| 16 km  | 10,488   | 22.7      | +9.294e-07     | [+7.24e-07,+1.18e-06]        | +2.443e-08     | [-7.44e-08,+1.39e-07]        | +9.05e-07       | 97.4%      | 1.92e-28   | 100.0%    | 4.63 | ✅ PASS     |
-| 17 km  | 10,527   | 25.0      | +1.001e-06     | [+7.77e-07,+1.30e-06]        | +8.158e-08     | [-3.06e-08,+2.13e-07]        | +9.19e-07       | 91.8%      | 9.41e-37   | 100.0%    | 5.03 | ✅ PASS     |
-| 18 km  | 10,565   | 27.5      | +9.928e-07     | [+7.68e-07,+1.33e-06]        | +1.321e-07     | [+2.79e-08,+2.33e-07]        | +8.61e-07       | 86.7%      | 9.90e-43   | 100.0%    | 5.42 | ✅ PASS     |
-| 19 km  | 10,606   | 29.9      | +1.048e-06     | [+8.86e-07,+1.39e-06]        | +1.707e-07     | [+1.02e-07,+3.16e-07]        | +8.77e-07       | 83.7%      | 3.27e-52   | 100.0%    | 5.87 | ✅ PASS     |
-| 20 km  | 10,635   | 32.2      | +1.071e-06     | [+8.55e-07,+1.34e-06]        | +2.115e-07     | [+1.38e-07,+3.45e-07]        | +8.60e-07       | 80.3%      | 8.69e-61   | 100.0%    | 6.29 | ✅ PASS     |
+---
 
-Event-Level Aggregation Benefits
-  • Eliminates duplicate magnitude measurements from multiple wells per event
-  • Accounts for cumulative injection effects from multiple wells
-  • Better signal-to-noise ratio through aggregation
-  • Well count included as additional confounder control
-  • Higher predictive R² values (0.42-0.55) vs well-level analysis
+## Pipeline
 
-Quality Control Metrics
-  • 100% bootstrap success rate across all radii
-  • 95% refutation test pass rate (19/20 analyses)
-  • VIF values range 2.42-6.29 indicating acceptable to moderate multicollinearity
-  • Confidence intervals provide precise effect estimates
-  • Near-field mediation: 69.0% average (≤5km)
-  • Far-field mediation: 94.1% average (≥10km)
+```bash
+# Full pipeline (steps 0-15, ~30 min with --parallel-radii 16):
+python run_all.py --parallel-radii 16
 
-Enhanced Statistical Insights
-  • Event-level aggregation yields more stable causal estimates
-  • Bootstrap confidence intervals narrower than well-level analysis
-  • Direct effects become non-significant (CIs include zero) at 8-10km radius
-  • Random confounder refutation tests validate causal model specification
-  • Optimal predictive performance achieved at 7km radius (R² ≈ 0.55)
+# Or run individual steps:
+python run_all.py --only 0 1 2 3 4    # ingest + panel + spatial join + geoscience
+python run_all.py --only 9 10 11       # TMLE shift + dose-response + mediation
+```
 
-Methodological Validation
-  • DoWhy framework with explicit DAG specification ensures valid causal inference
-  • Multiple refutation tests confirm robustness of causal claims
-  • Bootstrap resampling provides non-parametric uncertainty quantification
-  • VIF monitoring prevents spurious results from multicollinearity
-  • Event-level aggregation superior to traditional well-level approaches
+| Step | Script | Output | Time |
+|---|---|---|---|
+| 0 | `swd_data_import.py` | `swd_data_filtered.csv` | 5s |
+| 1 | `seismic_data_import.py` | `texnet_events_filtered.csv` | 2s |
+| 2 | `build_well_day_panel.py` | `well_day_panel.csv` (320 MB) | 15s |
+| 3 | `spatiotemporal_join.py` | `panel_with_outcomes_*.csv` × 20 | 2 min |
+| 4 | `add_geoscience_to_panel.py` | `panel_with_faults_*.csv` × 20 | 2 min |
+| 5-8 | `dowhy_*.py` | OLS mediation results | 5 min |
+| 9 | `tmle_shift_analysis.py` | `tmle_shift_365d_*.csv` | 1.5 hr |
+| 10 | `tmle_dose_response.py` | `tmle_dose_response_365d_*.csv` | 1.5 hr |
+| 11 | `tmle_mediation_analysis.py` | `tmle_mediation_365d_*.csv` | 30 min |
 
-======
+### Causal Forest (per-well attribution)
 
-## TOTAL PIPELINE RUNTIME: 27 minutes 53 seconds
+```bash
+# Train at all 20 radii (~27 min with 4 workers):
+python build_causal_forest.py --radii 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 --workers 4
+```
+
+---
+
+## Dashboard
+
+### Local Development
+
+```bash
+pip install -r requirements.txt
+uvicorn dashboard.server:app --host 0.0.0.0 --port 8765
+```
+
+### Docker Deployment (production)
+
+```bash
+cd dashboard/
+docker build -t seis-dashboard .
+docker run -d --name seis-dashboard \
+  --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=100m \
+  --memory 8g --cpus 8 \
+  -p 127.0.0.1:8766:8765 \
+  --security-opt no-new-privileges \
+  --cap-drop ALL \
+  seis-dashboard
+```
+
+### Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /` | Landing page (primer + methodology overview) |
+| `GET /dashboard` | Interactive map + attribution terminal |
+| `GET /faq` | FAQ for regulators and operators |
+| `GET /methodology` | Technical methodology |
+| `GET /api/health` | Data freshness + model dates |
+| `GET /api/events` | Earthquake catalog (map data) |
+| `GET /api/event/{id}/wells` | Wells within radius with panel features |
+| `GET /api/event/{id}/attribution` | Per-well CATE from Causal Forest |
+| `GET /api/event/{id}/report` | Downloadable PDF report |
+| `GET /api/wells/{api}/threshold` | Per-well volume threshold curve |
+| `GET /api/wells/{api}/timeseries` | Daily injection + pressure history |
+| `GET /api/tmle/summary` | Population TMLE context at radius |
+
+---
+
+## Installation
+
+```bash
+git clone https://github.com/Project-Geminae/induced-seismicity.git
+cd induced-seismicity
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Data Setup
+
+1. Download TexNet event + injection CSVs from the Google Drive links in `auto_ingest.py`
+2. Place in `~/Downloads/`
+3. Run: `python auto_ingest.py --full --parallel 16`
+
+---
+
+## Project Structure
+
+```
+induced-seismicity/
+├── README.md                      # This file
+├── CHANGES.md                     # Detailed changelog (old vs new pipeline)
+├── requirements.txt               # Python dependencies
+├── run_all.py                     # Pipeline orchestrator
+│
+├── # ── Data Ingestion ──
+├── swd_data_import.py             # Filter RRC SWD injection data
+├── seismic_data_import.py         # Filter TexNet earthquake catalog
+├── auto_ingest.py                 # Automated daily FDSN + Drive polling
+│
+├── # ── Panel Construction ──
+├── build_well_day_panel.py        # (well, day) panel with rolling features + BHP
+├── spatiotemporal_join.py         # Link earthquakes to wells by radius
+├── add_geoscience_to_panel.py     # Fault distance + segment count
+├── column_maps.py                 # Single source of truth for column names
+│
+├── # ── Causal Analysis (OLS) ──
+├── causal_core.py                 # OLS mediation + cluster bootstrap
+├── dowhy_simple_all.py            # Well-day OLS (no bootstrap)
+├── dowhy_ci.py                    # Well-day OLS + bootstrap CIs
+├── dowhy_simple_all_aggregate.py  # Event-level OLS
+├── dowhy_ci_aggregated.py         # Event-level OLS + bootstrap CIs
+│
+├── # ── Causal Analysis (TMLE) ──
+├── tmle_core.py                   # TMLE primitives (SuperLearner, density, IF)
+├── tmle_shift_analysis.py         # Stochastic shift intervention
+├── tmle_dose_response.py          # Dose-response curve E[Y_a]
+├── tmle_mediation_analysis.py     # NDE/NIE mediation decomposition
+├── tmle_run_parallel.py           # Parallel TMLE driver (ProcessPoolExecutor)
+│
+├── # ── Per-Well Attribution ──
+├── build_causal_forest.py         # CausalForestDML (EconML) per radius
+├── build_attribution_q.py         # Legacy TMLE Q models (superseded by CF)
+│
+├── # ── Sensitivity / Diagnostics ──
+├── positivity_diagnostics.py      # TMLE positivity & H-statistic report
+├── formation_sensitivity.py       # Depth-proxy vs formation robustness
+├── model_improvements.py          # 4-improvement impact assessment
+├── rate_definition_check.py       # Injection rate multicollinearity check
+├── compare_trim_results.py        # Trim vs no-trim TMLE comparison
+├── evalue_sensitivity.py          # E-value bounds for unmeasured confounding
+│
+├── # ── Visualization ──
+├── tmle_visualizations.py         # TMLE result plots
+├── causal_poe_curves.py           # Probability-of-exceedance curves
+├── induced_seismicity_scaling_plots.py
+├── killer_visualizations.py
+│
+├── # ── Dashboard ──
+├── dashboard/
+│   ├── __init__.py
+│   ├── server.py                  # FastAPI backend
+│   ├── Dockerfile                 # Production container
+│   ├── entrypoint.py              # Container startup
+│   └── templates/
+│       ├── index.html             # Bloomberg-terminal interactive map
+│       ├── landing.html           # Landing page with primer
+│       ├── faq.html               # Regulatory FAQ
+│       ├── methodology.html       # Technical methodology
+│       └── analytics.html         # Traffic analytics (key-gated)
+│
+├── # ── Reference Data ──
+├── Horne_et_al._2023_MB_BSMT_FSP_V1.shp  # Fault segments shapefile
+└── tmle_r_crossvalidation.R       # R tlverse cross-validation script
+```
+
+---
+
+## Citation
+
+```bibtex
+@inproceedings{matthews2025causal,
+  title={A Causal Inference Framework for Assessing the Relationship Between
+         Saltwater Disposal and Induced Seismicity in the Permian Basin},
+  author={Matthews, Lewis and Hennings, Peter and Lund Snee, Jens-Erik},
+  booktitle={SPE Annual Technical Conference and Exhibition},
+  year={2025},
+  publisher={Society of Petroleum Engineers},
+  doi={10.2118/228051-MS}
+}
+```
+
+## License
+
+Apache 2.0

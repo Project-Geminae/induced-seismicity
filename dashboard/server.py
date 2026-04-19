@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import pickle
 import sys
 from datetime import datetime
@@ -40,9 +41,21 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+import time as _time
+
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    _HAS_SLOWAPI = True
+except ImportError:
+    _HAS_SLOWAPI = False
 
 
 # ──────────────────── Constants ──────────────────────────────────
@@ -159,11 +172,9 @@ def _load_causal_forests() -> dict[int, object]:
         except Exception as e:
             log.warning("Failed to load %s: %s", path.name, e)
 
+    # Also load legacy TMLE AttributionQ pickles for radii without a Causal Forest
     if out:
-        return out
-
-    # Fallback: try old TMLE AttributionQ pickles
-    log.warning("No cf_cate_*.pkl found — trying legacy q_attribution_*.pkl")
+        log.info("Loaded %d CausalForest models; checking legacy Q models for remaining radii", len(out))
     try:
         import build_attribution_q as baq
         import __main__ as main_mod
@@ -172,6 +183,8 @@ def _load_causal_forests() -> dict[int, object]:
     except Exception:
         pass
     for R in RADII_KM:
+        if R in out:
+            continue  # already have a CausalForest for this radius
         path = REPO_ROOT / Q_PKL_FMT.format(R=R)
         if not path.exists():
             continue
@@ -251,6 +264,72 @@ app = FastAPI(
     description="Click an event on the map → see contributing wells with TMLE-derived metrics.",
     version="0.1.0",
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)  # gzip responses > 500 bytes
+
+# ──────────────────── Access logging middleware ──────────────────
+ACCESS_LOG = Path(os.environ.get("ACCESS_LOG", "/tmp/access.log"))
+_access_logger = logging.getLogger("access")
+_access_handler = logging.FileHandler(ACCESS_LOG)
+_access_handler.setFormatter(logging.Formatter("%(message)s"))
+_access_logger.addHandler(_access_handler)
+_access_logger.setLevel(logging.INFO)
+# Also log to stdout so docker logs captures it
+_access_logger.addHandler(logging.StreamHandler(sys.stdout))
+
+_SKIP_LOG_PATHS = {"/analytics", "/api/analytics", "/api/beacon"}
+
+class AccessLogMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start = _time.time()
+        response = await call_next(request)
+        elapsed = (_time.time() - start) * 1000  # ms
+
+        path = request.url.path
+        if path in _SKIP_LOG_PATHS:
+            return response
+
+        xff = request.headers.get("x-forwarded-for", "")
+        ip = xff.split(",")[0].strip() if xff else (request.client.host if request.client else "-")
+        ua = request.headers.get("user-agent", "-")
+        method = request.method
+        qs = str(request.url.query)
+        if qs:
+            path = f"{path}?{qs}"
+        status = response.status_code
+
+        _access_logger.info(
+            '%s  %s  %s  %d  %.0fms  "%s"',
+            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            ip, method + " " + path, status, elapsed, ua[:120]
+        )
+        return response
+
+app.add_middleware(AccessLogMiddleware)
+
+# ──────────────────── Rate limiting ──────────────────────────────
+def _get_real_ip(request: Request) -> str:
+    """Extract the real client IP, respecting X-Forwarded-For from Tailscale Funnel."""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return get_remote_address(request)
+
+if _HAS_SLOWAPI:
+    limiter = Limiter(key_func=_get_real_ip)
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    log.info("Rate limiting enabled (slowapi, keyed by X-Forwarded-For)")
+else:
+    limiter = None
+    log.info("slowapi not installed — rate limiting disabled")
+
+def ratelimit(limit_str: str):
+    """Decorator: apply rate limit if slowapi is available, no-op otherwise."""
+    if limiter is not None:
+        return limiter.limit(limit_str)
+    def _noop(func):
+        return func
+    return _noop
 
 
 class State:
@@ -295,15 +374,22 @@ def _startup() -> None:
 # Python types automatically.
 
 
+LANDING_HTML = TEMPLATES_DIR / "landing.html"
+ANALYTICS_HTML = TEMPLATES_DIR / "analytics.html"
+
 # ──────────────────── Routes: HTML ───────────────────────────────
 @app.get("/", response_class=HTMLResponse)
-def index() -> HTMLResponse:
+def landing() -> HTMLResponse:
+    if not LANDING_HTML.exists():
+        # Fallback to dashboard if no landing page
+        return HTMLResponse(INDEX_HTML.read_text())
+    return HTMLResponse(LANDING_HTML.read_text())
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard_app() -> HTMLResponse:
     if not INDEX_HTML.exists():
-        return HTMLResponse(
-            "<h1>dashboard/templates/index.html not found</h1>"
-            "<p>The frontend hasn't been written yet.</p>",
-            status_code=500,
-        )
+        return HTMLResponse("<h1>dashboard not found</h1>", status_code=500)
     return HTMLResponse(INDEX_HTML.read_text())
 
 
@@ -317,21 +403,108 @@ def methodology() -> HTMLResponse:
     return HTMLResponse(METHODOLOGY_HTML.read_text())
 
 
+FAQ_HTML = TEMPLATES_DIR / "faq.html"
+
+@app.get("/faq", response_class=HTMLResponse)
+def faq() -> HTMLResponse:
+    if not FAQ_HTML.exists():
+        return HTMLResponse("<h1>FAQ not found</h1>", status_code=500)
+    return HTMLResponse(FAQ_HTML.read_text())
+
+
+ANALYTICS_KEY = os.environ.get("ANALYTICS_KEY", "geminae2026")
+
+@app.get("/analytics", response_class=HTMLResponse)
+def analytics_page(key: str = Query("")) -> HTMLResponse:
+    if key != ANALYTICS_KEY:
+        raise HTTPException(404)
+    if not ANALYTICS_HTML.exists():
+        return HTMLResponse("<h1>Analytics not found</h1>", status_code=500)
+    return HTMLResponse(ANALYTICS_HTML.read_text())
+
+
+BEACON_LOG = Path(os.environ.get("BEACON_LOG", "/tmp/beacon.log"))
+_beacon_logger = logging.getLogger("beacon")
+_beacon_handler = logging.FileHandler(BEACON_LOG)
+_beacon_handler.setFormatter(logging.Formatter("%(message)s"))
+_beacon_logger.addHandler(_beacon_handler)
+_beacon_logger.setLevel(logging.INFO)
+
+
+@app.post("/api/beacon")
+async def beacon(request: Request) -> dict:
+    """Receive client-side interaction events."""
+    try:
+        body = await request.json()
+        xff = request.headers.get("x-forwarded-for", "")
+        ip = xff.split(",")[0].strip() if xff else (request.client.host if request.client else "-")
+        ts = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        event = body.get("event", "unknown")
+        data = body.get("data", {})
+        page = body.get("page", "-")
+        sid = body.get("sid", "-")
+        tz = body.get("tz", "-")
+        screen = body.get("screen", "-")
+        lang = body.get("lang", "-")
+        ref = body.get("ref", "-")
+        _beacon_logger.info(
+            '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s',
+            ts, ip, sid, event, json.dumps(data), page, tz, screen, lang, ref
+        )
+        return {"ok": True}
+    except Exception:
+        return {"ok": False}
+
+
+@app.get("/api/analytics")
+def analytics_data(key: str = Query("")) -> dict:
+    """Return parsed access log lines for the analytics dashboard."""
+    if key != ANALYTICS_KEY:
+        raise HTTPException(404)
+    if not ACCESS_LOG.exists():
+        return {"lines": []}
+    try:
+        lines = ACCESS_LOG.read_text().strip().split("\n") if ACCESS_LOG.exists() else []
+        beacons = BEACON_LOG.read_text().strip().split("\n") if BEACON_LOG.exists() else []
+        return {"lines": lines[-10000:], "beacons": beacons[-10000:]}
+    except Exception as e:
+        return {"lines": [], "beacons": [], "error": str(e)}
+
+
 # ──────────────────── Routes: API ────────────────────────────────
 @app.get("/api/health")
 def health() -> dict:
+    # Data freshness: latest event date and model dates
+    try:
+        dates = state.events["Origin Date"]
+        latest_event = dates.max().strftime("%Y-%m-%d") if hasattr(dates.max(), 'strftime') else str(dates.max())[:10]
+    except Exception:
+        latest_event = "unknown"
+
+    tmle_files = sorted(REPO_ROOT.glob("tmle_shift_365d_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+    tmle_date = datetime.fromtimestamp(tmle_files[0].stat().st_mtime).strftime("%Y-%m-%d") if tmle_files else "never"
+
+    cf_files = sorted(REPO_ROOT.glob("cf_cate_*.pkl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    cf_date = datetime.fromtimestamp(cf_files[0].stat().st_mtime).strftime("%Y-%m-%d") if cf_files else "never"
+
     return {
-        "status":      "ok",
-        "loaded_at":   state.loaded_at.isoformat(),
-        "n_events":    len(state.events),
-        "n_panel":     len(state.panel),
-        "n_links":     len(state.links),
-        "radii_km":    RADII_KM,
+        "status":           "ok",
+        "loaded_at":        state.loaded_at.isoformat(),
+        "n_events":         len(state.events),
+        "n_panel":          len(state.panel),
+        "n_links":          len(state.links),
+        "n_cate_models":    len(state.attribution_q),
+        "radii_km":         RADII_KM,
+        "latest_event_date": latest_event,
+        "tmle_run_date":    tmle_date,
+        "causal_forest_date": cf_date,
     }
 
 
 @app.get("/api/events")
+@ratelimit("120/minute")
 def list_events(
+    request: Request,
     since:   Optional[str]   = Query(None,  description="ISO date, YYYY-MM-DD"),
     until:   Optional[str]   = Query(None,  description="ISO date, YYYY-MM-DD"),
     min_ml:  Optional[float] = Query(None,  description="Minimum local magnitude"),
@@ -435,7 +608,9 @@ def _well_features_at(api: int, date: pd.Timestamp) -> dict:
 
 
 @app.get("/api/event/{event_id}/wells")
+@ratelimit("120/minute")
 def event_wells(
+    request: Request,
     event_id:  str,
     radius_km: int = Query(7, ge=1, le=20),
 ) -> dict:
@@ -478,7 +653,9 @@ def event_wells(
 
 
 @app.get("/api/event/{event_id}/attribution")
+@ratelimit("60/minute")
 def event_attribution(
+    request: Request,
     event_id:  str,
     radius_km: int = Query(7, ge=1, le=20),
 ) -> dict:
@@ -715,7 +892,9 @@ def tmle_all() -> dict:
 
 
 @app.get("/api/wells/{api_number}/timeseries")
+@ratelimit("120/minute")
 def well_timeseries(
+    request: Request,
     api_number: int,
     around:     str = Query(..., description="Center date, YYYY-MM-DD"),
     days:       int = Query(180, ge=7, le=2000),
@@ -761,7 +940,9 @@ def _safe_float(v, fallback=0.0):
 
 
 @app.get("/api/wells/{api_number}/threshold")
+@ratelimit("60/minute")
 def well_threshold(
+    request: Request,
     api_number: int,
     radius_km: int   = Query(7, ge=1, le=20),
     event_date: str  = Query(..., description="Event date YYYY-MM-DD (for panel lookup)"),
@@ -847,3 +1028,295 @@ def well_threshold(
         "max_vol":          max_vol,
         "curve":            curve,
     }
+
+
+@app.get("/api/event/{event_id}/report")
+@ratelimit("10/minute")
+def event_report(
+    request: Request,
+    event_id:  str,
+    radius_km: int = Query(7, ge=1, le=20),
+) -> Response:
+    """Generate a regulatory-ready PDF report for an event with charts."""
+    import io
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        Image, PageBreak, KeepTogether
+    )
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+
+    if event_id not in state.events.index:
+        raise HTTPException(404, f"event {event_id} not found")
+
+    ev = state.events.loc[event_id]
+    ev_date = ev["Origin Date"]
+    ev_ml = _safe_float(ev.get("Local Magnitude", 0))
+    ev_lat = _safe_float(ev.get("Latitude (WGS84)", 0))
+    ev_lon = _safe_float(ev.get("Longitude (WGS84)", 0))
+    ev_depth = _safe_float(ev.get("Depth of Hypocenter (Km.  Rel to MSL)", 0))
+
+    # Attribution
+    has_cate = radius_km in state.attribution_q
+    wells_data = []
+    total_cate = 0.0
+    positive_total = 0.0
+    if has_cate:
+        try:
+            attr_response = event_attribution(request, event_id, radius_km)
+            wells_data = attr_response.get("wells", [])
+            agg = attr_response.get("aggregate", {})
+            total_cate = _safe_float(agg.get("total_cate_ml", 0))
+            positive_total = _safe_float(agg.get("positive_total_ml", 0))
+        except Exception:
+            pass
+
+    tmle = state.tmle_summary.get(radius_km, {})
+
+    # Data vintage
+    try:
+        latest_event = state.events["Origin Date"].max()
+        latest_str = latest_event.strftime("%Y-%m-%d") if hasattr(latest_event, "strftime") else str(latest_event)[:10]
+    except Exception:
+        latest_str = "unknown"
+    tmle_files = sorted(REPO_ROOT.glob("tmle_shift_365d_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+    tmle_date = datetime.fromtimestamp(tmle_files[0].stat().st_mtime).strftime("%Y-%m-%d") if tmle_files else "unknown"
+    cf_files = sorted(REPO_ROOT.glob("cf_cate_*.pkl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    cf_date = datetime.fromtimestamp(cf_files[0].stat().st_mtime).strftime("%Y-%m-%d") if cf_files else "unknown"
+
+    # ── Build PDF ──
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=letter,
+        leftMargin=0.5*inch, rightMargin=0.5*inch,
+        topMargin=0.5*inch, bottomMargin=0.5*inch,
+    )
+    story = []
+    styles = getSampleStyleSheet()
+
+    # Custom styles
+    AMBER = colors.HexColor("#C47000")
+    DARK = colors.HexColor("#222222")
+    GRAY = colors.HexColor("#888888")
+    RED = colors.HexColor("#CC2222")
+    GREEN = colors.HexColor("#008A52")
+
+    title_style = ParagraphStyle(
+        "title", parent=styles["Heading1"], fontSize=16, textColor=DARK,
+        spaceAfter=4, alignment=TA_LEFT,
+    )
+    subtitle_style = ParagraphStyle(
+        "subtitle", parent=styles["Normal"], fontSize=9, textColor=GRAY,
+        spaceAfter=12,
+    )
+    section_style = ParagraphStyle(
+        "section", parent=styles["Heading2"], fontSize=10, textColor=AMBER,
+        spaceAfter=4, spaceBefore=8, fontName="Helvetica-Bold",
+    )
+    body_style = ParagraphStyle(
+        "body", parent=styles["Normal"], fontSize=9, textColor=DARK,
+        spaceAfter=4,
+    )
+    small_style = ParagraphStyle(
+        "small", parent=styles["Normal"], fontSize=7, textColor=GRAY,
+    )
+
+    # Header
+    story.append(Paragraph(
+        f"<font color='#222222'>Induced Seismicity Causal Attribution Report</font>",
+        title_style
+    ))
+    story.append(Paragraph(
+        f"SPE-228051 TMLE Extension &bull; Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} &bull; "
+        f"<a href='https://tinyurl.com/ywf39tmv' color='#C47000'>https://tinyurl.com/ywf39tmv</a>",
+        subtitle_style
+    ))
+
+    # Event details table
+    story.append(Paragraph("EVENT DETAILS", section_style))
+    event_table = Table([
+        ["Event ID:", event_id, "Magnitude:", f"M{ev_ml:.1f}"],
+        ["Date:", str(ev_date)[:10], "Depth:", f"{ev_depth:.2f} km MSL"],
+        ["Location:", f"{ev_lat:.4f}\u00b0N, {ev_lon:.4f}\u00b0W", "Search Radius:", f"{radius_km} km"],
+        ["Wells Found:", f"{len(wells_data)}", "Total CATE:", f"{total_cate:+.4f} ML"],
+    ], colWidths=[1.2*inch, 2.2*inch, 1.2*inch, 2.2*inch])
+    event_table.setStyle(TableStyle([
+        ("FONT", (0,0), (-1,-1), "Helvetica", 9),
+        ("TEXTCOLOR", (0,0), (0,-1), AMBER),
+        ("TEXTCOLOR", (2,0), (2,-1), AMBER),
+        ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"),
+        ("FONTNAME", (2,0), (2,-1), "Helvetica-Bold"),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+        ("TOPPADDING", (0,0), (-1,-1), 2),
+    ]))
+    story.append(event_table)
+    story.append(Spacer(1, 12))
+
+    # ── CATE Waterfall Chart ──
+    if wells_data:
+        wells_sorted = sorted(wells_data, key=lambda w: -_safe_float(w.get("cate_ml", 0)))[:15]
+        labels = [f"#{i+1} \u00b7 {str(w.get('api',''))[-4:]} \u00b7 {_safe_float(w.get('distance_km',0)):.1f}km"
+                  for i, w in enumerate(wells_sorted)]
+        cates = [_safe_float(w.get("cate_ml", 0)) for w in wells_sorted]
+        ci_los = [_safe_float(w.get("cate_ci_low", 0)) for w in wells_sorted]
+        ci_his = [_safe_float(w.get("cate_ci_high", 0)) for w in wells_sorted]
+
+        fig, ax = plt.subplots(figsize=(7.2, 3.6))
+        y_pos = range(len(labels))
+        bar_colors = []
+        for c, lo in zip(cates, ci_los):
+            if c < 0:
+                bar_colors.append("#2266CC")
+            elif lo > 0:
+                bar_colors.append("#CC2222")
+            else:
+                bar_colors.append("#C47000")
+
+        errors = [[c - lo for c, lo in zip(cates, ci_los)], [hi - c for c, hi in zip(cates, ci_his)]]
+        ax.barh(y_pos, cates, color=bar_colors, height=0.7, alpha=0.85,
+                xerr=errors, ecolor="#888888", capsize=2, error_kw={"elinewidth":0.8})
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(labels, fontsize=7)
+        ax.invert_yaxis()
+        ax.axvline(0, color="#C47000", linewidth=0.8)
+        ax.set_xlabel("CATE (ML contribution)", fontsize=8)
+        ax.set_title(f"Per-Well Causal Attribution (Top {len(wells_sorted)} of {len(wells_data)})",
+                     fontsize=10, color="#C47000", loc="left")
+        ax.tick_params(axis="x", labelsize=7)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(axis="x", alpha=0.2)
+        plt.tight_layout()
+
+        img_buf = io.BytesIO()
+        plt.savefig(img_buf, format="png", dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        img_buf.seek(0)
+        story.append(Paragraph("PER-WELL CATE (CAUSAL FOREST DML)", section_style))
+        story.append(Image(img_buf, width=7.2*inch, height=3.6*inch))
+        story.append(Spacer(1, 6))
+
+        # Significant wells callout
+        sig_wells = [w for w in wells_data if _safe_float(w.get("cate_ci_low", 0)) > 0]
+        if sig_wells:
+            sig_text = f"<b>Statistically significant contributors (95% CI excludes zero): {len(sig_wells)}</b><br/>"
+            for w in sig_wells[:5]:
+                sig_text += (
+                    f"&nbsp;&nbsp;API {w.get('api','')} &bull; CATE = "
+                    f"{_safe_float(w.get('cate_ml',0)):+.4f} ML &bull; "
+                    f"CI [{_safe_float(w.get('cate_ci_low',0)):+.4f}, "
+                    f"{_safe_float(w.get('cate_ci_high',0)):+.4f}]<br/>"
+                )
+            story.append(Paragraph(sig_text, body_style))
+        else:
+            story.append(Paragraph(
+                "<b><font color='#CC2222'>No wells with statistically significant individual contribution.</font></b><br/>"
+                "All 95% CIs cross zero \u2014 this is distributed causation. "
+                "Area-wide volume reduction (TMLE shift) is the appropriate regulatory tool.",
+                body_style
+            ))
+
+    story.append(Spacer(1, 8))
+
+    # ── Per-well table ──
+    if wells_data:
+        story.append(Paragraph("PER-WELL ATTRIBUTION TABLE", section_style))
+        header = ["#", "API", "Dist km", "CATE (ML)", "95% CI", "Depth ft", "Vol 365d", "Sig?"]
+        table_rows = [header]
+        for i, w in enumerate(wells_data[:25]):
+            cate = _safe_float(w.get("cate_ml", 0))
+            ci_lo = _safe_float(w.get("cate_ci_low", 0))
+            ci_hi = _safe_float(w.get("cate_ci_high", 0))
+            dist = _safe_float(w.get("distance_km", 0))
+            depth = _safe_float(w.get("perf_depth_ft", 0))
+            vol = _safe_float(w.get("cum_vol_window", 0))
+            sig = "YES" if ci_lo > 0 else "--"
+            table_rows.append([
+                str(i+1), str(w.get("api","")), f"{dist:.2f}",
+                f"{cate:+.4f}",
+                f"[{ci_lo:+.3f}, {ci_hi:+.3f}]",
+                f"{depth:,.0f}" if depth else "-",
+                f"{vol:,.0f}" if vol else "-",
+                sig,
+            ])
+        tbl = Table(table_rows, colWidths=[0.3*inch, 0.7*inch, 0.6*inch, 0.8*inch, 1.3*inch, 0.7*inch, 0.9*inch, 0.4*inch])
+        tbl_style = [
+            ("FONT", (0,0), (-1,-1), "Helvetica", 7),
+            ("BACKGROUND", (0,0), (-1,0), AMBER),
+            ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+            ("TOPPADDING", (0,0), (-1,-1), 2),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.HexColor("#dddddd")),
+            ("ALIGN", (2,0), (-1,-1), "RIGHT"),
+        ]
+        # Highlight significant rows
+        for i, row in enumerate(table_rows[1:], start=1):
+            if row[-1] == "YES":
+                tbl_style.append(("TEXTCOLOR", (-1,i), (-1,i), GREEN))
+                tbl_style.append(("FONTNAME", (-1,i), (-1,i), "Helvetica-Bold"))
+        tbl.setStyle(TableStyle(tbl_style))
+        story.append(tbl)
+
+    story.append(Spacer(1, 10))
+
+    # ── Population TMLE Context ──
+    if tmle:
+        story.append(Paragraph(f"POPULATION TMLE CONTEXT @ {radius_km} KM", section_style))
+        tmle_table = Table([
+            ["Total Effect (P90 vs P10):", f"{tmle.get('TE', '--'):.4e}" if isinstance(tmle.get('TE'), (int,float)) else str(tmle.get('TE','--')),
+             "% Mediated (via WHP):", f"{tmle.get('pct_mediated', '--'):.1f}%" if isinstance(tmle.get('pct_mediated'), (int,float)) else str(tmle.get('pct_mediated','--'))],
+            ["Natural Direct Effect (NDE):", f"{tmle.get('NDE', '--'):.4e}" if isinstance(tmle.get('NDE'), (int,float)) else str(tmle.get('NDE','--')),
+             "E[Y | A=1E7 BBL]:", f"{tmle.get('dose_1e7', '--'):.4e}" if isinstance(tmle.get('dose_1e7'), (int,float)) else str(tmle.get('dose_1e7','--'))],
+            ["Natural Indirect Effect (NIE):", f"{tmle.get('NIE', '--'):.4e}" if isinstance(tmle.get('NIE'), (int,float)) else str(tmle.get('NIE','--')),
+             "Shift (10% reduction):", f"{tmle.get('shift_10pct', '--'):.4e}" if isinstance(tmle.get('shift_10pct'), (int,float)) else str(tmle.get('shift_10pct','--'))],
+        ], colWidths=[1.9*inch, 1.5*inch, 1.7*inch, 1.5*inch])
+        tmle_table.setStyle(TableStyle([
+            ("FONT", (0,0), (-1,-1), "Helvetica", 8),
+            ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"),
+            ("FONTNAME", (2,0), (2,-1), "Helvetica-Bold"),
+            ("TEXTCOLOR", (0,0), (0,-1), AMBER),
+            ("TEXTCOLOR", (2,0), (2,-1), AMBER),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+            ("TOPPADDING", (0,0), (-1,-1), 2),
+        ]))
+        story.append(tmle_table)
+
+    # ── Footer ──
+    story.append(Spacer(1, 12))
+    story.append(Paragraph("DATA VINTAGE & METHODOLOGY", section_style))
+    vintage_text = (
+        f"Event catalog through: <b>{latest_str}</b> &bull; "
+        f"TMLE models: <b>{tmle_date}</b> &bull; "
+        f"Causal Forest models: <b>{cf_date}</b> &bull; "
+        f"CATE radii: <b>{len(state.attribution_q)}</b> (1-20 km) &bull; "
+        f"Panel observations: <b>{len(state.panel):,}</b><br/>"
+        f"<br/>"
+        "<b>Method:</b> Causal Forest DML (Athey, Tibshirani &amp; Wager 2019; Chernozhukov et al. 2018). "
+        "Honest sample splitting, cross-fitted XGBoost nuisance models. Doubly robust: consistent if either "
+        "outcome or treatment model is correctly specified.<br/>"
+        "<b>Population TMLE:</b> van der Laan &amp; Rose 2011. SuperLearner ensemble. Validated against R tlverse (&lt;0.1%).<br/>"
+        "<b>Data sources:</b> TexNet Earthquake Catalog &bull; RRC H-10 Injection Records &bull; SPE-228051 Matthews et al. 2025<br/>"
+        "<b>Interpretation:</b> A 95% CI excluding zero indicates a statistically significant individual contribution. "
+        "A CI crossing zero does not exonerate a well \u2014 it indicates the data is insufficient to distinguish its "
+        "effect from noise. Distributed causation (all CIs crossing zero) supports area-wide rather than targeted action."
+    )
+    story.append(Paragraph(vintage_text, small_style))
+
+    doc.build(story)
+    pdf_bytes = buf.getvalue()
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="seis_report_{event_id}_{radius_km}km.pdf"',
+        },
+    )

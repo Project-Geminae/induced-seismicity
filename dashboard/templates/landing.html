@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDMyIDMyIj48cmVjdCB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIGZpbGw9IiMwMDAiIHJ4PSI0Ii8+PHBvbHlsaW5lIHBvaW50cz0iMiwxNiA2LDE2IDgsOCAxMCwyNCAxMiwxMiAxNCwyMCAxNiwxNCAxOCwxOCAyMCwxMCAyMiwyMiAyNCwxNSAyNiwxNyAyOCwxNiAzMCwxNiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY5OTAwIiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SEIS — Induced Seismicity Causal Analysis</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #000; --surface: #0a0a0a; --surface2: #111; --border: #222;
+    --amber: #ff9900; --amber-dim: #aa6600; --amber-glow: rgba(255,153,0,0.08);
+    --green: #00ff66; --red: #ff3030; --cyan: #00ddff; --blue: #4499ff;
+    --text: #bbb; --text-dim: #666; --text-bright: #fff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.7; -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Nav ── */
+  nav {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(0,0,0,0.95); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--amber);
+    padding: 0 1.5rem; height: 42px;
+    display: flex; align-items: center; gap: 12px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+  }
+  nav .brand {
+    color: var(--amber); font-weight: 700; font-size: 13px;
+    letter-spacing: 1px; padding-right: 12px;
+    border-right: 1px solid var(--border);
+  }
+  nav .brand .go { background: var(--amber); color: #000; padding: 1px 5px; font-weight: 700; margin-left: 4px; }
+  nav a {
+    color: var(--text-dim); text-decoration: none; padding: 4px 8px;
+    border: 1px solid transparent; letter-spacing: 0.5px; text-transform: uppercase;
+    transition: all 0.15s;
+  }
+  nav a:hover, nav a.active { color: var(--amber); border-color: var(--amber); background: var(--amber-glow); }
+  nav .spacer { flex: 1; }
+  nav .cta {
+    background: var(--amber); color: #000; font-weight: 700;
+    padding: 4px 12px; border: none; text-transform: uppercase;
+    letter-spacing: 1px; text-decoration: none;
+  }
+  nav .cta:hover { background: #ffaa22; }
+
+  /* ── Sections ── */
+  section { max-width: 960px; margin: 0 auto; padding: 4rem 1.5rem; }
+  .full-width { max-width: 100%; padding-left: 0; padding-right: 0; }
+
+  /* ── Hero ── */
+  .hero {
+    text-align: center; padding: 6rem 1.5rem 4rem;
+    max-width: 800px; margin: 0 auto;
+  }
+  .hero h1 { font-size: 3rem; font-weight: 700; color: var(--text-bright); line-height: 1.15; margin-bottom: 1rem; }
+  .hero h1 span { color: var(--amber); }
+  .hero .sub { font-size: 1.1rem; color: var(--text-dim); margin-bottom: 2rem; line-height: 1.7; }
+  .hero .cta-row { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+  .hero .cta-btn {
+    display: inline-block; padding: 12px 28px; font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    text-decoration: none; border: 2px solid var(--amber); color: var(--amber);
+    transition: all 0.2s;
+  }
+  .hero .cta-btn:hover { background: var(--amber); color: #000; }
+  .hero .cta-btn.primary { background: var(--amber); color: #000; }
+  .hero .cta-btn.primary:hover { background: #ffaa22; border-color: #ffaa22; }
+  .hero .meta {
+    margin-top: 2.5rem; font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem; color: var(--text-dim);
+  }
+  .hero .meta strong { color: var(--amber); }
+
+  /* ── Section headers ── */
+  .section-tag {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem;
+    color: var(--amber); letter-spacing: 3px; text-transform: uppercase;
+    margin-bottom: 0.5rem; opacity: 0.6;
+  }
+  h2 { font-size: 1.8rem; font-weight: 700; color: var(--text-bright); margin-bottom: 1rem; line-height: 1.25; }
+  h3 { font-size: 1.15rem; font-weight: 600; color: var(--amber); margin: 1.5rem 0 0.6rem; }
+  p { font-size: 0.95rem; margin-bottom: 0.8rem; max-width: 720px; }
+  strong { color: var(--text-bright); }
+
+  /* ── Cards ── */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: 1rem; margin: 1rem 0; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 1.1rem; transition: border-color 0.15s;
+  }
+  .card:hover { border-color: var(--amber); }
+  .card .label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.55rem;
+    color: var(--amber); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 0.4rem;
+  }
+  .card h4 { font-size: 1rem; color: var(--text-bright); margin-bottom: 0.3rem; }
+  .card p { font-size: 0.85rem; color: var(--text-dim); margin-bottom: 0; }
+
+  /* ── DAGs ── */
+  .dag-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 1.25rem 2rem; text-align: center; font-family: 'IBM Plex Mono', monospace;
+    margin: 1rem auto; max-width: 600px;
+  }
+  .dag-box .title { font-size: 0.6rem; color: var(--amber); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 0.75rem; }
+  .dag-nodes { display: flex; justify-content: center; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+  .node {
+    display: inline-flex; flex-direction: column; align-items: center;
+    padding: 0.4rem 0.7rem; border: 2px solid var(--amber); border-radius: 5px;
+    background: var(--amber-glow); min-width: 60px;
+  }
+  .node .var { font-size: 0.95rem; font-weight: 700; color: var(--amber); }
+  .node .lbl { font-size: 0.55rem; color: var(--text-dim); margin-top: 0.1rem; }
+  .node.conf { border-color: var(--cyan); background: rgba(0,221,255,0.06); }
+  .node.conf .var { color: var(--cyan); }
+  .node.med { border-color: var(--green); background: rgba(0,255,102,0.06); }
+  .node.med .var { color: var(--green); }
+  .node.out { border-color: var(--red); background: rgba(255,48,48,0.06); }
+  .node.out .var { color: var(--red); }
+  .arrow { color: var(--text-dim); font-size: 1.2rem; }
+  .dag-caption { font-size: 0.7rem; color: var(--text-dim); margin-top: 0.6rem; line-height: 1.5; }
+
+  /* ── Stats ── */
+  .stat-row { display: flex; gap: 1rem; margin: 1rem 0; flex-wrap: wrap; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.8rem 1rem; flex: 1; min-width: 140px; text-align: center;
+  }
+  .stat .val { font-family: 'IBM Plex Mono', monospace; font-size: 1.6rem; font-weight: 700; color: var(--amber); }
+  .stat .lbl { font-size: 0.7rem; color: var(--text-dim); }
+
+  /* ── Callouts ── */
+  .callout {
+    border-left: 3px solid var(--amber); background: var(--amber-glow);
+    padding: 0.7rem 1rem; margin: 1rem 0; border-radius: 0 5px 5px 0; font-size: 0.9rem;
+  }
+  .callout.green { border-color: var(--green); background: rgba(0,255,102,0.04); }
+  .callout.red { border-color: var(--red); background: rgba(255,48,48,0.04); }
+  .callout.cyan { border-color: var(--cyan); background: rgba(0,221,255,0.04); }
+  .callout p { margin-bottom: 0; }
+
+  /* ── Comparison table ── */
+  .cmp-table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+  .cmp-table th {
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.6rem;
+    letter-spacing: 2px; text-transform: uppercase; color: var(--amber);
+    text-align: left; padding: 0.5rem 0.7rem; border-bottom: 2px solid var(--amber);
+    background: var(--surface);
+  }
+  .cmp-table td { padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .tag {
+    display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 0.55rem;
+    padding: 0.1rem 0.4rem; border-radius: 2px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600;
+  }
+  .tag-g { background: rgba(0,255,102,0.12); color: var(--green); border: 1px solid rgba(0,255,102,0.3); }
+  .tag-r { background: rgba(255,48,48,0.12); color: var(--red); border: 1px solid rgba(255,48,48,0.3); }
+  .tag-a { background: var(--amber-glow); color: var(--amber); border: 1px solid rgba(255,153,0,0.3); }
+
+  /* ── Flow diagram ── */
+  .flow {
+    display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+    margin: 1.5rem 0; flex-wrap: wrap; font-family: 'IBM Plex Mono', monospace; font-size: 0.8rem;
+  }
+  .flow-step {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 5px;
+    padding: 0.5rem 0.9rem; text-align: center;
+  }
+  .flow-step .num { font-size: 0.5rem; color: var(--amber); letter-spacing: 2px; }
+  .flow-step .name { color: var(--text-bright); font-weight: 600; font-size: 0.8rem; }
+
+  /* ── Dashboard preview ── */
+  .preview-frame {
+    border: 2px solid var(--amber); border-radius: 8px; overflow: hidden;
+    margin: 1.5rem auto; max-width: 100%; box-shadow: 0 0 40px rgba(255,153,0,0.1);
+  }
+  .preview-frame iframe {
+    width: 100%; height: 500px; border: none; background: #000;
+  }
+  .preview-caption {
+    background: var(--surface); padding: 0.6rem 1rem;
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.75rem;
+    color: var(--text-dim); display: flex; justify-content: space-between; align-items: center;
+  }
+  .preview-caption a {
+    color: var(--amber); text-decoration: none; font-weight: 600;
+    padding: 4px 12px; border: 1px solid var(--amber);
+    transition: all 0.15s;
+  }
+  .preview-caption a:hover { background: var(--amber); color: #000; }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center; padding: 3rem 1.5rem; border-top: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; color: var(--text-dim);
+  }
+  footer a { color: var(--amber); text-decoration: none; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+  /* ── Responsive ── */
+  @media (max-width: 700px) {
+    .hero h1 { font-size: 2rem; }
+    h2 { font-size: 1.4rem; }
+    section { padding: 2.5rem 1rem; }
+    nav { padding: 0 0.75rem; gap: 6px; flex-wrap: wrap; height: auto; padding-top: 6px; padding-bottom: 6px; }
+    nav .spacer { display: none; }
+    .preview-frame iframe { height: 350px; }
+    .dag-box { padding: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <span class="brand">SEIS<span class="go">GO</span></span>
+  <a href="/" class="active">Home</a>
+  <a href="#primer">Primer</a>
+  <a href="#method">Method</a>
+  <a href="#tool">Tool</a>
+  <a href="/faq">FAQ</a>
+  <span class="spacer"></span>
+  <a href="/dashboard" class="cta">Enter Dashboard</a>
+</nav>
+
+<!-- ═══════════════════════════════════════════ HERO ═══ -->
+<div class="hero">
+  <h1>Causal Analysis of<br><span>Induced Seismicity</span><br>in the Permian Basin</h1>
+  <p class="sub">
+    A decision-support tool for regulators and operators. Click an earthquake, see which
+    wells contributed, how much, and what volume threshold keeps risk below the limit.
+    Built on doubly-robust TMLE and Causal Forest methods.
+  </p>
+  <div class="cta-row">
+    <a href="/dashboard" class="cta-btn primary">Enter Dashboard</a>
+    <a href="#primer" class="cta-btn">Learn How It Works</a>
+    <a href="/faq" class="cta-btn">FAQ</a>
+  </div>
+  <div class="meta">
+    <strong>SPE-228051</strong> &nbsp; Matthews et al. &nbsp;|&nbsp; 2025<br>
+    TMLE Extension &nbsp; L. Matthews &nbsp;|&nbsp; 2026
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ PRIMER ═══ -->
+<section id="primer">
+  <div class="section-tag">Primer</div>
+  <h2>Correlation Is Not Causation</h2>
+
+  <p>
+    Two things can happen at the same time without one causing the other. Ice cream sales and
+    drowning deaths both go up in summer &mdash; but banning ice cream wouldn't save anyone.
+    The hidden third factor (<strong>hot weather</strong>) drives both. That hidden factor is
+    called a <strong>confounder</strong>.
+  </p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="label">Spurious (Fake)</div>
+      <h4>Ice cream &rarr; Drowning</h4>
+      <p>Looks causal. But controlling for temperature makes the link vanish. The arrow was never real.</p>
+    </div>
+    <div class="card">
+      <div class="label">Real Causation</div>
+      <h4>Smoking &rarr; Cancer</h4>
+      <p>After controlling for genetics, pollution, income &mdash; the link holds. The arrow is real.</p>
+    </div>
+    <div class="card">
+      <div class="label">The Test</div>
+      <h4>Control for confounders</h4>
+      <p>If the link survives after adjusting for every confounder, it's causal. If it disappears, it was spurious.</p>
+    </div>
+  </div>
+
+  <h3>The Permian Basin Confounding Problem</h3>
+  <p>
+    Saltwater disposal wells and earthquakes cluster in the same areas. But the same deep
+    sedimentary basins that make good disposal targets also sit on top of critically stressed
+    faults. <strong>Geology is the confounder.</strong>
+  </p>
+
+  <div class="dag-box">
+    <div class="title">Without Causal Inference</div>
+    <div class="dag-nodes" style="margin-bottom:0.6rem;">
+      <div class="node conf" style="min-width:180px;">
+        <span class="var">G</span>
+        <span class="lbl">Geology (faults, depth, rock)</span>
+      </div>
+    </div>
+    <div style="display:flex; justify-content:center; gap:3rem;">
+      <div style="text-align:center;">
+        <span style="color:var(--cyan); font-size:1.2rem;">&swarr;</span><br>
+        <div class="node" style="display:inline-flex;"><span class="var">W</span><span class="lbl">Injection</span></div>
+      </div>
+      <div style="text-align:center;">
+        <span style="color:var(--cyan); font-size:1.2rem;">&searr;</span><br>
+        <div class="node out" style="display:inline-flex;"><span class="var">S</span><span class="lbl">Earthquakes</span></div>
+      </div>
+    </div>
+    <div class="dag-caption">
+      Is the W&ndash;S link real, or is it all geology?<br>
+      Without controlling for G, we can't tell. Just like ice cream and drowning.
+    </div>
+  </div>
+
+  <h3>What SPE-228051 Did: Drew the Causal DAG</h3>
+  <p>
+    The paper formalized the physical mechanism as a causal diagram. It identified four geologic
+    confounders, controlled for them, and tested whether the injection&ndash;seismicity link survived.
+    <strong>It did.</strong>
+  </p>
+
+  <div class="dag-box">
+    <div class="title">SPE-228051: The Causal Model</div>
+    <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:0.4rem; margin-bottom:0.6rem;">
+      <div class="node conf" style="min-width:auto; padding:0.3rem 0.5rem;"><span class="var" style="font-size:0.8rem;">G1</span><span class="lbl">Fault Dist</span></div>
+      <div class="node conf" style="min-width:auto; padding:0.3rem 0.5rem;"><span class="var" style="font-size:0.8rem;">G2</span><span class="lbl">Fault Count</span></div>
+      <div class="node conf" style="min-width:auto; padding:0.3rem 0.5rem;"><span class="var" style="font-size:0.8rem;">G3</span><span class="lbl">Depth</span></div>
+      <div class="node conf" style="min-width:auto; padding:0.3rem 0.5rem;"><span class="var" style="font-size:0.8rem;">G4</span><span class="lbl">Days Active</span></div>
+    </div>
+    <div style="color:var(--cyan); font-size:0.7rem; margin-bottom:0.4rem;">&darr; &darr; &darr; &darr; (controlled for)</div>
+    <div class="dag-nodes">
+      <div class="node"><span class="var">W</span><span class="lbl">Volume</span></div>
+      <span class="arrow">&rarr;</span>
+      <div class="node med"><span class="var">P</span><span class="lbl">Pressure</span></div>
+      <span class="arrow">&rarr;</span>
+      <div class="node out"><span class="var">S</span><span class="lbl">Seismicity</span></div>
+    </div>
+    <div class="dag-caption">
+      After controlling for G1&ndash;G4, the <strong style="color:var(--amber);">W</strong>&rarr;<strong style="color:var(--green);">P</strong>&rarr;<strong style="color:var(--red);">S</strong> link <strong style="color:var(--green);">survives</strong>. Injection causes seismicity through pressure buildup.
+    </div>
+  </div>
+
+  <div class="callout green">
+    <p><strong>The advance:</strong> SPE-228051 moved the field from "wells and earthquakes are in the same place"
+    to "changing injection volume <em>causes</em> changes in earthquake magnitude." The causal DAG was right.
+    But the estimator (OLS) had limitations.</p>
+  </div>
+</section>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ METHOD ═══ -->
+<section id="method">
+  <div class="section-tag">Methodology</div>
+  <h2>From OLS to TMLE: A Better Estimator</h2>
+
+  <p>
+    The original paper used ordinary least squares (OLS), which forces a straight line through
+    the data. The real relationship between injection and seismicity is nonlinear. We replaced
+    OLS with <strong>TMLE</strong> &mdash; a doubly-robust, nonparametric method that lets the
+    data speak for itself.
+  </p>
+
+  <table class="cmp-table">
+    <thead><tr><th></th><th>OLS (Paper)</th><th>TMLE + Forest (This Work)</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Estimator</strong></td><td><span class="tag tag-r">Linear OLS</span></td><td><span class="tag tag-g">Doubly robust TMLE</span></td></tr>
+      <tr><td><strong>Per-well effects</strong></td><td><span class="tag tag-r">Not available</span></td><td><span class="tag tag-g">Causal Forest CATE + CI</span></td></tr>
+      <tr><td><strong>Dose-response</strong></td><td><span class="tag tag-r">Straight line</span></td><td><span class="tag tag-g">Nonparametric curve</span></td></tr>
+      <tr><td><strong>Confidence intervals</strong></td><td><span class="tag tag-a">Assumes equal variance</span></td><td><span class="tag tag-g">Influence-function SEs</span></td></tr>
+      <tr><td><strong>Validation</strong></td><td><span class="tag tag-a">DoWhy refuters</span></td><td><span class="tag tag-g">R tlverse cross-check (&lt;0.1%)</span></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Three Layers of Causal Analysis</h3>
+  <p>The dashboard stacks three levels, each more specific than the last:</p>
+
+  <div class="card-grid">
+    <div class="card" style="border-color:var(--cyan);">
+      <div class="label" style="color:var(--cyan);">Population</div>
+      <h4>TMLE Shift + Dose-Response</h4>
+      <p>"If all wells reduce volume 10%, how does earthquake risk change?" For area-wide policy.</p>
+    </div>
+    <div class="card" style="border-color:var(--amber);">
+      <div class="label">Per-Well</div>
+      <h4>Causal Forest CATE</h4>
+      <p>"How much did this well contribute to this earthquake?" For targeted shut-ins.</p>
+    </div>
+    <div class="card" style="border-color:var(--green);">
+      <div class="label" style="color:var(--green);">Threshold</div>
+      <h4>Per-Well Dose-Response</h4>
+      <p>"At what volume does this well's contribution cross the regulatory limit?" For volume caps.</p>
+    </div>
+  </div>
+
+  <h3>Two Types of Events, Two Playbooks</h3>
+
+  <div class="card-grid" style="grid-template-columns: 1fr 1fr;">
+    <div class="card" style="border-color:var(--red);">
+      <div class="label" style="color:var(--red);">Concentrated Causation</div>
+      <h4>A few wells dominate</h4>
+      <p>Top 3&ndash;5 wells have CATEs with CIs excluding zero. Use the CATE waterfall + threshold curve.
+      <strong>Action:</strong> targeted shut-in or volume cap.</p>
+    </div>
+    <div class="card" style="border-color:var(--cyan);">
+      <div class="label" style="color:var(--cyan);">Distributed Causation</div>
+      <h4>No well stands out</h4>
+      <p>Every well's CI crosses zero. Collective effect is real but individual signal is below noise floor.
+      <strong>Action:</strong> area-wide volume reduction via TMLE shift.</p>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ TOOL ═══ -->
+<section id="tool">
+  <div class="section-tag">The Dashboard</div>
+  <h2>How Regulators and Operators Use This</h2>
+
+  <h3>Decision Workflow</h3>
+  <div class="flow">
+    <div class="flow-step" style="border-color:var(--red);"><div class="num" style="color:var(--red);">Trigger</div><div class="name">M &ge; 3.5</div></div>
+    <span class="arrow">&rarr;</span>
+    <div class="flow-step"><div class="num">Step 1</div><div class="name">Click Event</div></div>
+    <span class="arrow">&rarr;</span>
+    <div class="flow-step"><div class="num">Step 2</div><div class="name">See CATEs</div></div>
+    <span class="arrow">&rarr;</span>
+    <div class="flow-step"><div class="num">Step 3</div><div class="name">Click Well</div></div>
+    <span class="arrow">&rarr;</span>
+    <div class="flow-step" style="border-color:var(--green);"><div class="num" style="color:var(--green);">Action</div><div class="name">Set Volume Cap</div></div>
+  </div>
+
+  <div class="card-grid" style="grid-template-columns: 1fr 1fr;">
+    <div class="card">
+      <div class="label">Regulator</div>
+      <h4>After an event</h4>
+      <p>Click the earthquake. Rank wells by CATE. Target wells where the CI excludes zero. Use the
+      threshold curve to set a well-specific volume cap. Other operators continue normally.</p>
+    </div>
+    <div class="card">
+      <div class="label">Operator</div>
+      <h4>Compliance &amp; planning</h4>
+      <p>Check if your well's CI crosses zero (no significant contribution). Use the threshold curve to
+      find your safe operating volume. Prioritize reductions at highest-CATE wells across your fleet.</p>
+    </div>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat"><div class="val">7,424</div><div class="lbl">Earthquakes (TexNet)</div></div>
+    <div class="stat"><div class="val">1,056</div><div class="lbl">SWD Wells (RRC)</div></div>
+    <div class="stat"><div class="val">903,887</div><div class="lbl">Well-Day Observations</div></div>
+    <div class="stat"><div class="val">20</div><div class="lbl">Radii (1&ndash;20 km)</div></div>
+  </div>
+</section>
+
+<hr>
+
+<!-- ═══════════════════════════════════ LIVE PREVIEW ═══ -->
+<section class="full-width" style="padding: 2rem 1.5rem 3rem; max-width: 1200px; margin: 0 auto;">
+  <div style="text-align:center; margin-bottom:1rem;">
+    <div class="section-tag">Live</div>
+    <h2>Try the Dashboard</h2>
+    <p style="max-width:600px; margin:0 auto 1rem; text-align:center;">
+      Click any earthquake on the map. See which wells contributed and how much. Click a well card for its threshold curve.
+    </p>
+  </div>
+
+  <div class="preview-frame">
+    <iframe src="/dashboard" loading="lazy" title="Seismicity Dashboard"></iframe>
+    <div class="preview-caption">
+      <span>SEIS Dashboard &mdash; interactive map + per-well causal attribution</span>
+      <a href="/dashboard" target="_blank">Open Full Screen &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<!-- ═══════════════════════════════════════ CTA ═══ -->
+<section style="text-align:center; padding:3rem 1.5rem;">
+  <h2>Ready to explore?</h2>
+  <p style="max-width:500px; margin:0 auto 1.5rem; text-align:center; color:var(--text-dim);">
+    Open the full dashboard, read the FAQ, or dive into the methodology.
+  </p>
+  <div class="hero" style="padding:0;">
+    <div class="cta-row">
+      <a href="/dashboard" class="cta-btn primary">Enter Dashboard</a>
+      <a href="/faq" class="cta-btn">FAQ</a>
+      <a href="/methodology" class="cta-btn">Methodology</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  SPE-228051 TMLE Extension &bull; L. Matthews &bull; 2026<br>
+  Data: <a href="https://www.beg.utexas.edu/texnet-cisr/texnet">TexNet</a> Earthquake Catalog &bull;
+  <a href="https://www.rrc.texas.gov/">RRC</a> Injection Records &bull;
+  Tools: Python &middot; TMLE &middot; EconML &middot; FastAPI<br>
+  <span id="footer-vintage" style="color:var(--text-dim); font-size:0.6rem;">Loading data vintage...</span>
+</footer>
+<script>
+fetch('/api/health').then(r=>r.json()).then(h=>{
+  document.getElementById('footer-vintage').textContent =
+    'Data through ' + (h.latest_event_date||'?') + ' · Models run ' + (h.tmle_run_date||'?') +
+    ' · ' + (h.n_cate_models||0) + ' CATE radii · ' + (h.n_events||0).toLocaleString() + ' events';
+}).catch(()=>{});
+</script>
+
+<script>
+(function() {
+  const SID = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  const META = {
+    sid: SID,
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '-',
+    screen: screen.width + 'x' + screen.height,
+    lang: navigator.language || '-',
+    ref: document.referrer || '-',
+  };
+  const _start = Date.now();
+
+  // Active-time tracking: only count when tab visible AND user interacting
+  let _activeMs = 0;
+  let _lastActive = Date.now();
+  let _isIdle = false;
+  const IDLE_MS = 60000;
+
+  function _tick() {
+    const now = Date.now();
+    if (!document.hidden && !_isIdle) _activeMs += (now - _lastActive);
+    _lastActive = now;
+  }
+  function _activity() { _tick(); _isIdle = false; }
+  ['mousedown','mousemove','keydown','scroll','touchstart','click'].forEach(evt => {
+    window.addEventListener(evt, _activity, { passive: true });
+  });
+  setInterval(function() {
+    _tick();
+    if (Date.now() - _lastActive > IDLE_MS) _isIdle = true;
+  }, 10000);
+
+  function _activeSec() { _tick(); return Math.round(_activeMs/1000); }
+  function _wallSec() { return Math.round((Date.now() - _start) / 1000); }
+
+  function beacon(event, data) {
+    try { navigator.sendBeacon('/api/beacon', JSON.stringify({ ...META, event, data: data||{}, page: location.pathname })); } catch(e) {}
+  }
+
+  beacon('session_start', { url: location.href, ua: navigator.userAgent.slice(0,150) });
+
+  // Track scroll depth on landing page
+  let maxScroll = 0;
+  window.addEventListener('scroll', function() {
+    const pct = Math.round((window.scrollY + window.innerHeight) / document.body.scrollHeight * 100);
+    if (pct > maxScroll) maxScroll = pct;
+  });
+
+  // Track CTA clicks
+  document.querySelectorAll('a[href="/dashboard"], a[href="/faq"], a[href="/methodology"]').forEach(a => {
+    a.addEventListener('click', function() {
+      beacon('cta_click', { href: this.getAttribute('href'), text: this.textContent.trim().slice(0,40) });
+    });
+  });
+
+  // Track section visibility
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) beacon('section_view', { id: e.target.id });
+    });
+  }, { threshold: 0.3 });
+  document.querySelectorAll('section[id]').forEach(s => observer.observe(s));
+
+  // Visibility change: pause/resume the active clock
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+      _tick();
+      beacon('session_blur', { active_s: _activeSec(), wall_s: _wallSec(), scroll_pct: maxScroll });
+    } else {
+      _lastActive = Date.now();
+      _isIdle = false;
+      beacon('session_focus');
+    }
+  });
+
+  window.addEventListener('beforeunload', function() {
+    beacon('session_end', { active_s: _activeSec(), wall_s: _wallSec(), scroll_pct: maxScroll });
+  });
+
+  setInterval(function() {
+    if (!document.hidden && !_isIdle) {
+      beacon('heartbeat', { active_s: _activeSec(), wall_s: _wallSec(), scroll_pct: maxScroll });
+    }
+  }, 30000);
+})();
+</script>
+</body>
+</html>

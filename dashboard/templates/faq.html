@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDMyIDMyIj48cmVjdCB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIGZpbGw9IiMwMDAiIHJ4PSI0Ii8+PHBvbHlsaW5lIHBvaW50cz0iMiwxNiA2LDE2IDgsOCAxMCwyNCAxMiwxMiAxNCwyMCAxNiwxNCAxOCwxOCAyMCwxMCAyMiwyMiAyNCwxNSAyNiwxNyAyOCwxNiAzMCwxNiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY5OTAwIiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAQ — Induced Seismicity Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #000; --surface: #0a0a0a; --border: #2a2a2a;
+    --amber: #ff9900; --amber-glow: rgba(255,153,0,0.1);
+    --green: #00ff66; --red: #ff3030; --cyan: #00ddff; --blue: #4499ff;
+    --text: #ccc; --text-dim: #777; --text-bright: #fff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg); color: var(--text);
+    line-height: 1.7; padding: 0;
+  }
+
+  /* ── Header ── */
+  .top-bar {
+    background: var(--bg); border-bottom: 1px solid var(--amber);
+    padding: 8px 20px; display: flex; align-items: center; gap: 16px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .top-bar .brand { color: var(--amber); font-weight: 700; letter-spacing: 1px; }
+  .top-bar a {
+    color: var(--text-dim); text-decoration: none; padding: 3px 8px;
+    border: 1px solid var(--border); font-size: 11px; letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .top-bar a:hover { color: var(--amber); border-color: var(--amber); }
+
+  .container { max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  h1 {
+    font-size: 2rem; color: var(--text-bright); font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  .subtitle { color: var(--text-dim); font-size: 0.95rem; margin-bottom: 2.5rem; }
+
+  /* ── FAQ items ── */
+  .faq-section {
+    margin-bottom: 2.5rem;
+    border-left: 3px solid var(--amber);
+    padding-left: 1.25rem;
+  }
+  .faq-section h2 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem; color: var(--amber); letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 0.5rem; opacity: 0.7;
+  }
+  .faq-item { margin-bottom: 2rem; }
+  .faq-item h3 {
+    font-size: 1.15rem; color: var(--text-bright); font-weight: 600;
+    margin-bottom: 0.5rem; cursor: pointer;
+  }
+  .faq-item h3::before {
+    content: 'Q '; color: var(--amber); font-family: 'IBM Plex Mono', monospace;
+    font-weight: 700; font-size: 0.9rem;
+  }
+  .faq-item p, .faq-item li {
+    font-size: 0.95rem; color: var(--text); margin-bottom: 0.5rem;
+  }
+  .faq-item ol, .faq-item ul { padding-left: 1.5rem; margin-bottom: 0.75rem; }
+  .faq-item li { margin-bottom: 0.35rem; }
+  .faq-item strong { color: var(--text-bright); }
+
+  .step-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    padding: 1rem 1.25rem; margin: 0.75rem 0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.85rem;
+    line-height: 1.8;
+  }
+  .step-box .step-num {
+    color: var(--amber); font-weight: 700; margin-right: 0.5rem;
+  }
+
+  .callout {
+    border-left: 3px solid var(--green); background: rgba(0,255,102,0.05);
+    padding: 0.75rem 1rem; margin: 0.75rem 0; border-radius: 0 4px 4px 0;
+    font-size: 0.9rem;
+  }
+  .callout.warn {
+    border-left-color: var(--red); background: rgba(255,48,48,0.05);
+  }
+  .callout.info {
+    border-left-color: var(--cyan); background: rgba(0,221,255,0.05);
+  }
+
+  .key { color: var(--amber); font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 0.85rem; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+
+  @media (max-width: 600px) {
+    .container { padding: 1rem; }
+    h1 { font-size: 1.5rem; }
+    .faq-item h3 { font-size: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <span class="brand">SEIS FAQ</span>
+  <a href="/">HOME</a>
+  <a href="/dashboard">MAP</a>
+  <a href="/faq">FAQ</a>
+  <a href="/methodology">METH</a>
+</div>
+
+<div class="container">
+  <h1>Frequently Asked Questions</h1>
+  <p class="subtitle">How regulators, operators, and researchers use the Induced Seismicity Dashboard to make decisions.</p>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="faq-section">
+    <h2>For Regulators</h2>
+
+    <div class="faq-item">
+      <h3>How does a regulator look at an event and use this tool?</h3>
+      <p>
+        When an earthquake occurs (say, an M4.3), the regulator needs to quickly determine:
+        which disposal wells contributed, how much, and what action to take. Here's the step-by-step:
+      </p>
+      <div class="step-box">
+        <span class="step-num">1.</span> Open the dashboard. All TexNet earthquakes are on the map.<br>
+        <span class="step-num">2.</span> Click the earthquake. The sidebar shows the event detail: location, magnitude, depth, date.<br>
+        <span class="step-num">3.</span> Set the <strong>radius</strong> slider (default 7 km). This controls how far from the epicenter to search for disposal wells.<br>
+        <span class="step-num">4.</span> The <strong>WELL ATTRIBUTION</strong> panel populates with every SWD well in that radius, ranked by causal contribution (CATE).<br>
+        <span class="step-num">5.</span> Look at the <strong>CATE waterfall chart</strong>. Each bar is a well's estimated causal contribution to the earthquake's magnitude.<br>
+        <span class="step-num">6.</span> Check the <strong>95% confidence intervals</strong>. Wells where the CI excludes zero are statistically significant contributors. Wells where the CI crosses zero are ambiguous.<br>
+        <span class="step-num">7.</span> Click the top contributing well's card to see its <strong>threshold curve</strong> — this shows exactly what volume cap would bring that well's contribution below the regulatory limit.
+      </div>
+
+      <div class="callout">
+        <strong>Decision rule:</strong> If the top 3-5 wells have CATEs with CIs excluding zero,
+        issue targeted volume reduction orders using the threshold curve. If every well's CI
+        crosses zero (distributed causation), look at the TMLE population panel and consider
+        an area-wide volume reduction instead.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>How does a regulator use this tool for regulation approvals of SWDs?</h3>
+      <p>
+        When an operator applies for a new SWD permit or requests a volume increase, the
+        regulator can use the dashboard to assess the risk profile of the area:
+      </p>
+      <ol>
+        <li><strong>Check the map</strong> for historical seismicity near the proposed well location. Filter by magnitude and year range to see trends.</li>
+        <li><strong>Click nearby events</strong> to see which existing wells were attributed as contributors. If wells near the proposed location have consistently high CATEs, the area is high-risk.</li>
+        <li><strong>Check the TMLE population panel</strong> at the bottom. The dose-response curve shows how expected seismicity changes with volume at this radius. If the curve is steep in the volume range the operator is requesting, the marginal risk is high.</li>
+        <li><strong>Use the threshold curve</strong> for existing nearby wells to understand what volume levels are already producing significant CATEs. If the proposed well would add to an area that's already near the threshold, tighter conditions are warranted.</li>
+        <li><strong>Check depth class.</strong> Wells injecting below 10,000 ft (tagged <span class="key">DEEP</span>) are closer to basement faults and have systematically different risk profiles than shallow wells. Depth-based conditions may be appropriate.</li>
+      </ol>
+
+      <div class="callout info">
+        <strong>For permit conditions:</strong> The threshold curve provides a defensible,
+        well-specific volume cap. Instead of a blanket "no more than X BBL/day" for the entire
+        area, the regulator can set conditions based on the actual causal model: "Volume shall
+        not exceed Y BBL cumulative 365-day, corresponding to a CATE below 0.03 ML at the
+        7 km radius."
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>What if the dashboard shows small CATEs for a large earthquake?</h3>
+      <p>
+        This is the <strong>distributed causation</strong> scenario. It means injection
+        <em>did</em> contribute to the earthquake (the population TMLE confirms it), but
+        the causal effect is spread across many wells — each contributing an undetectably
+        small amount. No individual well pushed the fault past its threshold alone; they
+        all did, collectively, over months or years of cumulative pressure buildup.
+      </p>
+      <p>
+        In this case, targeted shut-ins are <strong>not supported by the data</strong>.
+        The right tool is the <strong>TMLE shift analysis</strong> in the population panel:
+        "If all wells within R km reduce volume by 10%, expected magnitude drops by X."
+        That's the basis for an area-wide volume reduction order.
+      </p>
+    </div>
+
+    <div class="faq-item">
+      <h3>How do I explain this to a judge or hearing officer?</h3>
+      <p>
+        The methodology is peer-reviewed (SPE-228051) and uses established statistical
+        frameworks (TMLE: van der Laan & Rose 2011; Causal Forest: Athey, Tibshirani & Wager 2019).
+        Key points for legal settings:
+      </p>
+      <ul>
+        <li><strong>Doubly robust:</strong> The estimate is valid if either the outcome model or the treatment model is correctly specified. It doesn't require both to be perfect.</li>
+        <li><strong>Confidence intervals:</strong> Every CATE comes with a 95% CI derived from honest sample splitting (not bootstrapping). A CI excluding zero means statistical significance at the 5% level.</li>
+        <li><strong>Validated:</strong> The Python TMLE implementation was cross-checked against the gold-standard R tlverse ecosystem and agreed to within 0.06%.</li>
+        <li><strong>Conservative:</strong> The Causal Forest uses honest estimation — separate data for building the tree structure and for estimating effects — which prevents overfitting and produces conservative CIs.</li>
+      </ul>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="faq-section">
+    <h2>For Operators</h2>
+
+    <div class="faq-item">
+      <h3>How does an operator look at an event and use this tool?</h3>
+      <p>
+        After an earthquake near your well, you need to know: did my well contribute, and
+        if so, how much? Here's how to find out:
+      </p>
+      <div class="step-box">
+        <span class="step-num">1.</span> Open the dashboard and click the earthquake.<br>
+        <span class="step-num">2.</span> Find your well in the <strong>WELL ATTRIBUTION</strong> list (sorted by contribution, highest first).<br>
+        <span class="step-num">3.</span> Check your well's <strong>CATE</strong> value and <strong>95% CI</strong>.<br>
+        <span class="step-num">4.</span> If the CI crosses zero → the data does not show statistically significant evidence that your well contributed. This is a defensible position.<br>
+        <span class="step-num">5.</span> If the CI excludes zero → the model estimates your well contributed. Click your well card to see the <strong>threshold curve</strong> and determine what volume would bring your CATE below the regulatory limit.
+      </div>
+
+      <div class="callout">
+        <strong>Compliance defense:</strong> A well with CATE = +0.01 ML and CI [-0.04, +0.06]
+        has a confidence interval crossing zero. This means there is no statistically significant
+        evidence at the 95% level that this well contributed to the earthquake. This is a
+        quantitative, scientifically defensible argument — not just "trust me."
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>How does an operator use this tool for planning?</h3>
+      <p>
+        Before the next earthquake happens, you can use the dashboard to manage your fleet's
+        seismic risk proactively:
+      </p>
+      <ol>
+        <li><strong>Review historical events near your wells.</strong> Click past earthquakes near your disposal wells and check if your wells have been attributed as significant contributors (CIs excluding zero).</li>
+        <li><strong>Check threshold curves for your highest-risk wells.</strong> Click each well card to see its dose-response curve. The threshold curve tells you: at what volume does my CATE cross the regulatory limit? If you're operating at 3M BBL and the threshold is at 800K BBL, you have a risk gap.</li>
+        <li><strong>Compare wells across your fleet.</strong> Which of your wells have the highest CATEs for nearby events? These are your highest-risk assets. Consider:
+          <ul>
+            <li>Reducing volume at the highest-risk wells first (most risk reduction per barrel lost)</li>
+            <li>Shifting volume to lower-risk wells (shallow, far from faults)</li>
+            <li>Monitoring the depth class — DEEP wells (&gt;10,000 ft) near basement carry more risk</li>
+          </ul>
+        </li>
+        <li><strong>Check the population dose-response curve.</strong> The TMLE curve shows how expected seismicity changes with volume at different levels. If your well is operating in the steep part of the curve, small volume reductions give large risk reductions.</li>
+        <li><strong>Use this for new well planning.</strong> Before drilling a new SWD well, check historical seismicity and attribution patterns in the area. Deep wells near active fault zones with high historical CATEs are the highest-risk locations.</li>
+      </ol>
+
+      <div class="callout info">
+        <strong>Portfolio optimization:</strong> If you operate 30 SWD wells and need to reduce
+        total disposal by 15%, the threshold curves tell you which wells to throttle first for
+        the most seismic risk reduction per barrel of lost capacity. Throttle the wells at the
+        top of the CATE rankings and leave the low-risk wells at full capacity.
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>My well shows a negative CATE. What does that mean?</h3>
+      <p>
+        A negative CATE means the Causal Forest estimates that your well's injection may have
+        slightly <strong>reduced</strong> stress on this particular fault geometry. This can happen
+        physically — injecting in one location can redistribute stress away from a nearby fault,
+        similar to how pressing down on one side of a surface can relieve pressure elsewhere.
+      </p>
+      <p>
+        A negative CATE does not mean your well is "helping." It means for this specific
+        earthquake, on this specific fault, the net effect was stress reduction. The same well
+        could have a positive CATE for a different earthquake on a different fault.
+      </p>
+    </div>
+
+    <div class="faq-item">
+      <h3>Can I use this to defend against a blanket shut-in order?</h3>
+      <p>
+        Yes, but carefully. If the regulator orders a blanket shut-in of all wells within R km,
+        and your well has a CATE with CI crossing zero, you have quantitative evidence that
+        your specific well did not contribute significantly. However:
+      </p>
+      <ul>
+        <li>A CI crossing zero doesn't <em>prove</em> zero contribution — it means the data is insufficient to distinguish your well's effect from noise.</li>
+        <li>In a distributed-causation scenario (many small CATEs), an area-wide reduction may be warranted even though no individual well is significant. The collective effect is real.</li>
+        <li>The strength of your argument depends on the CI width. A narrow CI near zero is stronger than a wide CI that happens to cross zero.</li>
+      </ul>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="faq-section">
+    <h2>Understanding the Data</h2>
+
+    <div class="faq-item">
+      <h3>What does CATE mean?</h3>
+      <p>
+        <strong>Conditional Average Treatment Effect.</strong> It answers: "How much higher
+        is the expected maximum earthquake magnitude because this well injected the volume it
+        did, compared to a counterfactual where it injected nothing?"
+      </p>
+      <p>
+        A CATE of +0.05 ML means this well's injection activity is estimated to have added
+        0.05 to the maximum magnitude within the search radius on the event date. It is a
+        <em>causal</em> estimate, not a correlation — it accounts for geology, depth, fault
+        proximity, and other confounders.
+      </p>
+    </div>
+
+    <div class="faq-item">
+      <h3>What does the 95% confidence interval mean?</h3>
+      <p>
+        We're 95% sure the true CATE is somewhere between the lower and upper bound. If the
+        interval includes zero, we cannot be confident the well contributed at all. If it
+        excludes zero, we're statistically confident it did.
+      </p>
+      <p>
+        A <strong>narrow CI</strong> (e.g., [+0.03, +0.07]) means we have precise knowledge.
+        A <strong>wide CI</strong> (e.g., [-0.06, +0.12]) means the data is noisy and we're
+        uncertain. Width depends on how much data is available for wells with similar
+        characteristics.
+      </p>
+    </div>
+
+    <div class="faq-item">
+      <h3>What is the threshold curve?</h3>
+      <p>
+        For a specific well, the threshold curve shows how the CATE changes as you vary the
+        well's injection volume (holding everything else constant). It's a per-well dose-response
+        curve.
+      </p>
+      <p>
+        The red dashed horizontal line is the regulatory threshold (default 0.03 ML). Where the
+        CATE curve crosses the threshold line tells you the <strong>maximum allowable volume</strong>
+        for that well. The cyan vertical line shows the well's current operating volume.
+      </p>
+      <p>
+        If the current volume line is to the right of the threshold crossing point, the well is
+        operating above the limit. The gap between them is how much volume needs to be reduced.
+      </p>
+    </div>
+
+    <div class="faq-item">
+      <h3>What's the difference between the per-well CATE and the population TMLE?</h3>
+      <p>
+        The <strong>population TMLE</strong> (bottom panel) gives the average causal effect
+        across all wells and all events at a given radius. It answers: "On average, how much
+        does injection affect seismicity?" This is useful for area-wide policy.
+      </p>
+      <p>
+        The <strong>per-well CATE</strong> (Causal Forest, sidebar) gives each individual well's
+        causal contribution to a specific earthquake. It answers: "How much did THIS well
+        contribute to THIS earthquake?" This is useful for targeted action.
+      </p>
+      <p>
+        Think of it like medicine: the population effect tells you "this drug lowers blood
+        pressure on average." The individual effect tells you "for this patient, with their
+        specific genetics and health history, the drug will lower blood pressure by X."
+      </p>
+    </div>
+
+    <div class="faq-item">
+      <h3>What does "doubly robust" mean?</h3>
+      <p>
+        The TMLE and Causal Forest methods both fit two separate models: one predicting the
+        outcome (earthquake magnitude) and one predicting the treatment (injection volume).
+        "Doubly robust" means the causal estimate is correct if <strong>either</strong> model
+        is right — you don't need both to be perfect. It's like having a backup parachute.
+      </p>
+    </div>
+
+    <div class="faq-item">
+      <h3>What data goes into this?</h3>
+      <p>
+        All data comes from public sources:
+      </p>
+      <ul>
+        <li><strong>Earthquakes:</strong> TexNet Seismic Monitoring Program catalog (University of Texas Bureau of Economic Geology). 7,424 quality-filtered events, April 2026 release.</li>
+        <li><strong>Injection:</strong> Railroad Commission of Texas (RRC) H-10 injection reports. 1,056 SWD wells, 903,887 well-day observations.</li>
+        <li><strong>Faults:</strong> Published fault maps for the Permian Basin (used for fault distance and segment count confounders).</li>
+      </ul>
+    </div>
+
+    <div class="faq-item">
+      <h3>Why don't you use injection formation as a variable?</h3>
+      <p>
+        The operator-reported "Current Injection Formations" field in RRC records is
+        self-reported and not validated. We found inconsistencies where operators reported
+        different formations for wells at similar depths. Instead, we use <strong>measured
+        perforation depth</strong> (which the RRC does verify) binned into three classes:
+        shallow (&lt;6,000 ft), mid (6,000-10,000 ft), and deep (&gt;10,000 ft). This
+        captures the same physical distinction — shallow carbonate vs. basement-coupled —
+        without trusting potentially wrong labels.
+      </p>
+    </div>
+    <div class="faq-item">
+      <h3>How do you model pressure? The Midland Basin has strong stress anisotropy — how do you account for that?</h3>
+      <p>
+        This is an important question. The Midland Basin is under NW-SE maximum horizontal
+        stress (Shmax), which creates natural fracture networks oriented NE-SW (perpendicular
+        to Shmax). Pore-pressure diffusion is <strong>not isotropic</strong> — it follows
+        these fracture corridors preferentially, meaning a well might affect a fault 5 km away
+        along the fracture trend but have little effect on a fault 3 km away perpendicular to it.
+      </p>
+      <p>
+        <strong>What the current model does:</strong> The spatiotemporal join uses a simple
+        Euclidean radius (BallTree query). It treats the search area as a circle, not an
+        ellipse aligned with Shmax. The Causal Forest then learns <em>within</em> that radius
+        which wells matter most, using fault distance and depth as features — so it can
+        partially capture directional effects (wells aligned with the fracture trend toward a
+        fault will have smaller fault distances), but it doesn't explicitly model anisotropic
+        pressure diffusion.
+      </p>
+      <p>
+        <strong>What this means in practice:</strong>
+      </p>
+      <ul>
+        <li>The circular radius is a <strong>conservative approximation</strong>. It includes
+        some wells that may not actually contribute (cross-fracture direction) and gives them
+        small or zero CATEs, which is the correct behavior.</li>
+        <li>The fault distance confounder partially compensates — wells aligned with the
+        fracture trend toward a fault have shorter effective hydraulic distances, which
+        correlates with Euclidean distance along that trend.</li>
+        <li>The Causal Forest is nonparametric and learns interactions between features.
+        If wells at a certain bearing relative to a fault consistently have higher CATEs,
+        the forest will learn this pattern without needing an explicit anisotropy model.</li>
+      </ul>
+      <p>
+        <strong>Known limitation:</strong> An explicit anisotropic diffusion model — using
+        an elliptical search area aligned with Shmax, or incorporating permeability tensors
+        from geomechanical models — would be more physically motivated. This is a planned
+        enhancement. The data inputs exist (Shmax orientation is well-constrained across the
+        Midland Basin from wellbore breakout and drilling-induced fracture data), but
+        integrating them into the spatiotemporal join requires replacing the BallTree with a
+        directional kernel.
+      </p>
+
+      <div class="callout info">
+        <strong>Bottom line:</strong> The current model uses a circular radius (isotropic) as a
+        conservative approximation. The Causal Forest learns directional patterns implicitly from
+        the data. An explicit anisotropic diffusion model aligned with Shmax is the logical next
+        step and would sharpen per-well attribution along fracture corridors.
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="faq-section">
+    <h2>Technical</h2>
+
+    <div class="faq-item">
+      <h3>What radius should I use?</h3>
+      <p>
+        The default of <strong>7 km</strong> is a good starting point. At this radius, the
+        causal signal is strong enough to detect but focused enough to be actionable.
+      </p>
+      <ul>
+        <li><strong>1-4 km:</strong> Very local. Only the nearest wells. Strong per-well signal but may miss wells contributing through far-field pressure diffusion.</li>
+        <li><strong>5-10 km:</strong> The sweet spot for most regulatory decisions. Balances signal strength with coverage.</li>
+        <li><strong>11-20 km:</strong> Captures far-field effects. More wells, larger population effect, but individual per-well CATEs get smaller as the effect is diluted across more wells.</li>
+      </ul>
+    </div>
+
+    <div class="faq-item">
+      <h3>Is the Causal Forest available at all radii?</h3>
+      <p>
+        Yes. Causal Forest models are trained and deployed at all 20 radii (1&ndash;20 km).
+        Per-well CATE attribution, confidence intervals, and threshold curves are available
+        at every radius. The population TMLE estimates (shift, dose-response, mediation)
+        are also available at all 20 radii.
+      </p>
+    </div>
+
+    <div class="faq-item">
+      <h3>Why is part of the dose-response chart shaded red?</h3>
+      <div class="a">
+        The red-shaded region marks <strong>extrapolation beyond the training support</strong>.
+        The TMLE dose-response is fit on the distribution of cumulative 365-day injection volumes actually observed in the Permian Basin:
+        <ul>
+          <li>&lt; 10<sup>4</sup> BBL: 96.5% of wells</li>
+          <li>10<sup>4</sup>&ndash;10<sup>6</sup> BBL: well-supported range</li>
+          <li>10<sup>7</sup> BBL: only 0.7% of wells inject this much (P99+)</li>
+          <li>10<sup>8</sup> BBL: <strong>zero observations</strong> &mdash; pure model extrapolation</li>
+        </ul>
+        <p>Estimates in the red zone should be treated as indicative of curve shape, not as reliable
+        point estimates. If a regulator is considering a volume threshold above ~10 million BBL, the
+        model is extrapolating beyond the data and confidence intervals underestimate true uncertainty.</p>
+        <p><strong>Tail trimming:</strong> The TMLE shift and dose-response now trim the bottom and
+        top 1% of the cumulative-volume distribution before fitting. This prevents the clever
+        covariate H = g(A_pre|L)/g(A|L) from exploding at the edges (positivity diagnostics had
+        shown max H of 215&ndash;687 across radii, meaning a few outliers were dominating the
+        targeting step). The trimmed run drops ~16,000 well-day observations from the 800k+ panel
+        and produces more honest confidence intervals.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>Why does the model use depth class instead of injection formation?</h3>
+      <div class="a">
+        <p>Operator-reported "Current Injection Formations" in RRC records are self-reported and
+        sometimes unreliable. We replaced them with a measured depth-class proxy (shallow &lt;6,000 ft,
+        mid 6,000&ndash;10,000 ft, deep &gt;10,000 ft). Depth is verified by the RRC on permit submission.</p>
+
+        <p><strong>Sensitivity analysis</strong> (formation_sensitivity.csv): adding formation
+        one-hot indicators back to the model shifts effect estimates:</p>
+        <ul>
+          <li>Total effect: &plusmn;6% to +169% across radii</li>
+          <li>Direct effect: &plusmn;38% to +955% (flips sign at small radii)</li>
+          <li>Indirect (pressure-mediated) effect: relatively stable at &plusmn;7&ndash;18%</li>
+        </ul>
+        <p>This means: the indirect pressure pathway is robust to formation specification, but the
+        direct (non-pressure) effect is sensitive. Policy decisions based on population-level
+        dose-response curves are more reliable than decisions based on the direct/indirect decomposition.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>Why isn't injection rate included as a confounder?</h3>
+      <div class="a">
+        <p>Sensitivity analysis (<code>rate_definition_check.py</code>) tested three rate definitions
+        as candidate confounders. All three had problems:</p>
+        <ul>
+          <li><strong>365-day rate</strong> (cum_vol_365d / days_active): correlation 0.89 with
+          cumulative volume, VIF 5.5. Multicollinear &mdash; the Causal Forest produced wildly
+          inflated CATEs (12&times;) with confidence intervals so wide that no well was
+          statistically significant.</li>
+          <li><strong>90-day rate</strong> (cum_vol_90d / 90): correlation 0.84, VIF 3.7. Same
+          problem, slightly less severe.</li>
+          <li><strong>Recent-to-annual ratio</strong> (rate_90d / annual_avg_rate): correlation
+          &minus;0.21, VIF 1.1. Clean orthogonality &mdash; but the cumulative volume effect
+          collapses to essentially zero, suggesting this control may be too aggressive.</li>
+        </ul>
+        <p>The fundamental issue: <strong>cumulative volume = rate &times; duration</strong>, so
+        adding rate as a confounder is equivalent to controlling for duration, which removes
+        most of the variation we're trying to study.</p>
+        <p>The current model treats cumulative 365-day volume as the policy-relevant treatment
+        (regulators set BBL caps, not rate caps) and reports the average causal effect across
+        the rate distribution. Effects should be interpreted as: "if a regulator caps cumulative
+        annual volume at X BBL, the expected magnitude reduction is Y ML averaged across
+        operationally typical rate patterns."</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>How often is the data updated?</h3>
+      <p>
+        The current dashboard uses the April 2026 TexNet catalog and RRC injection data.
+        The pipeline can be re-run with new data releases. The process is:
+      </p>
+      <ol>
+        <li>Download new TexNet event CSV and RRC injection CSV</li>
+        <li>Run the pipeline (<code>run_all.py</code>) — takes ~10 minutes with parallelization</li>
+        <li>Re-train Causal Forest models (<code>build_causal_forest.py</code>) — ~40 min per radius</li>
+        <li>Re-run TMLE sweep (<code>tmle_run_parallel.py</code>) — ~60 min for all radii</li>
+        <li>Restart the dashboard to pick up new data files</li>
+      </ol>
+    </div>
+
+    <div class="faq-item">
+      <h3>Can I download the data?</h3>
+      <p>
+        The source data (TexNet catalog and RRC injection records) is publicly available.
+        The derived data products (CATE estimates, TMLE results) are computed by the pipeline
+        and served through the API. The API endpoints return JSON that can be consumed
+        programmatically. See the <a href="/docs" style="color:var(--cyan);">API documentation</a>
+        for endpoint details.
+      </p>
+    </div>
+  </div>
+
+  <hr>
+
+  <div style="text-align:center; padding:2rem 0; color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:0.75rem;">
+    SPE-228051 TMLE Extension &bull; L. Matthews &bull; 2026<br>
+    <a href="/" style="color:var(--amber); text-decoration:none;">Return to Dashboard</a>
+  </div>
+</div>
+
+</body>
+</html>

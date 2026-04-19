@@ -238,6 +238,16 @@ def add_well_age(panel: pd.DataFrame) -> pd.DataFrame:
     return panel
 
 
+def add_injection_rate(panel: pd.DataFrame) -> pd.DataFrame:
+    """Average daily injection rate over the 365-day lookback window.
+    avg_rate_365d = cum_vol_365d_BBL / min(days_active, 365), clamped to >= 1 day.
+    """
+    log.info("Computing avg_rate_365d…")
+    denom = panel["days_active"].clip(lower=1, upper=365)
+    panel["avg_rate_365d"] = panel["cum_vol_365d_BBL"] / denom
+    return panel
+
+
 # ──────────────────── Main ───────────────────────────────────────
 def main() -> None:
     if not INFILE.exists():
@@ -277,6 +287,9 @@ def main() -> None:
     # Days active
     panel = add_well_age(panel)
 
+    # Injection rate (requires cum_vol_365d and days_active)
+    panel = add_injection_rate(panel)
+
     # Attach static metadata
     panel = panel.merge(
         meta[["API Number", "Surface Latitude", "Surface Longitude",
@@ -305,7 +318,8 @@ def main() -> None:
             f"vw_avg_psig_{w}d", f"vw_max_psig_{w}d",
             f"bhp_vw_avg_{w}d",  f"bhp_vw_max_{w}d",
         ]
-    panel = panel[static_cols + same_day_cols + rolling_cols]
+    rate_cols = ["avg_rate_365d"]
+    panel = panel[static_cols + same_day_cols + rolling_cols + rate_cols]
 
     log.info("Writing %s (%d rows × %d cols)…", OUTFILE, *panel.shape)
     panel.to_csv(OUTFILE, index=False)

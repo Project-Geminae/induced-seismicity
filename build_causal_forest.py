@@ -170,7 +170,12 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> CausalForestBundle
     G_fseg = fault_segment_col(R)
     Y = COL_OUTCOME_MAX_ML
 
+    G_rate = "avg_rate_365d"
     required = [W, G_dep, G_age, G_fdist, G_fseg, Y, COL_FORMATION, COL_API]
+    # avg_rate_365d is optional — don't fail if missing (old panels)
+    has_rate = G_rate in panel.columns
+    if has_rate:
+        required.append(G_rate)
     missing = [c for c in required if c not in panel.columns]
     if missing:
         log.error("[%2dkm] missing columns: %s", R, missing)
@@ -182,7 +187,10 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> CausalForestBundle
     log.info("[%2dkm] dropped %d rows with NaN treatment/outcome", R, n_before - len(sub))
 
     # Median-fill confounders
-    for c in [G_dep, G_age, G_fdist, G_fseg]:
+    fill_cols = [G_dep, G_age, G_fdist, G_fseg]
+    if has_rate:
+        fill_cols.append(G_rate)
+    for c in fill_cols:
         sub[c] = sub[c].fillna(sub[c].median())
 
     # ── Depth-class proxy instead of self-reported formation ──
@@ -201,6 +209,9 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> CausalForestBundle
              int(sub["depth_mid"].sum()), int(sub["depth_deep"].sum()))
 
     confounder_cols = [G_dep, G_age, G_fdist, G_fseg, *formation_cols]
+    if has_rate:
+        confounder_cols.append(G_rate)
+        log.info("[%2dkm] Including avg_rate_365d as confounder (G5)", R)
 
     X = sub[confounder_cols].astype(float).to_numpy()
     T = sub[W].astype(float).to_numpy()

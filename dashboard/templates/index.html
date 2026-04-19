@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8">
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDMyIDMyIj48cmVjdCB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIGZpbGw9IiMwMDAiIHJ4PSI0Ii8+PHBvbHlsaW5lIHBvaW50cz0iMiwxNiA2LDE2IDgsOCAxMCwyNCAxMiwxMiAxNCwyMCAxNiwxNCAxOCwxOCAyMCwxMCAyMiwyMiAyNCwxNSAyNiwxNyAyOCwxNiAzMCwxNiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmY5OTAwIiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+">
+<meta name="x" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>SEIS &lt;GO&gt; — Induced Seismicity Terminal</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -534,6 +536,106 @@
   .info.below::before { bottom: auto; top: calc(100% + 1px); border-top-color: transparent; border-bottom-color: var(--amber); }
   .info.left::after { left: auto; right: 0; transform: none; }
   .info.right::after { left: 0; right: auto; transform: none; }
+
+  /* ══════════════════ Mobile / Responsive ══════════════════ */
+  @media (max-width: 900px) {
+    /* Stack vertically instead of side-by-side grid */
+    main {
+      display: flex !important;
+      flex-direction: column !important;
+      height: auto !important;
+      overflow: visible !important;
+    }
+
+    /* Map takes 50vh on mobile */
+    #map-container {
+      width: 100% !important;
+      height: 50vh !important;
+      min-height: 280px;
+      border-right: none !important;
+      border-bottom: 1px solid var(--amber-dim);
+    }
+    #map { height: 100% !important; }
+
+    /* Sidebar stacks below the map, scrollable */
+    #sidebar {
+      width: 100% !important;
+      height: auto !important;
+      overflow-y: visible !important;
+      border-left: none !important;
+    }
+
+    /* Controls overlay: smaller, bottom-left on mobile */
+    #controls {
+      width: 200px;
+      top: auto; bottom: 10px; left: 10px;
+    }
+    #controls .body { padding: 6px 8px; }
+    #controls label { font-size: 9px; }
+
+    /* Header: wrap and shrink */
+    header {
+      flex-wrap: wrap;
+      height: auto;
+      padding: 4px 8px;
+      gap: 6px;
+    }
+    header .brand { font-size: 11px; padding-right: 8px; }
+    header nav { flex-wrap: wrap; gap: 1px; }
+    header nav .fkey { padding: 3px 6px; font-size: 9px; }
+    header .right {
+      display: none; /* hide PROJ/BRANCH/clock on mobile — too wide */
+    }
+
+    /* Ticker bar: scrollable, smaller */
+    #ticker {
+      flex-wrap: wrap;
+      height: auto;
+      padding: 3px 8px;
+      font-size: 9px;
+    }
+    #ticker .seg { margin-right: 8px; }
+
+    /* Well cards: full width */
+    .well-card { margin: 0 !important; }
+
+    /* Charts: ensure they don't overflow */
+    #chart-waterfall, #chart-dose-response, #chart-timeline, #chart-threshold {
+      height: auto !important;
+      min-height: 220px;
+      max-height: 320px;
+    }
+
+    /* Attribution summary */
+    #attribution-summary .body { padding: 6px 8px; }
+    #attribution-summary .total { font-size: 14px; }
+
+    /* TMLE context panel */
+    #tmle-context .body .row {
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    /* Info tooltips: wider on mobile to avoid overflow */
+    .info::after {
+      width: 200px;
+      font-size: 9px;
+      left: auto; right: 0;
+      transform: none;
+    }
+    .info::before {
+      left: auto; right: 10px;
+      transform: none;
+    }
+  }
+
+  /* Extra small phones (< 400px) */
+  @media (max-width: 400px) {
+    #map-container { height: 40vh !important; min-height: 220px; }
+    #controls { width: 170px; }
+    header .brand { display: none; } /* just show nav keys */
+    header nav .fkey { padding: 2px 4px; font-size: 8px; }
+  }
 </style>
 </head>
 <body>
@@ -545,10 +647,11 @@
     <span style="color:var(--white)">PERMIAN BSN</span>
   </div>
   <nav>
-    <a href="/" class="fkey active"><span class="label">F1</span> MAP</a>
-    <a href="/methodology" target="_blank" class="fkey"><span class="label">F2</span> METH</a>
-    <a href="/docs" target="_blank" class="fkey"><span class="label">F3</span> API</a>
-    <a href="https://github.com/Project-Geminae/induced-seismicity/tree/tmle-rebuild" target="_blank" class="fkey"><span class="label">F4</span> SRC</a>
+    <a href="/" class="fkey"><span class="label">F1</span> HOME</a>
+    <a href="/dashboard" class="fkey active"><span class="label">F2</span> MAP</a>
+    <a href="/faq" target="_blank" class="fkey"><span class="label">F3</span> FAQ</a>
+    <a href="/methodology" target="_blank" class="fkey"><span class="label">F4</span> METH</a>
+    <a href="/docs" target="_blank" class="fkey"><span class="label">F5</span> API</a>
   </nav>
   <div class="right">
     <span><span class="key">PROJ</span> GEMINAE</span>
@@ -642,11 +745,11 @@
           <span class="val" id="tmle-te">—</span>
         </div>
         <div class="row">
-          <span class="label">DIRECT (NDE)<span class="info below" data-tip="Natural Direct Effect: the part of the causal effect that does NOT go through pressure. This could be mechanical stress changes in the rock from the weight of injected fluid, or pressure effects not captured by wellhead gauges.">i</span></span>
+          <span class="label">NDE (UNOBS.)<span class="info below" data-tip="Natural Direct Effect: the causal effect through pathways NOT captured by measured wellhead pressure (WHP). This is mostly pore-pressure diffusion at fault depth that surface gauges can't see. A large NDE does NOT mean 'mechanical' — it means WHP is a poor window into the true pressure at fault depth.">i</span></span>
           <span class="val" id="tmle-nde">—</span>
         </div>
         <div class="row">
-          <span class="label">INDIRECT (NIE)<span class="info below" data-tip="Natural Indirect Effect: the part of the causal effect that works THROUGH pressure. Injection -> higher underground pressure -> fault slips -> earthquake. This is the pathway most people think of.">i</span></span>
+          <span class="label">NIE (MEAS. WHP)<span class="info below" data-tip="Natural Indirect Effect: the part explained by variation in measured wellhead pressure. Small because WHP fluctuates with pump ops but doesn't capture the slow pore-pressure buildup at fault depth that triggers earthquakes. A small NIE does NOT mean pressure doesn't matter — it means our measurement is limited.">i</span></span>
           <span class="val" id="tmle-nie">—</span>
         </div>
         <div class="row">
@@ -682,8 +785,14 @@
   <span class="seg">
     <span class="key">SEL</span> <span class="val" id="tk-sel">—</span>
   </span>
-  <span class="seg" style="margin-left:auto; border-right:none">
-    <span class="key">TMLE</span> <span class="val green">5-FOLD · 200 BOOT<span class="info" data-tip="The TMLE model was validated with 5-fold cross-validation (train on 80%, test on 20%, repeat 5 times) and 200 bootstrap iterations for mediation confidence intervals. This ensures the results are stable and not just a lucky fit.">i</span></span>
+  <span class="seg" style="margin-left:auto;">
+    <span class="key">DATA THRU</span> <span class="val" id="tk-vintage" style="color:var(--cyan);">—</span>
+  </span>
+  <span class="seg">
+    <span class="key">MODELS</span> <span class="val" id="tk-models" style="color:var(--cyan);">—</span>
+  </span>
+  <span class="seg" style="border-right:none">
+    <span class="key">CATE</span> <span class="val green" id="tk-cate-radii">—</span>
   </span>
 </div>
 
@@ -881,7 +990,16 @@
   function renderAttributionSummary(attribution) {
     const el = document.getElementById("attribution-summary");
     if (!attribution || !attribution.aggregate) {
-      el.style.display = "none";
+      el.style.display = "block";
+      el.innerHTML = `
+        <div class="header-bar" style="background:var(--muted);">NO WELLS WITH ATTRIBUTION DATA</div>
+        <div class="body" style="padding:10px;">
+          <div style="color:var(--muted-bright); font-size:11px;">
+            No wells found within this radius for the selected event, or attribution data
+            is not available. Try selecting a different event or adjusting the radius.
+          </div>
+        </div>
+      `;
       return;
     }
     const a = attribution.aggregate;
@@ -901,9 +1019,9 @@
           <span class="key">ESTIMAND</span>
           <span class="val">${attribution.estimand || "CATE-TMLE"}</span>
         </div>
-        <div class="disclaimer">
-          ${attribution.disclaimer}
-          <a href="/methodology" target="_blank">[F2] METH →</a>
+        <div class="disclaimer" style="display:flex; justify-content:space-between;">
+          <a href="/methodology" target="_blank">Methodology →</a>
+          <a href="/api/event/${attribution.event.id}/report?radius_km=${attribution.radius_km}" target="_blank" style="color:var(--green);">↓ Download Report</a>
         </div>
       </div>
     `;
@@ -1134,7 +1252,32 @@
       // Baseline (E[Y|a=0]) — first grid point approximately
       const baseline = gridPsi[0] || 0;
 
+      // Extrapolation boundaries (empirical percentiles from positivity diagnostics):
+      // 99th percentile ≈ 10^7 BBL; beyond 10^7 = sparse; 10^8 = pure extrapolation
+      const EXTRAP_START = 1e7;   // sparse support above this
+      const EXTRAP_HARD = 1e8;    // no observations at or above
+      const yMax = Math.max(...gridHi, ...gridPsi) * 1.1;
+      const yMin = Math.min(0, ...gridLo);
+
       Plotly.newPlot("chart-dose-response", [
+        // Extrapolation zone (red tint)
+        {
+          x: [EXTRAP_START, EXTRAP_HARD, EXTRAP_HARD, EXTRAP_START, EXTRAP_START],
+          y: [yMin, yMin, yMax, yMax, yMin],
+          fill: "toself", fillcolor: "rgba(255,48,48,0.12)",
+          line: { color: "transparent" },
+          name: "Sparse support",
+          showlegend: false, hoverinfo: "skip", type: "scatter",
+        },
+        // Beyond support (stronger red)
+        {
+          x: [EXTRAP_HARD, EXTRAP_HARD*10, EXTRAP_HARD*10, EXTRAP_HARD, EXTRAP_HARD],
+          y: [yMin, yMin, yMax, yMax, yMin],
+          fill: "toself", fillcolor: "rgba(255,48,48,0.25)",
+          line: { color: "transparent" },
+          name: "No observations",
+          showlegend: false, hoverinfo: "skip", type: "scatter",
+        },
         // CI ribbon
         {
           x: gridA.concat([...gridA].reverse()),
@@ -1167,11 +1310,16 @@
         },
       ], {
         ...plotlyLayout,
-        title: { text: "DOSE-RESPONSE CURVE (TMLE) + WELL POSITIONS", font: { size: 11, color: "#ff9900" } },
+        title: { text: "DOSE-RESPONSE CURVE (TMLE) · RED ZONE = EXTRAPOLATION", font: { size: 11, color: "#ff9900" } },
         xaxis: { ...plotlyLayout.xaxis, title: "CUM 365D INJECTION (BBL)", type: "log" },
-        yaxis: { ...plotlyLayout.yaxis, title: "E[Y|a] (ML)" },
+        yaxis: { ...plotlyLayout.yaxis, title: "E[Y|a] (ML)", range: [yMin, yMax] },
         showlegend: false,
         height: 260,
+        annotations: [
+          { x: Math.log10(EXTRAP_START * 3), y: yMax * 0.9, xref: 'x', yref: 'y',
+            text: "SPARSE<br>(>99th pct)", showarrow: false,
+            font: { size: 9, color: "#ff6644" } },
+        ],
       }, plotlyConfig);
     }
 
@@ -1444,8 +1592,16 @@
     try {
       const health = await fetchHealth();
       console.log("Dashboard health:", health);
-      // n_wells isn't in /api/health; the panel size is too misleading.
-      // Leave the static "687" we hardcoded in the ticker for now.
+      // Populate data vintage in ticker
+      if (health.latest_event_date) {
+        document.getElementById("tk-vintage").textContent = health.latest_event_date;
+      }
+      if (health.tmle_run_date) {
+        document.getElementById("tk-models").textContent = health.tmle_run_date;
+      }
+      if (health.n_cate_models) {
+        document.getElementById("tk-cate-radii").textContent = health.n_cate_models + " RADII";
+      }
       state.events = await fetchEvents();
       renderEvents();
       updateTicker();
@@ -1454,6 +1610,126 @@
       const el = document.getElementById("event-detail");
       if (el) el.innerHTML = `<span style="color:var(--red)">▎ ERROR LOADING DATA</span>`;
     }
+  })();
+
+  // ──────────────────── Client-side beacon ────────────────────
+  (function() {
+    const SID = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    const META = {
+      sid: SID,
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '-',
+      screen: screen.width + 'x' + screen.height + (window.devicePixelRatio > 1 ? '@' + window.devicePixelRatio + 'x' : ''),
+      lang: navigator.language || '-',
+      ref: document.referrer || '-',
+    };
+    const _startTime = Date.now();
+    // Active-time tracker: accumulates only while tab is visible AND user is interacting
+    let _activeMs = 0;
+    let _lastActive = Date.now();
+    let _isIdle = false;
+    const IDLE_THRESHOLD_MS = 60000;  // 1 min without activity = idle
+
+    function _accumulateActive() {
+      const now = Date.now();
+      if (!document.hidden && !_isIdle) {
+        _activeMs += (now - _lastActive);
+      }
+      _lastActive = now;
+    }
+
+    function _onActivity() {
+      _accumulateActive();
+      _isIdle = false;
+    }
+
+    // Listen for activity signals
+    ['mousedown','mousemove','keydown','scroll','touchstart','click'].forEach(evt => {
+      window.addEventListener(evt, _onActivity, { passive: true });
+    });
+
+    // Idle detection: if no activity for 60s, stop accumulating
+    setInterval(function() {
+      _accumulateActive();
+      if (Date.now() - _lastActive > IDLE_THRESHOLD_MS) {
+        _isIdle = true;
+      }
+    }, 10000);
+
+    function _activeSeconds() {
+      _accumulateActive();
+      return Math.round(_activeMs / 1000);
+    }
+
+    function beacon(event, data) {
+      try {
+        navigator.sendBeacon('/api/beacon', JSON.stringify({
+          ...META, event, data: data || {},
+          page: location.pathname,
+        }));
+      } catch(e) {}
+    }
+
+    // Session start
+    beacon('session_start', { url: location.href, ua: navigator.userAgent.slice(0, 150) });
+
+    // Track event clicks (patch selectEvent)
+    const _origSelectEvent = typeof selectEvent === 'function' ? selectEvent : null;
+    if (_origSelectEvent) {
+      window.selectEvent = function(ev) {
+        beacon('event_click', { event_id: ev.id, ml: ev.ml, lat: ev.lat, lon: ev.lon });
+        return _origSelectEvent(ev);
+      };
+    }
+
+    // Track well card clicks via delegation
+    document.addEventListener('click', function(e) {
+      const card = e.target.closest('.well-card');
+      if (card) {
+        const api = card.dataset.api;
+        beacon('well_click', { api: api });
+      }
+    });
+
+    // Track radius slider changes
+    const radiusSlider = document.getElementById('radius-slider');
+    if (radiusSlider) {
+      radiusSlider.addEventListener('change', function() {
+        beacon('radius_change', { radius: this.value });
+      });
+    }
+
+    // Track page visibility (time on page)
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden) {
+        _accumulateActive();  // stop the clock
+        beacon('session_blur', {
+          active_s: _activeSeconds(),
+          wall_s: Math.round((Date.now() - _startTime) / 1000),
+        });
+      } else {
+        _lastActive = Date.now();  // restart the clock
+        _isIdle = false;
+        beacon('session_focus');
+      }
+    });
+
+    // Session end on unload
+    window.addEventListener('beforeunload', function() {
+      beacon('session_end', {
+        active_s: _activeSeconds(),
+        wall_s: Math.round((Date.now() - _startTime) / 1000),
+      });
+    });
+
+    // Heartbeat every 30s — only if tab visible AND not idle
+    setInterval(function() {
+      if (!document.hidden && !_isIdle) {
+        beacon('heartbeat', {
+          active_s: _activeSeconds(),
+          wall_s: Math.round((Date.now() - _startTime) / 1000),
+        });
+      }
+    }, 30000);
   })();
 </script>
 </body>
