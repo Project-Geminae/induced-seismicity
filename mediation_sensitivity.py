@@ -233,8 +233,9 @@ def parse_args() -> argparse.Namespace:
                    help="CI method for mediation TMLE. Default: influence (fast).")
     p.add_argument("--n-boot", type=int, default=30,
                    help="Bootstrap iterations (only used if ci-method=bootstrap).")
-    p.add_argument("--output", type=str, default="mediation_sensitivity.csv",
-                   help="Output CSV path.")
+    p.add_argument("--output", type=str, default=None,
+                   help="Output CSV path. Defaults to mediation_sensitivity_{radius}km.csv "
+                        "so per-radius sweeps don't overwrite each other.")
     return p.parse_args()
 
 
@@ -312,8 +313,9 @@ def main() -> None:
     sens_df["rho_NDE_flip"] = critical["rho_NDE_flip"]
     sens_df["rho_NIE_nonsig"] = critical["rho_NIE_nonsig"]
 
-    # Save
-    outpath = Path(args.output)
+    # Save — per-radius filename by default so sweeps don't clobber each other
+    default_output = f"mediation_sensitivity_{R}km.csv"
+    outpath = Path(args.output if args.output else default_output)
     sens_df.to_csv(outpath, index=False)
     log.info("Wrote %s (%d rows)", outpath, len(sens_df))
 
