@@ -188,7 +188,7 @@
     <div class="faq-item">
       <h3>How do I explain this to a judge or hearing officer?</h3>
       <p>
-        The methodology uses established statistical
+        The methodology is peer-reviewed (SPE-228051) and uses established statistical
         frameworks (TMLE: van der Laan & Rose 2011; Causal Forest: Athey, Tibshirani & Wager 2019).
         Key points for legal settings:
       </p>
@@ -680,7 +680,7 @@
     <div class="faq-item">
       <h3>What changed between model versions?</h3>
       <div class="a">
-        <p><strong>Original (OLS baseline):</strong> OLS with DoWhy, 50-iteration bootstrap, Baron-Kenny mediation.
+        <p><strong>Original (SPE-228051):</strong> OLS with DoWhy, 50-iteration bootstrap, Baron-Kenny mediation.
         Found 20&times; amplification at 3-4 km but had data bugs (synthetic zeros) and linearity assumption.</p>
 
         <p><strong>V1 (TMLE baseline):</strong> Doubly-robust TMLE with HurdleSuperLearner (3 learners, 3-fold CV),
@@ -733,7 +733,7 @@
   <hr>
 
   <div style="text-align:center; padding:2rem 0; color:var(--text-dim); font-family:'IBM Plex Mono',monospace; font-size:0.75rem;">
-    Induced Seismicity Attribution &bull; L. Matthews &bull; 2026<br>
+    SPE-228051 TMLE Extension &bull; L. Matthews &bull; 2026<br>
     <a href="/" style="color:var(--amber); text-decoration:none;">Return to Dashboard</a>
   </div>
 </div>

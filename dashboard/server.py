@@ -1134,7 +1134,7 @@ def event_report(
         title_style
     ))
     story.append(Paragraph(
-        f"Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} &bull; "
+        f"SPE-228051 TMLE Extension &bull; Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')} &bull; "
         f"<a href='https://tinyurl.com/ywf39tmv' color='#C47000'>https://tinyurl.com/ywf39tmv</a>",
         subtitle_style
     ))
@@ -1303,7 +1303,7 @@ def event_report(
         "Honest sample splitting, cross-fitted XGBoost nuisance models. Doubly robust: consistent if either "
         "outcome or treatment model is correctly specified.<br/>"
         "<b>Population TMLE:</b> van der Laan &amp; Rose 2011. SuperLearner ensemble. Validated against R tlverse (&lt;0.1%).<br/>"
-        "<b>Data sources:</b> TexNet Earthquake Catalog &bull; RRC H-10 Injection Records<br/>"
+        "<b>Data sources:</b> TexNet Earthquake Catalog &bull; RRC H-10 Injection Records &bull; SPE-228051 Matthews et al. 2025<br/>"
         "<b>Interpretation:</b> A 95% CI excluding zero indicates a statistically significant individual contribution. "
         "A CI crossing zero does not exonerate a well \u2014 it indicates the data is insufficient to distinguish its "
         "effect from noise. Distributed causation (all CIs crossing zero) supports area-wide rather than targeted action."

@@ -3,6 +3,9 @@
 **A doubly-robust TMLE + Causal Forest framework for attributing Permian Basin earthquakes to specific saltwater disposal wells.**
 
 [![Live Dashboard](https://img.shields.io/badge/Dashboard-Live-brightgreen)](https://tinyurl.com/ywf39tmv)
+[![SPE-228051](https://img.shields.io/badge/SPE-228051-blue)](https://doi.org/10.2118/228051-MS)
+
+> **Paper:** Matthews, Molak, Reudelhuber, Meek, Rensi & Ayala (2025). *A Causal Inference Pipeline for Injection Open-Source Methodology and Implementation.* SPE-228051-MS.
 
 ---
 
@@ -275,6 +278,21 @@ induced-seismicity/
 ```
 
 ---
+
+## Citation
+
+```bibtex
+@inproceedings{matthews2025causal,
+  title={A Causal Inference Pipeline for Injection Open-Source
+         Methodology and Implementation},
+  author={Matthews, Lewis and Molak, Aleksander and Reudelhuber, Colton
+          and Meek, Tyler and Rensi, Esteban and Ayala, Isaac},
+  booktitle={SPE Annual Technical Conference and Exhibition},
+  year={2025},
+  publisher={Society of Petroleum Engineers},
+  doi={10.2118/228051-MS}
+}
+```
 
 ## License
 
