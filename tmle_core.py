@@ -107,7 +107,7 @@ import os as _os
 N_FOLDS_CROSSFIT = int(_os.environ.get("TMLE_N_FOLDS", "5"))   # was 3; 5 is publication standard
 N_DENSITY_BINS    = int(_os.environ.get("TMLE_N_DENSITY_BINS", "0"))  # 0 = data-adaptive (Freedman-Diaconis)
 DENSITY_EPS_FRAC  = 0.005       # fallback floor; overridden by data-adaptive floor in HistogramConditionalDensity
-CV_DENSITY        = _os.environ.get("TMLE_CV_DENSITY", "kde")       # "kde" or "histogram" — density estimator for CV-TMLE
+CV_DENSITY        = _os.environ.get("TMLE_CV_DENSITY", "kde")       # "haldensify", "kde", or "histogram" — density estimator for CV-TMLE
 
 # XGBoost / GBM tree counts. The Super Learner stack is more sensitive to
 # library DIVERSITY than to individual library depth, so we run modest trees
@@ -179,21 +179,29 @@ class HALWrapper(BaseEstimator, RegressorMixin):
         Maximum interaction degree for basis functions. 2 is recommended
         for moderate-dimensional data (captures pairwise interactions).
     num_knots : tuple
-        Number of knots per degree. (200, 100) = 200 for main effects,
-        100 for interactions.
+        Number of knots per degree. (25, 10) is the van der Laan lab
+        recommendation for moderate-to-large n — more knots is slower,
+        not better (hal9001 docs).
     smoothness_orders : int
         0 = indicator HAL (piecewise constant), 1 = piecewise linear.
+    subsample_size : int
+        If n > subsample_size, HAL fits on a random subsample of this size.
+        Van der Laan's recommended practice for large n — HAL's basis
+        construction is O(n × num_bases), so full-n fits are infeasible
+        above ~10k rows. Predictions still use the full input X.
     random_state : int
         Seed for reproducibility.
     """
 
     def __init__(self, family: str = "gaussian", max_degree: int = 2,
-                 num_knots: tuple = (200, 100), smoothness_orders: int = 1,
+                 num_knots: tuple = (25, 10), smoothness_orders: int = 1,
+                 subsample_size: int = 5000,
                  random_state: int = 42):
         self.family = family
         self.max_degree = max_degree
         self.num_knots = num_knots
         self.smoothness_orders = smoothness_orders
+        self.subsample_size = subsample_size
         self.random_state = random_state
         self._hal_fit = None
         self._fallback_value = 0.0
@@ -203,27 +211,38 @@ class HALWrapper(BaseEstimator, RegressorMixin):
         import rpy2.robjects as ro
         from rpy2.robjects import numpy2ri
         from rpy2.robjects.packages import importr
-        numpy2ri.activate()
+        # rpy2 >= 3.6: use converter context instead of deprecated activate()
+        self._converter = ro.default_converter + numpy2ri.converter
         self._ro = ro
-        self._hal9001 = importr("hal9001")
-        self._base = importr("base")
+        with self._converter.context():
+            self._hal9001 = importr("hal9001")
+            self._base = importr("base")
 
     def fit(self, X, y):
         X = np.asarray(X, dtype=float)
         y = np.asarray(y, dtype=float)
+        # Subsample for large n — hal9001 basis construction is infeasible
+        # above ~10k rows. Van der Laan's recommended compromise.
+        if X.shape[0] > self.subsample_size:
+            rng = np.random.default_rng(self.random_state)
+            idx = rng.choice(X.shape[0], size=self.subsample_size, replace=False)
+            X_fit, y_fit = X[idx], y[idx]
+        else:
+            X_fit, y_fit = X, y
         try:
             self._init_r()
             ro = self._ro
-            r_X = ro.r.matrix(X, nrow=X.shape[0], ncol=X.shape[1])
-            r_Y = ro.FloatVector(y)
-            r_knots = ro.IntVector(list(self.num_knots))
-            self._hal_fit = self._hal9001.fit_hal(
-                X=r_X, Y=r_Y,
-                family=self.family,
-                max_degree=self.max_degree,
-                num_knots=r_knots,
-                smoothness_orders=self.smoothness_orders,
-            )
+            with self._converter.context():
+                r_X = ro.r.matrix(X_fit, nrow=X_fit.shape[0], ncol=X_fit.shape[1])
+                r_Y = ro.FloatVector(y_fit)
+                r_knots = ro.IntVector(list(self.num_knots))
+                self._hal_fit = self._hal9001.fit_hal(
+                    X=r_X, Y=r_Y,
+                    family=self.family,
+                    max_degree=self.max_degree,
+                    num_knots=r_knots,
+                    smoothness_orders=self.smoothness_orders,
+                )
             self._fallback_value = float(np.mean(y))
         except Exception as e:
             warnings.warn(f"HAL fit failed ({e}); falling back to constant predictor")
@@ -237,8 +256,9 @@ class HALWrapper(BaseEstimator, RegressorMixin):
             return np.full(X.shape[0], self._fallback_value)
         try:
             ro = self._ro
-            r_X = ro.r.matrix(X, nrow=X.shape[0], ncol=X.shape[1])
-            preds = np.asarray(self._hal9001.predict_hal9001(self._hal_fit, new_data=r_X))
+            with self._converter.context():
+                r_X = ro.r.matrix(X, nrow=X.shape[0], ncol=X.shape[1])
+                preds = np.asarray(self._hal9001.predict_hal9001(self._hal_fit, new_data=r_X))
             if self.family == "binomial":
                 preds = np.clip(preds, 0.0, 1.0)
             return preds.ravel()
@@ -569,6 +589,102 @@ class KDEConditionalDensity:
         return np.maximum(density, floor)
 
 
+class HALDensifyConditionalDensity:
+    """Conditional density estimator g(A | L) via R's haldensify package.
+
+    This is the van der Laan lab's preferred estimator (Hejazi, Benkeser &
+    van der Laan 2022; arXiv:2004.13117). It decomposes the joint density
+    p(A, L) = p(A | L) · p(L) and uses HAL on a discretized pooled hazard
+    representation to estimate p(A | L). The result has HAL's known
+    n^{-1/3} MSE convergence rate, which is the rate TMLE's second-order
+    remainder term requires for valid inference under weak conditions.
+
+    This is slow (HAL basis construction + Lasso), so the treatment is
+    subsampled to `subsample_size` rows before fitting. Predictions use
+    the fitted model on the full data.
+
+    Requires: R + haldensify package + rpy2. Opt-in via
+    TMLE_CV_DENSITY=haldensify.
+    """
+
+    def __init__(self, n_bins: tuple = (3, 5, 10),
+                 grid_type: str = "equal_mass",
+                 subsample_size: int = 5000,
+                 max_degree: int = 3,
+                 smoothness_orders: int = 0,
+                 random_state: int = 42):
+        self.n_bins = n_bins
+        self.grid_type = grid_type
+        self.subsample_size = subsample_size
+        self.max_degree = max_degree
+        self.smoothness_orders = smoothness_orders
+        self.random_state = random_state
+        self._hd_fit = None
+        self._fallback_floor = 1e-12
+
+    def _init_r(self):
+        import rpy2.robjects as ro
+        from rpy2.robjects import numpy2ri
+        from rpy2.robjects.packages import importr
+        self._converter = ro.default_converter + numpy2ri.converter
+        self._ro = ro
+        with self._converter.context():
+            self._haldensify = importr("haldensify")
+            self._base = importr("base")
+
+    def fit(self, A: np.ndarray, L: np.ndarray) -> "HALDensifyConditionalDensity":
+        A = np.asarray(A, dtype=float)
+        L = np.asarray(L, dtype=float)
+        # Subsample — haldensify on >10k rows is infeasible
+        if len(A) > self.subsample_size:
+            rng = np.random.default_rng(self.random_state)
+            idx = rng.choice(len(A), size=self.subsample_size, replace=False)
+            A_fit, L_fit = A[idx], L[idx]
+        else:
+            A_fit, L_fit = A, L
+        try:
+            self._init_r()
+            ro = self._ro
+            with self._converter.context():
+                r_A = ro.FloatVector(A_fit)
+                r_W = ro.r.matrix(L_fit, nrow=L_fit.shape[0], ncol=L_fit.shape[1])
+                r_bins = ro.IntVector(list(self.n_bins))
+                self._hd_fit = self._haldensify.haldensify(
+                    A=r_A, W=r_W,
+                    n_bins=r_bins,
+                    grid_type=self.grid_type,
+                    max_degree=self.max_degree,
+                    smoothness_orders=self.smoothness_orders,
+                )
+        except Exception as e:
+            warnings.warn(f"haldensify fit failed ({e}); falling back to uniform density")
+            self._hd_fit = None
+        return self
+
+    def density(self, A: np.ndarray, L: np.ndarray) -> np.ndarray:
+        A = np.asarray(A, dtype=float)
+        L = np.asarray(L, dtype=float)
+        if self._hd_fit is None:
+            # Uniform fallback — strongly flags a broken fit
+            return np.full(len(A), 1.0 / max(np.std(A), 1e-6))
+        try:
+            ro = self._ro
+            with self._converter.context():
+                r_A_new = ro.FloatVector(A)
+                r_W_new = ro.r.matrix(L, nrow=L.shape[0], ncol=L.shape[1])
+                density = np.asarray(self._haldensify.predict_haldensify(
+                    self._hd_fit, new_A=r_A_new, new_W=r_W_new,
+                )).ravel()
+            # Data-adaptive positivity floor (matches other density estimators)
+            pos = density[density > 0]
+            q025 = np.quantile(pos, 0.025) if len(pos) > 0 else 1e-12
+            floor = max(0.01 * q025, 1e-12)
+            return np.maximum(density, floor)
+        except Exception as e:
+            warnings.warn(f"haldensify predict failed ({e}); returning uniform density")
+            return np.full(len(A), 1.0 / max(np.std(A), 1e-6))
+
+
 # ──────────────────── Cross-fitted Q estimation ──────────────────
 
 def crossfit_Q(
@@ -797,9 +913,13 @@ def cv_tmle_shift(
         Q_hat_val = Q_model.predict(AL_val)
         Q_hat_cv[val_idx] = Q_hat_val
 
-        # Fit g on training data — use KDE for CV-TMLE to avoid histogram
-        # coverage gaps between training and validation folds
-        if CV_DENSITY == "kde":
+        # Fit g on training data. Three options:
+        #   - "haldensify": van der Laan lab's HAL-based density (slow, correct rate)
+        #   - "kde": 1D Gaussian KDE on residuals (smooth, O(n²) eval)
+        #   - "histogram": original quantile-bin histogram (fast, coverage gaps)
+        if CV_DENSITY == "haldensify":
+            g_model = HALDensifyConditionalDensity(random_state=seed + fold_idx)
+        elif CV_DENSITY == "kde":
             g_model = KDEConditionalDensity(random_state=seed + fold_idx)
         else:
             g_model = HistogramConditionalDensity(random_state=seed + fold_idx)
