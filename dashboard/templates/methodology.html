@@ -270,8 +270,8 @@ different estimands answer different policy questions:
   </tr>
   <tr>
     <td><strong>CATE</strong> (Conditional ATE)</td>
-    <td>"What's the effect for wells with this depth/formation/fault profile?"</td>
-    <td class="partial">Partial — features are in the panel but not yet sliced</td>
+    <td>"What's the effect for this specific well given its depth, fault distance, and neighbor wells?"</td>
+    <td class="yes"><strong>Yes — Causal Forest DML at all 20 radii, with 95% CIs</strong></td>
   </tr>
   <tr>
     <td><strong>ITE</strong> (Individual Treatment Effect)</td>
@@ -280,8 +280,8 @@ different estimands answer different policy questions:
   </tr>
   <tr>
     <td><strong>g-computation prediction</strong></td>
-    <td>"What does the model predict for this well's contribution under its actual injection vs. zero injection, holding all other features constant?"</td>
-    <td class="yes"><strong>This is what the per-well attribution sidebar shows.</strong></td>
+    <td>"What does the model predict for this well's contribution under its actual injection vs. zero injection?"</td>
+    <td class="partial">Legacy (build_attribution_q.py) — superseded by Causal Forest CATE above</td>
   </tr>
   <tr>
     <td><strong>PN</strong> (Probability of Necessity, Pearl 2000)</td>
@@ -307,123 +307,169 @@ different estimands answer different policy questions:
 <h2 id="what-we-compute">3. What the dashboard actually computes</h2>
 
 <p>
-For each event-radius combination, the pipeline does the following:
+The dashboard uses two complementary estimation methods, each targeting
+a different level of analysis:
 </p>
 
-<h3>3.1. Q model fitting (offline, per radius)</h3>
+<h3>3.1. Population-level: TMLE (v3)</h3>
 <p>
-A hurdle Super Learner is fit on the well-day panel
-(<code>panel_with_faults_&lt;R&gt;km.csv</code>):
+Targeted Maximum Likelihood Estimation computes the population-average
+causal effect of injection on seismicity. The current implementation (v3)
+includes seven methodological improvements:
 </p>
 
-<pre>Outcome:    outcome_max_ML  (max ML within R km on this day, or 0)
-Treatment:  cum_vol_365d_BBL
-Mediator:   bhp_vw_avg_365d  (depth-corrected BHP from volume-weighted WHP)
+<pre>Outcome:     outcome_max_ML  (max ML within R km on this day, or 0)
+Treatment:   cum_vol_365d_BBL
 Confounders: perf_depth_ft, days_active, Nearest Fault Dist (km),
-             Fault Segments &le; R km, formation (one-hot top-K + OTHER)
+             Fault Segments &le; R km, depth_class (shallow/mid/deep),
+             <strong>neighbor_cum_vol_7km</strong> (spatial interference, VIF=1.12)
 
-Q model:    Hurdle Super Learner
-            Stage 1: P(Y &gt; 0 | features)              logistic stack
-            Stage 2: E[log(1 + Y) | Y &gt; 0, features]   regression stack
-            Combined: Q(features) = P_pos(features) &middot; expm1(stage_2(features))
+Q model:     Hurdle Super Learner
+             Stage 1: P(Y &gt; 0 | A, L)  logistic stack
+             Stage 2: E[log(1+Y) | Y&gt;0, A, L]  regression stack
+             Base learners: Ridge, GBM, XGBoost, <strong>RandomForest</strong> (4 diverse families)
+             Meta-learner:  <strong>NNLS</strong> (non-negative least squares, convex combination)
+             Cross-validation: <strong>5-fold</strong>
 
-            Base learners: RidgeCV + XGBoost (GBM dropped for runtime)
-            Meta-learner:  RidgeCV non-negative ensemble</pre>
+g model:     Histogram conditional density g(A|L)
+             Bins: <strong>data-adaptive</strong> (~140 via Freedman-Diaconis, was 20 fixed)
+             Positivity floor: <strong>data-adaptive</strong> (1% of 2.5th percentile)
+             Classifier: XGBoost multinomial
+
+Targeting:   H = g(A_pre|L) / g(A|L) / (1+&delta;)
+             <strong>H-truncation at 99th percentile</strong> (max H &asymp; 5, was 335)
+             &epsilon; solved via OLS on residual
+
+Variance:    Influence-function SEs with <strong>Bessel correction</strong>
+             for finite number of clusters
+
+Result:      17/20 radii statistically significant (4&ndash;20 km)</pre>
 
 <p>
-This Q model is conceptually <em>different</em> from the Q used by the
-TMLE shift / dose-response / mediation drivers. Those are fit at the
-<em>cluster-day</em> level (multiple wells aggregated into one row before
-the model sees them) and are used to estimate population-level estimands.
-The dashboard Q is fit at the <em>well-day</em> level so it can be applied
-to individual wells.
+TMLE estimands: shift intervention (&psi; = E[Y<sub>d(A)</sub>] &minus; E[Y<sub>A</sub>]),
+dose-response curve (E[Y<sub>a*</sub>] at grid points), and mediation decomposition
+(NDE/NIE via Zheng &amp; van der Laan 2012). Python implementation validated against
+R tlverse to &lt;0.1%.
+</p>
+<p>
+Code: <code>tmle_core.py</code>, <code>tmle_run_parallel.py</code>. Output:
+<code>tmle_shift_365d_v3_full.csv</code>, <code>tmle_dose_response_365d_v3_full.csv</code>.
 </p>
 
+<h3>3.2. Per-well: Causal Forest DML</h3>
 <p>
-Code: <code>build_attribution_q.py</code>. Output:
-<code>q_attribution_&lt;R&gt;km.pkl</code> for R = 1..20 km.
+The per-well CATE (Conditional Average Treatment Effect) is computed by a
+<strong>Causal Forest</strong> (Athey, Tibshirani &amp; Wager 2019) using the
+Double Machine Learning framework (Chernozhukov et al. 2018):
 </p>
 
-<h3>3.2. Per-event attribution (live, on click)</h3>
+<pre>Model:       econml.dml.CausalForestDML
+             n_estimators=200, max_depth=4, honest=True
+             Cross-fitted XGBoost nuisance models for E[Y|L] and E[A|L]
+
+Features:    perf_depth_ft, days_active, fault_dist, fault_count,
+             depth_shallow, depth_mid, depth_deep,
+             <strong>neighbor_cum_vol_7km</strong>
+
+Property:    Doubly robust — consistent if EITHER nuisance model correct
+             Honest sample splitting — separate data for tree structure vs effect estimation
+             Per-well 95% CIs from forest's honest variance estimate</pre>
+
 <p>
-When the user clicks an event:
+When the user clicks an event, the dashboard:
 </p>
 <ol>
-  <li>For each well within R km of the event, build its feature row:
-    <code>(cum_vol_365d, bhp_vw_avg_365d, perf_depth_ft, days_active, fault_dist, fault_count, formation_one_hot)</code>
-  </li>
-  <li>Compute <span class="var">Q_factual = Q(actual features)</span></li>
-  <li>Compute <span class="var">Q_counterfactual = Q(features with cum_vol set to 0
-      and bhp set to depth-only hydrostatic baseline 0.45 psi/ft × perf_depth_ft)</span></li>
-  <li><span class="var">contribution = Q_factual − Q_counterfactual</span></li>
-  <li><span class="var">share = max(contribution, 0) / Σⱼ max(contributionⱼ, 0)</span></li>
-  <li><span class="var">PN_proxy = max(0, min(1, 1 − Q_counterfactual / Q_factual))</span></li>
+  <li>Finds all wells within R km of the event epicenter</li>
+  <li>Looks up each well's features from the panel on the event date</li>
+  <li>Calls <code>CausalForestBundle.estimate_cate()</code> which computes
+    E[Y(A=actual) &minus; Y(A=0) | L=l] for each well</li>
+  <li>Returns per-well CATE with 95% CIs, ranked by contribution</li>
 </ol>
-
-<h3>3.3. Why this counterfactual</h3>
 <p>
-The <em>shut-off</em> counterfactual zeroes the cumulative-volume treatment
-AND replaces the BHP feature with the value the well would have had at
-zero wellhead pressure (just hydrostatic from the brine column at the
-perforation depth). This keeps the counterfactual on the support of the
-training distribution: a well that has perforations at 9000 ft but isn't
-injecting still has ~4050 psi of bottom-hole pressure from the column
-weight alone. Setting BHP to literally zero would push the input outside
-the support and produce nonsense extrapolations.
+This is an <strong>identified causal effect</strong>, not just a model prediction.
+Under the assumptions (no unmeasured confounding, positivity, consistency),
+the CATE has a causal interpretation: "how much would the expected max
+magnitude change if this well had not been injecting, holding confounders
+(including neighbor well volumes) constant?"
+</p>
+<p>
+Code: <code>build_causal_forest.py</code>. Output:
+<code>cf_cate_&lt;R&gt;km.pkl</code> for R = 1..20 km.
+</p>
+
+<h3>3.3. Per-well threshold curve</h3>
+<p>
+For a specific well, the Causal Forest evaluates the CATE at a grid of
+hypothetical injection volumes (0 to 2.5&times; current volume), holding all
+confounders constant. This produces a dose-response curve for that one well.
+The regulator draws a horizontal line at their risk tolerance (e.g., CATE
+&lt; 0.03 ML) and reads off the corresponding volume cap.
 </p>
 
 <h2 id="assumptions">4. Assumptions and disclaimers</h2>
 
 <div class="callout danger">
-  <strong>The contribution numbers are model predictions, not identified
-  causal effects.</strong> They are conditional expectations from a Q model
-  fit on observational data, applied to factual and counterfactual feature
-  vectors. They are useful for ranking wells and for "back of the envelope"
-  attribution, but they are not the same thing as the well-day potential
-  outcome under intervention.
+  <strong>The per-well CATE numbers are identified causal effects under the
+  stated assumptions</strong> (no unmeasured confounding, positivity, consistency).
+  They are estimated by a Causal Forest with doubly-robust Double Machine Learning,
+  not simple model predictions. However, they are still observational estimates
+  with uncertainty — the 95% CIs reflect the statistical precision, and the
+  causal interpretation relies on the assumptions below being approximately met.
 </div>
 
 <p>The full set of assumptions:</p>
 
 <ul>
-  <li><strong>No unmeasured confounding.</strong> The DAG assumes that
-    <code>(cum_vol, BHP)</code> capture all the injection-side variation
-    that affects nearby seismicity, and that the listed L variables capture
-    all the confounders. Pre-existing pore pressure, fluid chemistry,
-    fault stress state, and basement coupling depth — not in the panel.
+  <li><strong>No unmeasured confounding (conditional exchangeability).</strong>
+    The DAG assumes that the listed confounders (fault distance, fault count,
+    depth, days active, depth class, neighbor well volumes) capture all
+    common causes of both injection volume and seismicity. Pre-existing
+    pore pressure, fluid chemistry, fault stress state, and basement coupling
+    depth are NOT in the panel. Sensitivity analysis (partial R&sup2;, E-values)
+    shows the effect is "VERY ROBUST" from 4 km outward.
   </li>
-  <li><strong>Positivity / overlap.</strong> The "shut off" counterfactual
-    should be inside the support of the training data. Wells that are
-    injecting at extreme volumes <em>and</em> in unusual formations may
-    have counterfactual feature vectors that the Q has never seen. This
-    is part of why the simple <code>cum_vol → 0</code> counterfactual was
-    too aggressive without the BHP fix.
+  <li><strong>Positivity / overlap.</strong> Every confounder combination
+    must have wells at all volume levels. The TMLE dose-response grid extends
+    to 10<sup>8</sup> BBL, but 99% of wells inject &lt;10<sup>7</sup>. Estimates above
+    10<sup>7</sup> are flagged as extrapolation (red shading on the chart).
+    H-truncation at the 99th percentile (max H &asymp; 5) prevents extreme
+    density ratios from dominating the targeting step.
   </li>
-  <li><strong>The Q is honest in the population sense, not the per-well
-    sense.</strong> The Super Learner stack was fit to minimize cross-
-    validated MSE across ~600k well-day cells. Individual cell predictions
-    are unbiased on average across the training distribution, but the
-    per-cell error variance is large. A single click's per-well numbers
-    are noisy.
+  <li><strong>Spatial interference (partial).</strong> We include
+    <code>neighbor_cum_vol_7km</code> as a confounder to partially address
+    the SUTVA violation (wells share pressure fields). This allows estimation
+    of "effect of well i holding nearby wells constant." However, it does not
+    fully model spatial interference — a proper treatment would use exposure
+    mappings and separate direct/spillover estimands.
   </li>
-  <li><strong>The PN proxy is not Pearl's formal PN.</strong> Pearl &amp;
-    Tian (2000) define <code>PN = P(Y_{do(X=0)} = 0 | Y_{X=actual} = 1)</code>,
-    which requires a binary outcome and monotonicity. We have a continuous
-    outcome and use the simple in-model fractional reduction
-    <code>1 − Q_cf/Q_factual</code> as a usable proxy. It tells you "what
-    fraction of the model's predicted outcome would go away if this well
-    had been shut off", which is informative but isn't a probability in
-    the formal Bayesian-hypothetical sense.
+  <li><strong>No time-varying confounding model.</strong> Operators adjust
+    injection rates in response to seismicity (feedback loop). Our cross-sectional
+    TMLE does not model this. Longitudinal TMLE (LTMLE) would address it
+    but requires substantial methodological development.
   </li>
-  <li><strong>Negative contributions are real and informative.</strong>
-    For some wells the model predicts that shutting them off would
-    <em>increase</em> nearby expected ML. This is usually because the well
-    is in a formation/depth/fault context where its observed injection is
-    correlated with lower-than-average outcomes — the model sees that
-    pattern and the counterfactual breaks it. Don't dismiss negative
-    contributions; they're a legitimate signal that the well isn't a
-    primary driver under the model. They get a 0% share (we only divide
-    positive contributions across the positive total).
+  <li><strong>Honest estimation with sample splitting.</strong> The Causal Forest
+    uses separate data for tree structure vs effect estimation (honest splitting).
+    The SuperLearner uses 5-fold CV with NNLS metalearner. These prevent
+    overfitting and produce conservative CIs.
+  </li>
+  <li><strong>Negative CATEs are real and informative.</strong>
+    For some wells the Causal Forest estimates that injection <em>reduced</em>
+    stress on this particular fault geometry. This is physically plausible
+    (stress redistribution). Negative-CATE wells get 0% share (only positive
+    contributions are divided across the positive total).
+  </li>
+  <li><strong>Formation data dropped.</strong> Operator-reported injection
+    formation labels are self-reported and unreliable. Replaced with a measured
+    depth-class proxy. Sensitivity analysis shows the indirect (pressure)
+    pathway is robust (&plusmn;7&ndash;18%); the direct effect is sensitive
+    (&plusmn;50&ndash;950% at some radii). Policy decisions should weight
+    population dose-response curves over the NDE/NIE decomposition.
+  </li>
+  <li><strong>Wellhead pressure as mediator.</strong> WHP is a poor proxy
+    for pore pressure at fault depth (8&ndash;10 km underground). The NDE/NIE
+    decomposition reflects measurement limitations, not physics. The W&times;M
+    interaction test (p=0.91) confirms the additive decomposition is valid,
+    but the % mediated number should be interpreted cautiously.
   </li>
 </ul>
 

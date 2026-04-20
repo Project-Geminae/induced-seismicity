@@ -669,11 +669,11 @@
       </div>
       <div class="body">
         <div class="row">
-          <label>RADIUS [KM]<span class="info below" data-tip="How far from the earthquake to look for wells (in kilometers). A bigger radius includes more wells but weakens the signal. 7 km is a good default -- close enough for pressure effects to matter.">i</span> <span class="value" id="radius-value">7</span></label>
+          <label>RADIUS [KM]<span class="info below" data-tip="How far from the earthquake to search for disposal wells (in kilometers). Causal Forest models are available at all 20 radii (1-20 km). At small radii (1-4 km) you see strong per-well effects but fewer wells. At large radii (15-20 km) you capture far-field pressure effects but individual CATEs get smaller. 7 km is a good default for regulatory decisions — it balances signal strength with coverage. The TMLE shift analysis found statistically significant effects at 17 of 20 radii (4-20 km).">i</span> <span class="value" id="radius-value">7</span></label>
           <input type="range" id="radius-slider" min="1" max="20" step="1" value="7" />
         </div>
         <div class="row">
-          <label>MIN ML<span class="info below" data-tip="Only show earthquakes this big or bigger. ML stands for Local Magnitude (like the Richter scale). An M2 is a tiny rumble you can't feel. An M4+ rattles windows. An M5+ can cause damage.">i</span> <span class="value" id="ml-value">2.0</span></label>
+          <label>MIN ML<span class="info below" data-tip="Filter earthquakes by minimum Local Magnitude (ML). ML is similar to the Richter scale. M1-2: only detected by instruments, can't feel it. M3: light shaking, felt indoors. M4+: moderate shaking, rattles windows. M5+: can cause structural damage. The catalog contains 7,424 quality-filtered events from TexNet (M≥1.0, 2017-2026). Quality filters: RMS≤0.5, depth uncertainty≤2km, horizontal error≤2km, ≥8 phase picks.">i</span> <span class="value" id="ml-value">2.0</span></label>
           <input type="range" id="ml-slider" min="1.0" max="5.5" step="0.1" value="2.0" />
         </div>
         <div class="row">
@@ -690,7 +690,7 @@
           <div class="legend-item"><span class="legend-dot" style="background:#ff9900"></span>3–4</div>
           <div class="legend-item"><span class="legend-dot" style="background:#ff6600"></span>4–5</div>
           <div class="legend-item"><span class="legend-dot" style="background:#ff3030"></span>≥5</div>
-          <span class="info below" data-tip="Each dot on the map is a TexNet earthquake, colored by magnitude (ML). Bigger dots = bigger earthquakes. Click any dot to select it and see its attribution analysis in the sidebar. When you select an event, amber dots appear showing the disposal wells within your search radius.">i</span>
+          <span class="info below" data-tip="Each circle is a TexNet earthquake, colored and sized by magnitude. Blue/cyan=small (M1-2), amber=moderate (M3-4), red=large (M5+). Click any earthquake to load its causal attribution in the sidebar: which wells contributed, how much, and whether the contribution is statistically significant. Amber dots appear showing disposal wells within your search radius. The map covers the Midland Basin (30.6-33.4°N, 100.2-103.2°W).">i</span>
         </div>
       </div>
     </div>
@@ -699,7 +699,7 @@
 
   <aside id="sidebar">
     <div class="panel-section">
-      <div class="panel-header"><span>EVENT DETAIL<span class="info below" data-tip="Click any earthquake on the map to see its details here: location, magnitude, depth, date, and how many disposal wells are nearby at your chosen radius.">i</span></span><span class="meta">[F6]</span></div>
+      <div class="panel-header"><span>EVENT DETAIL<span class="info below" data-tip="Click any earthquake on the map to see its details: event ID, date, magnitude (ML), location (lat/lon), hypocentral depth (km below mean sea level), and the number of SWD wells within your search radius. Depth matters — deeper events (>8 km) are closer to basement faults. The event date is used to look up each well's injection history on that day.">i</span></span><span class="meta">[F6]</span></div>
       <div id="event-detail" class="panel-body empty">
         <span class="blink">▎</span> AWAITING EVENT SELECTION
       </div>
@@ -708,56 +708,56 @@
     <div id="attribution-summary" style="display:none"></div>
 
     <div class="panel-section">
-      <div class="panel-header"><span>WELL ATTRIBUTION<span class="info below" data-tip="This lists every disposal well within the search radius of the selected earthquake. Each well shows its estimated causal contribution (CATE) to the quake's magnitude. Wells are sorted by contribution -- biggest contributors first.">i</span></span><span class="meta" id="well-list-meta">[F7]</span></div>
+      <div class="panel-header"><span>WELL ATTRIBUTION<span class="info below" data-tip="Every SWD well within the search radius, ranked by causal contribution (CATE). Each well card shows: distance from epicenter, perforation depth (with DEEP/MID/SHALLOW tag), injection volumes at 30/90/180/365-day windows, wellhead and bottom-hole pressure, and the Causal Forest's CATE estimate with 95% CI. The model controls for fault distance, fault count, well depth, days active, depth class, AND total injection from neighboring wells within 7 km (spatial interference). Click any well card to see its threshold curve.">i</span></span><span class="meta" id="well-list-meta">[F7]</span></div>
       <div id="well-list" class="panel-body empty">—</div>
     </div>
 
     <!-- ─── Charts ─── -->
     <div class="panel-section" id="charts-section" style="display:none">
-      <div class="panel-header"><span>ANALYTICS<span class="info below" data-tip="Three charts that break down the selected earthquake: (1) CATE waterfall showing each well's causal contribution, (2) dose-response curve showing how magnitude changes with volume, (3) injection timeline for the selected well. Click a well card to add its threshold curve.">i</span></span><span class="meta">[F9]</span></div>
+      <div class="panel-header"><span>ANALYTICS<span class="info below" data-tip="Four interactive charts for the selected earthquake: (1) CATE waterfall — each well's causal contribution ranked by magnitude, color-coded by depth class, with 95% CIs. (2) Dose-response curve — the population TMLE relationship between volume and expected magnitude, with well dots showing where each well sits. Red shading marks extrapolation zones (>99th percentile of observed volumes). (3) Injection timeline — 365-day cumulative volume history for the top 5 wells. (4) Threshold curve — click any well card to see its per-well dose-response and regulatory volume cap.">i</span></span><span class="meta">[F9]</span></div>
       <div style="padding:6px 8px 0; font-size:10px; color:var(--amber); letter-spacing:0.08em; font-weight:600;">
-        CATE BY WELL<span class="info below right" data-tip="Each horizontal bar shows one well's estimated causal contribution (CATE) to the selected earthquake. Longer bars = bigger contribution. Red bars are deep wells (>10,000 ft), amber are mid-depth, blue are shallow or negative. Error bars show the 95% confidence interval — if the error bar crosses zero, we can't be sure the well contributed at all. Wells are ranked from top (biggest contributor) to bottom.">i</span>
+        CATE BY WELL<span class="info below right" data-tip="Each horizontal bar is one well's Conditional Average Treatment Effect (CATE) — its estimated causal contribution to this earthquake's magnitude. Red = deep wells (>10,000 ft, near basement), amber = mid-depth, blue = shallow or negative contribution. Error bars are honest 95% CIs from the Causal Forest's sample-splitting variance estimate. If the error bar crosses zero, the contribution is not statistically significant at 95%. The model controls for: fault distance, fault count, depth, days active, depth class, AND neighbor well volumes within 7 km. Labels show rank, last 4 digits of API number, and distance from epicenter.">i</span>
       </div>
       <div id="chart-waterfall" style="height:260px; padding:4px 8px;"></div>
       <div style="padding:6px 8px 0; font-size:10px; color:var(--amber); letter-spacing:0.08em; font-weight:600; border-top:1px solid #2a2a2a;">
-        DOSE-RESPONSE CURVE<span class="info below right" data-tip="The amber curve shows the population-level relationship between injection volume (x-axis) and expected earthquake magnitude (y-axis) from the TMLE analysis. The shaded band is the 95% confidence interval. Colored dots show where each well in this event sits on the curve. Hover a dot to see the well's API number and volume. This curve is nonlinear — a straight line would miss the steep section at moderate volumes.">i</span>
+        DOSE-RESPONSE CURVE<span class="info below right" data-tip="The amber curve shows how expected maximum earthquake magnitude (y-axis) changes with cumulative 365-day injection volume (x-axis), estimated by TMLE with a SuperLearner (NNLS metalearner, 5-fold CV, 4 base learners: Ridge, GBM, XGBoost, RandomForest). The shaded band is the 95% CI from the influence function. Diamond dots show where each well in this event sits on the curve. RED SHADING marks volumes beyond the 99th percentile of observed data — estimates there are extrapolation and should not be trusted for regulatory decisions. The curve is nonlinear by design — TMLE does not impose a straight line.">i</span>
       </div>
       <div id="chart-dose-response" style="height:260px; padding:4px 8px;"></div>
       <div style="padding:6px 8px 0; font-size:10px; color:var(--amber); letter-spacing:0.08em; font-weight:600; border-top:1px solid #2a2a2a;">
-        INJECTION TIMELINE<span class="info below right" data-tip="Shows cumulative 365-day injection volume over time for the top 5 contributing wells. The red dashed vertical line marks the earthquake date. Look for wells that were ramping up volume in the months before the event — those are the ones building pressure. If a well's line is flat or declining before the event, it was less likely to be driving pressure buildup.">i</span>
+        INJECTION TIMELINE<span class="info below right" data-tip="Cumulative 365-day injection volume over time for the top 5 contributing wells (by CATE). The red dashed line marks the earthquake date. Rising curves before the event indicate pressure buildup; flat or declining curves suggest the well was not actively increasing pressure. This chart does NOT show causation — it shows the temporal pattern of the treatment variable. The causal attribution comes from the CATE waterfall above. Use this chart to understand the injection HISTORY that led to the CATE estimates.">i</span>
       </div>
       <div id="chart-timeline" style="height:260px; padding:4px 8px;"></div>
       <div id="chart-threshold" style="height:300px; padding:4px 8px; border-top:2px solid #ff9900; margin-top:8px; display:none;">
         <div style="font-size:10px; color:var(--amber); letter-spacing:0.08em; font-weight:600; padding:4px 0 0 4px;">
-          VOLUME THRESHOLD CURVE<span class="info below right" data-tip="This is a per-well dose-response curve. Click any well card to see it. The amber line shows how that well's CATE changes as you vary its injection volume (holding everything else constant). The cyan vertical line is the well's current volume. The red dashed horizontal line is the regulatory threshold (e.g. 0.03 ML). Where the amber curve crosses the red line tells you the maximum allowable volume for that well. If the curve stays below the threshold at all volumes, the well is low-risk.">i</span>
+          VOLUME THRESHOLD CURVE<span class="info below right" data-tip="Per-well dose-response curve from the Causal Forest. Click any well card to generate it. The amber line shows how that well's CATE changes as you vary its injection volume, holding all other confounders constant (including neighbor well volumes). The cyan vertical line = current operating volume. The red dashed horizontal line = regulatory threshold (default 0.03 ML). Where the amber curve crosses the red line = maximum allowable volume. The shaded band is the 95% CI. If current volume is right of the crossing, the well is operating above the limit and a volume reduction order is warranted.">i</span>
         </div>
       </div>
     </div>
 
     <div id="tmle-context" style="display:none">
       <div class="header-bar">
-        <span>TMLE POPULATION CONTEXT<span class="info below" data-tip="These numbers come from the population-level TMLE analysis -- the average causal effect across ALL wells and events at the selected radius. Think of it as the big-picture view before you zoom into individual wells.">i</span> @ <span id="tmle-radius">7</span> KM</span>
+        <span>TMLE POPULATION CONTEXT<span class="info below" data-tip="Population-level causal effect estimates from Targeted Maximum Likelihood Estimation (TMLE). These are the AVERAGE effects across all wells and events at the selected radius — the big picture before you zoom into individual wells. Methodology: doubly-robust TMLE with NNLS SuperLearner (Ridge, GBM, XGBoost, RandomForest), 5-fold cross-validated Q, data-adaptive histogram density for g (~140 bins), H-truncation at 99th percentile, Bessel-corrected cluster-IF standard errors. Validated against R tlverse to <0.1%.">i</span> @ <span id="tmle-radius">7</span> KM</span>
         <span class="right">[F8]</span>
       </div>
       <div class="body">
         <div class="row">
-          <span class="label">TE (P90 vs P10)<span class="info below" data-tip="Total Effect: the difference in expected earthquake magnitude between a high-volume well (90th percentile) and a low-volume well (10th percentile). A bigger number means injection volume has a larger overall impact on earthquake size.">i</span></span>
+          <span class="label">TE (P90 vs P10)<span class="info below" data-tip="Total Effect: the causal difference in expected maximum earthquake magnitude between a high-volume well (90th percentile of cumulative 365-day injection) and a low-volume well (10th percentile), after controlling for fault distance, fault count, depth, days active, and neighbor well volumes. Computed via TMLE mediation decomposition (Zheng & van der Laan, 2012). A larger TE means injection volume has a stronger causal impact on seismicity at this radius.">i</span></span>
           <span class="val" id="tmle-te">—</span>
         </div>
         <div class="row">
-          <span class="label">NDE (UNOBS.)<span class="info below" data-tip="Natural Direct Effect: the causal effect through pathways NOT captured by measured wellhead pressure (WHP). This is mostly pore-pressure diffusion at fault depth that surface gauges can't see. A large NDE does NOT mean 'mechanical' — it means WHP is a poor window into the true pressure at fault depth.">i</span></span>
+          <span class="label">NDE (UNOBS.)<span class="info below" data-tip="Natural Direct Effect: the part of the causal effect that does NOT go through measured wellhead pressure. A large NDE does NOT mean earthquakes are caused by 'mechanical stress' rather than pressure. The physical mechanism is almost certainly pore-pressure diffusion at fault depth. The NDE is large because wellhead pressure (measured at the surface) is a poor proxy for what's happening at fault depth (8-10 km underground). If we had downhole pressure gauges, the NIE would likely dominate. This number tells us about measurement limitations, not physics.">i</span></span>
           <span class="val" id="tmle-nde">—</span>
         </div>
         <div class="row">
-          <span class="label">NIE (MEAS. WHP)<span class="info below" data-tip="Natural Indirect Effect: the part explained by variation in measured wellhead pressure. Small because WHP fluctuates with pump ops but doesn't capture the slow pore-pressure buildup at fault depth that triggers earthquakes. A small NIE does NOT mean pressure doesn't matter — it means our measurement is limited.">i</span></span>
+          <span class="label">NIE (MEAS. WHP)<span class="info below" data-tip="Natural Indirect Effect: the causal effect explained by variation in measured wellhead pressure (WHP). This is small because WHP fluctuates with daily pump operations but does NOT capture the slow, steady pore-pressure buildup along fracture corridors at fault depth. A small NIE does NOT mean pressure doesn't matter — it means our SURFACE MEASUREMENT captures very little of the true pressure signal 8-10 km underground. Sensitivity analysis (W×M interaction test, p=0.91) confirms the additive NDE+NIE decomposition is valid.">i</span></span>
           <span class="val" id="tmle-nie">—</span>
         </div>
         <div class="row">
-          <span class="label">% MEDIATED<span class="info below" data-tip="What percentage of the total effect goes through the pressure pathway (NIE / TE). If 30% is mediated, it means 30% of the causal effect works through pressure buildup, and 70% works through other mechanisms.">i</span></span>
+          <span class="label">% MEDIATED<span class="info below" data-tip="Percentage of the total effect that goes through MEASURED wellhead pressure (NIE / TE). This is typically small — NOT because pressure doesn't matter, but because our surface pressure measurement is a poor proxy for pressure at fault depth. Sensitivity analysis shows the indirect (pressure) pathway is robust to model specification (±7-18% across radii), while the direct effect is more sensitive. For policy: the total effect and per-well CATEs are more reliable than the NDE/NIE decomposition.">i</span></span>
           <span class="val" id="tmle-pct">—</span>
         </div>
         <div class="row">
-          <span class="label">E[Y | A=1E7 BBL]<span class="info below" data-tip="The expected maximum earthquake magnitude if a well injects 10 million barrels over the lookback window. This is one point on the dose-response curve -- it tells you what earthquake size to expect at a specific volume level.">i</span></span>
+          <span class="label">E[Y | A=1E7 BBL]<span class="info below" data-tip="The expected maximum earthquake magnitude if a well injects 10 million barrels cumulative over 365 days, from the TMLE dose-response curve. This is ONE POINT on the curve — the full curve is in the dose-response chart below. Note: 10M BBL is at the 99th percentile of observed volumes — this estimate is at the edge of training support and should be interpreted with caution. For volumes below 1M BBL (well-supported range), the dose-response estimates are more reliable.">i</span></span>
           <span class="val" id="tmle-dose">—</span>
         </div>
       </div>
@@ -1006,10 +1006,10 @@
     const top = a.top_contributor;
     el.style.display = "block";
     el.innerHTML = `
-      <div class="header-bar">PER-WELL CATE<span class="info below" data-tip="CATE = each well's individual causal contribution to this earthquake's magnitude. Computed by a Causal Forest model that accounts for well depth, fault distance, and injection history. Positive = contributed to the quake. Negative = may have reduced stress.">i</span> · CAUSAL FOREST DML<span class="info below" data-tip="Causal Forest with Double Machine Learning: a method that estimates per-well effects while correcting for confounders. 'Honest' means it uses separate data to build the model vs estimate effects, so it can't cheat. 'DML' means it's doubly robust.">i</span></div>
+      <div class="header-bar">PER-WELL CATE<span class="info below" data-tip="CATE = Conditional Average Treatment Effect. Each well's individual estimated causal contribution to this earthquake's magnitude. The model asks: 'How much higher is the expected max magnitude BECAUSE this well injected what it did, compared to a counterfactual where it injected nothing?' Positive = contributed to the quake. Negative = may have reduced stress on this fault. The model controls for fault distance, fault count, depth, days active, depth class, AND total injection from neighboring wells within 7 km (spatial interference confounder, VIF=1.12).">i</span> · CAUSAL FOREST DML<span class="info below" data-tip="Causal Forest with Double Machine Learning (Athey, Tibshirani & Wager 2019; Chernozhukov et al. 2018). 'Honest' = uses separate data to build tree structure vs estimate effects (prevents overfitting). 'DML' = cross-fitted XGBoost nuisance models for both the outcome E[Y|L] and treatment E[A|L]. Doubly robust: consistent if EITHER the outcome or treatment model is correct. Confounders: fault distance, fault count, perf depth, days active, depth class (shallow/mid/deep), neighbor well volumes. Per-well 95% CIs from the forest's honest variance estimate.">i</span></div>
       <div class="body">
         <div class="total">
-          Σ CATE = ${fmtML(a.positive_total_ml)}<span class="unit">ML  (positive contributors)<span class="info below" data-tip="The sum of all POSITIVE per-well causal contributions. This is the total estimated anthropogenic (human-caused) addition to the earthquake's magnitude from all nearby disposal wells.">i</span></span>
+          Σ CATE = ${fmtML(a.positive_total_ml)}<span class="unit">ML  (positive contributors)<span class="info below" data-tip="Sum of all POSITIVE per-well CATEs. This estimates the total anthropogenic (human-caused) addition to the earthquake's magnitude from all SWD wells within the search radius, controlling for geology and neighbor well interference. If this number is small and every well's CI crosses zero, this is 'distributed causation' — injection caused the event collectively but no individual well can be identified. In that case, use the population TMLE shift analysis (bottom panel) for area-wide policy instead of targeted shut-ins.">i</span></span>
         </div>
         <div class="top-line">
           <span class="key">TOP</span>
@@ -1081,16 +1081,16 @@
           attrBlock = `
             <div class="attribution">
               <div class="attr-label">
-                <span>CATE SHARE<span class="info below" data-tip="What percentage of the total positive causal effect comes from this well. If one well has 25% share, it's responsible for a quarter of the estimated anthropogenic contribution.">i</span></span>
+                <span>CATE SHARE<span class="info below" data-tip="This well's percentage of the total positive CATE sum. If one well has 25% share, the Causal Forest estimates it's responsible for a quarter of the total anthropogenic contribution. Focus regulatory action on wells with the largest shares AND whose 95% CIs exclude zero. Wells with large shares but CIs crossing zero are suggestive but not statistically confirmed.">i</span></span>
                 <span class="share-pct">${sharePct.toFixed(0)}%</span>
               </div>
               <div class="attr-bar">
                 <div class="fill" style="width:${Math.min(100, sharePct).toFixed(1)}%"></div>
               </div>
               <div class="attr-detail">
-                <span class="label">CATE<span class="info" data-tip="Conditional Average Treatment Effect: this well's estimated causal contribution to the earthquake magnitude (in ML units). Positive = added to the quake. Negative = may have relieved stress.">i</span></span>
+                <span class="label">CATE<span class="info" data-tip="Conditional Average Treatment Effect in ML (magnitude) units. 'How much did this well's injection add to the expected maximum earthquake magnitude, compared to if it had not been injecting?' The estimate controls for geology, well characteristics, AND what neighboring wells were doing. A CATE of +0.05 means this well added an estimated 0.05 ML. This is a CAUSAL estimate, not a correlation — it uses a Causal Forest with doubly-robust cross-fitted nuisance models.">i</span></span>
                 <span class="val ${isNeg ? 'neg-contribution' : 'pos-contribution'}">${fmtML(attr.cate_ml)} ML</span>
-                <span class="label">95% CI<span class="info" data-tip="95% Confidence Interval: we're 95% sure the true CATE is between these two numbers. If this range includes zero, we can't be confident this well contributed at all.">i</span></span>
+                <span class="label">95% CI<span class="info" data-tip="95% Confidence Interval from the Causal Forest's honest sample-splitting variance estimate. We're 95% sure the true CATE is between these two numbers. KEY: if the CI EXCLUDES zero (both bounds positive), this well's contribution is statistically significant at the 5% level. If the CI CROSSES zero, the data is too noisy to confirm this well contributed — but 'inconclusive' is NOT the same as 'innocent.' A narrow CI near zero is more exonerating than a wide CI that happens to cross zero.">i</span></span>
                 <span class="val">[${ciLo}, ${ciHi}]</span>
                 <span class="label">VOL 365D</span>
                 <span class="val">${fmtVol(attr.cum_vol_window)} BBL</span>
@@ -1112,9 +1112,9 @@
             </div>
             <span style="display:inline-block;padding:1px 6px;font-size:9px;font-weight:700;letter-spacing:0.05em;border:1px solid ${depthColor};color:${depthColor};margin-bottom:4px;">${depthFt > 0 ? fmtFt(depthFt) + ' FT · ' + depthClass : 'UNKNOWN DEPTH'}</span>
             <div class="features">
-              <span class="label">DEPTH<span class="info" data-tip="Perforation depth: how far underground the well injects water, measured in feet. Deeper wells (>10,000 ft) are closer to basement rock where most earthquakes happen.">i</span></span>
+              <span class="label">DEPTH<span class="info" data-tip="Perforation depth in feet — how far underground the well injects water, measured from the midpoint of the completed injection interval. SHALLOW (<6,000 ft): typically carbonate formations like San Andres/Grayburg. MID (6,000-10,000 ft): transitional. DEEP (>10,000 ft): near crystalline basement (Ellenburger, Devonian) where most induced earthquakes nucleate. Depth is a key confounder — deeper wells have systematically different causal effects. The model uses depth as both a continuous confounder AND a categorical depth-class proxy.">i</span></span>
               <span class="val">${fmtFt(p.perf_depth_ft)} FT</span>
-              <span class="label">DAYS ON<span class="info" data-tip="How many days this well has been actively injecting since it first started. Longer-running wells have had more time to build up pressure in the surrounding rock.">i</span></span>
+              <span class="label">DAYS ON<span class="info" data-tip="Days since this well's first injection record in the RRC H-10 data. A confounder in the causal model — longer-running wells have had more time to build cumulative pore pressure AND are more likely to appear near historical events (survivorship). The model controls for days_active to separate the effect of volume from the effect of duration.">i</span></span>
               <span class="val">${fmtDays(p.days_active)}</span>
 
               <span class="label">VOL D</span>
@@ -1129,7 +1129,7 @@
 
               <span class="label">CUM 180D</span>
               <span class="val">${fmtVol(p.cum_vol_180d_BBL)}</span>
-              <span class="label">CUM 365D<span class="info" data-tip="Total volume of water this well injected over the past 365 days (in barrels). This is the main 'treatment' variable in the causal analysis -- the number the model uses to estimate how much the well contributed.">i</span></span>
+              <span class="label">CUM 365D<span class="info" data-tip="Cumulative injection volume over the past 365 days in barrels (BBL). This is the TREATMENT variable in the causal analysis — the quantity the model estimates the effect of. The CATE answers: 'what is the effect of this specific cumulative volume compared to zero?' The model holds constant: fault distance, fault count, depth, days active, depth class, AND total injection from all neighboring wells within 7 km. So the CATE is the effect of THIS well's injection, not the cluster's.">i</span></span>
               <span class="val">${fmtVol(p.cum_vol_365d_BBL)}</span>
 
               <span class="label">PSI VW 30D</span>
@@ -1137,7 +1137,7 @@
               <span class="label">PSI VW 365D</span>
               <span class="val">${fmtPsi(p.vw_avg_psig_365d)}</span>
 
-              <span class="label">BHP 30D<span class="info" data-tip="Bottom-Hole Pressure: the estimated pressure at the bottom of the well (not at the surface). Calculated by adding the weight of the water column to the surface pressure. This is more physically meaningful than surface pressure for triggering faults.">i</span></span>
+              <span class="label">BHP 30D<span class="info" data-tip="Estimated Bottom-Hole Pressure (volume-weighted 30-day average). Calculated as: BHP = WHP + 0.45 psi/ft × perforation depth. The 0.45 psi/ft is the hydrostatic gradient for brine. BHP is more physically meaningful than surface WHP because it approximates the pressure at the injection interval — closer to what the fault 'sees.' Used as the MEDIATOR in the causal DAG: Volume → Pressure → Seismicity. However, BHP is still a surface-derived estimate, not a true downhole measurement.">i</span></span>
               <span class="val">${fmtPsi(p.bhp_vw_avg_30d)}</span>
               <span class="label">BHP 365D</span>
               <span class="val">${fmtPsi(p.bhp_vw_avg_365d)}</span>

@@ -131,9 +131,10 @@
         <span class="step-num">2.</span> Click the earthquake. The sidebar shows the event detail: location, magnitude, depth, date.<br>
         <span class="step-num">3.</span> Set the <strong>radius</strong> slider (default 7 km). This controls how far from the epicenter to search for disposal wells.<br>
         <span class="step-num">4.</span> The <strong>WELL ATTRIBUTION</strong> panel populates with every SWD well in that radius, ranked by causal contribution (CATE).<br>
-        <span class="step-num">5.</span> Look at the <strong>CATE waterfall chart</strong>. Each bar is a well's estimated causal contribution to the earthquake's magnitude.<br>
-        <span class="step-num">6.</span> Check the <strong>95% confidence intervals</strong>. Wells where the CI excludes zero are statistically significant contributors. Wells where the CI crosses zero are ambiguous.<br>
-        <span class="step-num">7.</span> Click the top contributing well's card to see its <strong>threshold curve</strong> — this shows exactly what volume cap would bring that well's contribution below the regulatory limit.
+        <span class="step-num">5.</span> Look at the <strong>CATE waterfall chart</strong>. Each bar is a well's estimated causal contribution to the earthquake's magnitude. The model controls for geology (fault distance, fault count, depth, days active) AND what neighboring wells are injecting (spatial interference).<br>
+        <span class="step-num">6.</span> Check the <strong>95% confidence intervals</strong>. Wells where the CI excludes zero are statistically significant contributors. Wells where the CI crosses zero are ambiguous — inconclusive is not the same as innocent.<br>
+        <span class="step-num">7.</span> Click the top contributing well's card to see its <strong>threshold curve</strong> — this shows exactly what volume cap would bring that well's contribution below the regulatory limit.<br>
+        <span class="step-num">8.</span> Click <strong>"&darr; Download Report"</strong> in the attribution summary to generate a timestamped PDF with the full per-well CATE table, charts, CIs, and methodology citation — ready for regulatory filings.
       </div>
 
       <div class="callout">
@@ -192,10 +193,13 @@
         Key points for legal settings:
       </p>
       <ul>
-        <li><strong>Doubly robust:</strong> The estimate is valid if either the outcome model or the treatment model is correctly specified. It doesn't require both to be perfect.</li>
-        <li><strong>Confidence intervals:</strong> Every CATE comes with a 95% CI derived from honest sample splitting (not bootstrapping). A CI excluding zero means statistical significance at the 5% level.</li>
+        <li><strong>Doubly robust:</strong> The estimate is valid if either the outcome model or the treatment model is correctly specified. It doesn't require both to be perfect. The SuperLearner uses 4 diverse algorithms (Ridge, GBM, XGBoost, RandomForest) with an NNLS metalearner ensuring proper convex combination of weights.</li>
+        <li><strong>Confidence intervals:</strong> Every CATE comes with a 95% CI derived from honest sample splitting (not bootstrapping). CIs use Bessel-corrected cluster-robust influence-function standard errors. A CI excluding zero means statistical significance at the 5% level.</li>
         <li><strong>Validated:</strong> The Python TMLE implementation was cross-checked against the gold-standard R tlverse ecosystem and agreed to within 0.06%.</li>
-        <li><strong>Conservative:</strong> The Causal Forest uses honest estimation — separate data for building the tree structure and for estimating effects — which prevents overfitting and produces conservative CIs.</li>
+        <li><strong>Conservative:</strong> The Causal Forest uses honest estimation — separate data for building the tree structure vs estimating effects — with 5-fold cross-validation.</li>
+        <li><strong>Spatial interference:</strong> The model controls for total injection from all neighboring wells within 7 km, so the CATE for well A is not contaminated by what well B next door is doing. This addresses a key critique in the spatial causal inference literature.</li>
+        <li><strong>Sensitivity tested:</strong> W&times;M interaction (p=0.91, mediation decomposition valid), formation sensitivity (indirect pathway robust), positivity diagnostics (max H=4.8, targeting step stable), injection rate multicollinearity (tested and rejected, VIF=5.5).</li>
+        <li><strong>Downloadable report:</strong> Every analysis can be exported as a timestamped PDF with full per-well table, charts, and methodology citations.</li>
       </ul>
     </div>
   </div>
@@ -300,10 +304,13 @@
         did, compared to a counterfactual where it injected nothing?"
       </p>
       <p>
-        A CATE of +0.05 ML means this well's injection activity is estimated to have added
-        0.05 to the maximum magnitude within the search radius on the event date. It is a
-        <em>causal</em> estimate, not a correlation — it accounts for geology, depth, fault
-        proximity, and other confounders.
+        A CATE of +0.05 ML means this well's injection is estimated to have added 0.05 to the
+        expected maximum magnitude within the search radius on the event date. It is a
+        <em>causal</em> estimate, not a correlation — it controls for fault distance, fault
+        segment count, perforation depth, days active, depth class (shallow/mid/deep), AND
+        total injection from all neighboring wells within 7 km (spatial interference). This
+        last confounder is critical: it means the CATE for well A reflects well A's own
+        contribution, not the effect of the whole cluster around it.
       </p>
     </div>
 
@@ -362,10 +369,19 @@
     <div class="faq-item">
       <h3>What does "doubly robust" mean?</h3>
       <p>
-        The TMLE and Causal Forest methods both fit two separate models: one predicting the
-        outcome (earthquake magnitude) and one predicting the treatment (injection volume).
-        "Doubly robust" means the causal estimate is correct if <strong>either</strong> model
-        is right — you don't need both to be perfect. It's like having a backup parachute.
+        Both TMLE and the Causal Forest fit two separate models: an <strong>outcome model Q</strong>
+        (predicting earthquake magnitude from volume + confounders) and a <strong>treatment model g</strong>
+        (predicting injection volume from confounders alone). "Doubly robust" means: if
+        <strong>either</strong> model is correctly specified, the causal estimate is unbiased.
+        You don't need both to be perfect — just one.
+      </p>
+      <p>
+        In practice: the outcome model uses a SuperLearner with 4 base learners (Ridge regression,
+        Gradient Boosting, XGBoost, RandomForest) combined via NNLS (non-negative least squares)
+        metalearner. The treatment density model uses a ~140-bin histogram with XGBoost multinomial
+        classifier. Both are cross-validated (5-fold). This diversity means even if one algorithm
+        fails, the others compensate — and doubly-robust protection means the overall estimate
+        stays valid.
       </p>
     </div>
 
@@ -375,9 +391,17 @@
         All data comes from public sources:
       </p>
       <ul>
-        <li><strong>Earthquakes:</strong> TexNet Seismic Monitoring Program catalog (University of Texas Bureau of Economic Geology). 7,424 quality-filtered events, April 2026 release.</li>
-        <li><strong>Injection:</strong> Railroad Commission of Texas (RRC) H-10 injection reports. 1,056 SWD wells, 903,887 well-day observations.</li>
-        <li><strong>Faults:</strong> Published fault maps for the Permian Basin (used for fault distance and segment count confounders).</li>
+        <li><strong>Earthquakes:</strong> TexNet Seismic Monitoring Program catalog (University of Texas Bureau of Economic Geology). 7,424 quality-filtered events, April 2026. Updated daily from IRIS FDSN web service via automated ingestion.</li>
+        <li><strong>Injection:</strong> Railroad Commission of Texas (RRC) H-10 injection reports. 1,056 SWD wells, 903,887 well-day observations. Updated when TexNet publishes new Google Drive snapshots (checked daily).</li>
+        <li><strong>Faults:</strong> Horne et al. (2023) Midland Basin basement fault segment map (~32,000 segments at ~1 km each).</li>
+      </ul>
+      <p><strong>Derived features:</strong></p>
+      <ul>
+        <li>Cumulative injection volumes at 30/90/180/365-day lookback windows</li>
+        <li>Volume-weighted average wellhead pressure + depth-corrected BHP (0.45 psi/ft hydrostatic gradient)</li>
+        <li>Nearest fault distance (km) and fault segment count within search radius</li>
+        <li>Depth-class proxy (shallow &lt;6K ft / mid 6-10K ft / deep &gt;10K ft)</li>
+        <li><strong>Neighbor well volume</strong> — total cum_vol_365d from all SWD wells within 7 km (spatial interference confounder)</li>
       </ul>
     </div>
 
@@ -453,13 +477,20 @@
     <div class="faq-item">
       <h3>What radius should I use?</h3>
       <p>
-        The default of <strong>7 km</strong> is a good starting point. At this radius, the
-        causal signal is strong enough to detect but focused enough to be actionable.
+        The default of <strong>7 km</strong> is a good starting point. The TMLE shift analysis
+        found statistically significant causal effects at <strong>17 of 20 radii</strong> (4&ndash;20 km).
+        Radii 1&ndash;3 km are not significant due to limited sample size (few wells that close
+        to events).
       </p>
       <ul>
-        <li><strong>1-4 km:</strong> Very local. Only the nearest wells. Strong per-well signal but may miss wells contributing through far-field pressure diffusion.</li>
-        <li><strong>5-10 km:</strong> The sweet spot for most regulatory decisions. Balances signal strength with coverage.</li>
-        <li><strong>11-20 km:</strong> Captures far-field effects. More wells, larger population effect, but individual per-well CATEs get smaller as the effect is diluted across more wells.</li>
+        <li><strong>1-3 km:</strong> Very local. Few wells, limited statistical power. TMLE shift
+        not significant at these radii. Per-well CATEs may be large but noisy.</li>
+        <li><strong>4-10 km:</strong> The sweet spot for most regulatory decisions. Strong per-well
+        signal, statistically significant population effects, balances near-field mechanical and
+        far-field pressure-mediated pathways.</li>
+        <li><strong>11-20 km:</strong> Captures far-field pressure diffusion. More wells, larger
+        population effect, but individual CATEs get smaller. The effect is predominantly
+        pressure-mediated at these distances.</li>
       </ul>
     </div>
 
@@ -468,8 +499,10 @@
       <p>
         Yes. Causal Forest models are trained and deployed at all 20 radii (1&ndash;20 km).
         Per-well CATE attribution, confidence intervals, and threshold curves are available
-        at every radius. The population TMLE estimates (shift, dose-response, mediation)
-        are also available at all 20 radii.
+        at every radius. All models include the spatial interference confounder
+        (<code>neighbor_cum_vol_7km</code>). Population TMLE estimates (shift, dose-response,
+        mediation) are also available at all 20 radii with the v3 methodology (NNLS metalearner,
+        5-fold CV, data-adaptive density bins, H-truncation, Bessel-corrected SEs).
       </p>
     </div>
 
@@ -546,16 +579,26 @@
     <div class="faq-item">
       <h3>How often is the data updated?</h3>
       <p>
-        The current dashboard uses the April 2026 TexNet catalog and RRC injection data.
-        The pipeline can be re-run with new data releases. The process is:
+        <strong>Earthquakes:</strong> Updated daily. An automated script (<code>auto_ingest.py</code>)
+        fetches new events from the IRIS FDSN web service every morning at 6 AM UTC and merges them
+        into the event catalog. It also checks Google Drive for updated TexNet injection data.
+      </p>
+      <p>
+        <strong>Injection data:</strong> Updated when TexNet publishes a new snapshot (typically
+        monthly/quarterly). The auto-ingest script polls Google Drive daily and downloads
+        automatically when a new version is detected.
+      </p>
+      <p>
+        <strong>Models:</strong> After new injection data arrives, a full pipeline rerun is needed:
       </p>
       <ol>
-        <li>Download new TexNet event CSV and RRC injection CSV</li>
-        <li>Run the pipeline (<code>run_all.py</code>) — takes ~10 minutes with parallelization</li>
-        <li>Re-train Causal Forest models (<code>build_causal_forest.py</code>) — ~40 min per radius</li>
-        <li>Re-run TMLE sweep (<code>tmle_run_parallel.py</code>) — ~60 min for all radii</li>
-        <li>Restart the dashboard to pick up new data files</li>
+        <li>Panel rebuild + spatial join (~10 min with 16 workers)</li>
+        <li>TMLE shift + dose-response (~4 hours with 16 workers, 5-fold CV, 4 base learners)</li>
+        <li>Causal Forest retraining at all 20 radii (~10 min with 8 workers)</li>
+        <li>Docker container rebuild + restart (~1 min)</li>
       </ol>
+      <p>The dashboard ticker bar shows the data vintage: latest event date, TMLE model date,
+      and Causal Forest model date.</p>
     </div>
 
     <div class="faq-item">
@@ -567,6 +610,123 @@
         programmatically. See the <a href="/docs" style="color:var(--cyan);">API documentation</a>
         for endpoint details.
       </p>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <div class="faq-section">
+    <h2>Methodology Details</h2>
+
+    <div class="faq-item">
+      <h3>What is the spatial interference confounder?</h3>
+      <div class="a">
+        <p>Disposal wells within a few kilometers of each other share pressure fields. If well A
+        injects heavily, the pore pressure at well B's location increases too. Our original model
+        assumed each well's effect was independent (the SUTVA assumption). This is physically wrong.</p>
+        <p>To address this, the model includes <strong>neighbor_cum_vol_7km</strong> — the total
+        cumulative 365-day injection volume from all other SWD wells within 7 km. This is computed
+        for each well using a BallTree spatial query on well coordinates. VIF = 1.12 (no
+        multicollinearity with the treatment).</p>
+        <p>With this confounder, the CATE for well A answers: "what is well A's causal contribution,
+        <em>holding the total injection from all nearby wells constant?</em>" This separates
+        the individual well's effect from the cluster's collective pressure contribution.</p>
+        <p>Impact: adding neighbor volume increased the estimated shift effect by +24% at 7 km,
+        consistent with the expectation that controlling for nearby wells sharpens the per-well estimate.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>How does the SuperLearner work?</h3>
+      <div class="a">
+        <p>The SuperLearner is an ensemble machine learning method that combines multiple algorithms
+        to get the best prediction. Instead of choosing one algorithm, it:</p>
+        <ol>
+          <li>Trains 4 different algorithms on the data: Ridge regression (linear), Gradient Boosting
+          (sequential trees), XGBoost (parallel trees), and RandomForest (bagged trees)</li>
+          <li>Uses 5-fold cross-validation to evaluate each algorithm's performance on held-out data</li>
+          <li>Assigns weights to each algorithm via NNLS (non-negative least squares), so better
+          algorithms get more weight and no algorithm gets a negative weight</li>
+          <li>The final prediction is the weighted average of all 4 algorithms</li>
+        </ol>
+        <p>This matters because the SuperLearner is used for both the <strong>outcome model Q</strong>
+        (predicting earthquake magnitude) and is part of the doubly-robust guarantee: even if
+        some algorithms in the stack are badly wrong, the ensemble adapts. The NNLS metalearner
+        ensures proper convex combination (all weights &ge; 0, sum to 1), which is what the
+        tlverse (R) implementation uses by default.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>Can I download a PDF report?</h3>
+      <div class="a">
+        <p>Yes. After selecting an event and viewing its attribution, click <strong>"&darr; Download
+        Report"</strong> in the attribution summary panel. This generates a regulatory-ready PDF with:</p>
+        <ul>
+          <li>Event details (ID, date, magnitude, location, depth)</li>
+          <li>CATE waterfall chart (embedded matplotlib rendering)</li>
+          <li>Per-well attribution table (API, distance, CATE, 95% CI, depth, volume, significance flag)</li>
+          <li>Statistically significant contributors highlighted</li>
+          <li>Population TMLE context (TE, NDE, NIE, % mediated)</li>
+          <li>Data vintage and methodology citations</li>
+          <li>Generation timestamp</li>
+        </ul>
+        <p>The PDF opens inline in the browser and can be printed or saved. It's designed to be
+        attached to regulatory filings as a formal record of the causal analysis.</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>What changed between model versions?</h3>
+      <div class="a">
+        <p><strong>Original (SPE-228051):</strong> OLS with DoWhy, 50-iteration bootstrap, Baron-Kenny mediation.
+        Found 20&times; amplification at 3-4 km but had data bugs (synthetic zeros) and linearity assumption.</p>
+
+        <p><strong>V1 (TMLE baseline):</strong> Doubly-robust TMLE with HurdleSuperLearner (3 learners, 3-fold CV),
+        histogram density (20 bins), RidgeCV metalearner. Fixed data bugs. 0/20 radii significant (positivity violations, max H=335).</p>
+
+        <p><strong>V2 (7 expert fixes):</strong> NNLS metalearner, data-adaptive bins (~140), data-adaptive positivity floor,
+        H-truncation at 99th percentile, Bessel-corrected SEs, 5-fold CV, RandomForest added. 17/20 radii significant, max H=5.3.</p>
+
+        <p><strong>V3 (current, spatial interference):</strong> Added neighbor_cum_vol_7km as confounder (VIF=1.12).
+        Effect +24% at 7 km. Causal Forest retrained at all 20 radii with neighbor volume. All TMLE and CF models
+        now control for what neighboring wells are doing.</p>
+
+        <p>Full changelog: <a href="https://github.com/Project-Geminae/induced-seismicity/blob/main/CHANGES.md"
+        style="color:var(--cyan);">CHANGES.md on GitHub</a></p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>What are the known limitations?</h3>
+      <div class="a">
+        <ul>
+          <li><strong>Isotropic search radius:</strong> The spatial join uses a circular (isotropic) radius.
+          The Midland Basin has strong NW-SE stress anisotropy — pressure diffuses preferentially along
+          fracture corridors. An elliptical search aligned with S<sub>Hmax</sub> would be more physically
+          motivated but requires regional stress orientation data.</li>
+          <li><strong>Wellhead pressure as mediator:</strong> WHP is a poor proxy for pore pressure at fault
+          depth (8-10 km). The NDE/NIE decomposition reflects measurement limitations, not physics.
+          Downhole pressure gauges would improve the mediation analysis.</li>
+          <li><strong>No time-varying confounding model:</strong> Operators adjust injection rates in response
+          to seismicity (feedback loop). Our cross-sectional TMLE does not model this time-varying
+          confounding. Longitudinal TMLE (LTMLE) would address this but requires significant
+          methodological development.</li>
+          <li><strong>CV-TMLE not yet deployed:</strong> Cross-validated TMLE was implemented but the histogram
+          density estimator is unstable under fold-wise sample splitting. Standard TMLE with H-truncation
+          is used instead. Kernel density estimation would fix this.</li>
+          <li><strong>No HAL base learner:</strong> The Highly Adaptive Lasso (van der Laan's recommended
+          learner for theoretical convergence guarantees) is R-only. Adding it requires an R bridge.</li>
+          <li><strong>Detection bias:</strong> TexNet's earthquake detection threshold varies spatially.
+          Wells in well-monitored areas may show more small events. No spatial detection-bias
+          adjustment is currently applied.</li>
+          <li><strong>Formation data dropped:</strong> Operator-reported formation labels are unreliable.
+          The depth-class proxy captures the same physical distinction but sensitivity analysis shows
+          the direct effect is sensitive to this choice (&plusmn;50-950% at some radii). The indirect
+          (pressure) pathway is robust (&plusmn;7-18%).</li>
+        </ul>
+      </div>
     </div>
   </div>
 

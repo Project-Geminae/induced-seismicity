@@ -5,7 +5,7 @@
 [![Live Dashboard](https://img.shields.io/badge/Dashboard-Live-brightgreen)](https://tinyurl.com/ywf39tmv)
 [![SPE-228051](https://img.shields.io/badge/SPE-228051-blue)](https://doi.org/10.2118/228051-MS)
 
-> **Paper:** Matthews, Hennings & Lund Snee (2025). *A Causal Inference Framework for Assessing the Relationship Between Saltwater Disposal and Induced Seismicity in the Permian Basin.* SPE-228051-MS.
+> **Paper:** Matthews, Molak, Reudelhuber, Meek, Rensi & Ayala (2025). *A Causal Inference Framework for Assessing the Relationship Between Saltwater Disposal and Induced Seismicity in the Permian Basin.* SPE-228051-MS.
 
 ---
 
@@ -28,20 +28,21 @@ Interactive map of 7,424 TexNet earthquakes + 1,056 RRC SWD wells. Click any eve
 ## Causal DAG
 
 ```
-        G₁   G₂   G₃   G₄
-        (fault dist, fault count, depth, days active)
-         ↓     ↓    ↓    ↓     ← controlled for
+        G₁   G₂   G₃   G₄   G₅
+        (fault dist, fault count, depth, days active, neighbor vol)
+         ↓     ↓    ↓    ↓    ↓    ← controlled for
          W  →  P  →  S
       (volume) (pressure) (seismicity)
 ```
 
 - **W → P → S**: Injection volume builds pore pressure, which triggers fault slip
 - **G → W, G → S**: Geology confounds both injection location and fault activity
-- By controlling for G₁–G₄, the remaining W→P→S link is **causal, not correlational**
+- **G₅ (neighbor well volumes)**: Total injection from all SWD wells within 7 km — addresses spatial interference (SUTVA violation). VIF = 1.12.
+- By controlling for G₁–G₅, the remaining W→P→S link is **causal, not correlational**
 
 ---
 
-## Key Results (TMLE v2, April 2026)
+## Key Results (TMLE v3 + Spatial Interference, April 2026)
 
 ### Shift Intervention (10% volume reduction)
 
@@ -49,7 +50,7 @@ Interactive map of 7,424 TexNet earthquakes + 1,056 RRC SWD wells. Click any eve
 |---|---|---|---|
 | **17 / 20** | +8.8e-3 | 6.7e-3 | **5.3** |
 
-*Previous TMLE (v1) had 0/20 significant radii due to positivity violations (max H = 335). Seven methodological fixes resolved this.*
+*Evolution: v1 (baseline) had 0/20 significant radii (max H = 335). Seven methodological fixes (v2) resolved positivity violations. Spatial interference confounder (v3) increased effect +24% at 7 km.*
 
 ### Per-Well Attribution (M4.8 event, texnet2025edml, 10 km)
 
@@ -69,12 +70,23 @@ Interactive map of 7,424 TexNet earthquakes + 1,056 RRC SWD wells. Click any eve
 | 5-fold CV (was 3-fold) | More honest cross-fitted Q estimates |
 | RandomForest added to SuperLearner | 4 diverse base learners (was 3) |
 
+### V3: Spatial Interference Confounder
+
+| Feature | Value |
+|---|---|
+| `neighbor_cum_vol_7km` | Total cum_vol_365d from all SWD wells within 7 km |
+| VIF with treatment | **1.12** (no multicollinearity) |
+| Effect on shift ψ at 7 km | **+24%** (individual well effect sharpened) |
+| Causal Forest retrained | All 20 radii with neighbor volume |
+
 ### Sensitivity Analyses
 
+- **Spatial interference**: Adding neighbor volume as confounder increased ψ by +24% at 7 km — controlling for nearby wells sharpens per-well attribution. ([`spatiotemporal_join.py`](spatiotemporal_join.py))
 - **Formation vs depth-class proxy**: Total effect ±6–169% across radii; indirect (pressure) pathway robust (±7–18%). Direct effect is sensitive — use population-level results for policy. ([`formation_sensitivity.csv`](formation_sensitivity.csv))
 - **Injection rate as confounder**: Rejected due to multicollinearity (corr=0.89 with treatment). Rate is a deterministic function of cumulative volume. ([`rate_definition_check.py`](rate_definition_check.py))
 - **W×M interaction**: Not significant (p=0.91 at 7km). Mediation decomposition is defensible. ([`model_improvements.py`](model_improvements.py))
 - **Positivity diagnostics**: Dose-response at 10⁸ BBL is pure extrapolation (0 observations). 10⁷ BBL is P99. ([`positivity_diagnostics.csv`](positivity_diagnostics.csv))
+- **CV-TMLE**: Implemented but parked — histogram density unstable under fold-wise splitting. Needs kernel density replacement. ([`tmle_core.py`](tmle_core.py))
 
 ---
 
@@ -116,11 +128,11 @@ python run_all.py --only 9 10 11       # TMLE shift + dose-response + mediation
 | 0 | `swd_data_import.py` | `swd_data_filtered.csv` | 5s |
 | 1 | `seismic_data_import.py` | `texnet_events_filtered.csv` | 2s |
 | 2 | `build_well_day_panel.py` | `well_day_panel.csv` (320 MB) | 15s |
-| 3 | `spatiotemporal_join.py` | `panel_with_outcomes_*.csv` × 20 | 2 min |
+| 3 | `spatiotemporal_join.py` | `panel_with_outcomes_*.csv` × 20 + neighbor volumes | 2 min |
 | 4 | `add_geoscience_to_panel.py` | `panel_with_faults_*.csv` × 20 | 2 min |
 | 5-8 | `dowhy_*.py` | OLS mediation results | 5 min |
-| 9 | `tmle_shift_analysis.py` | `tmle_shift_365d_*.csv` | 1.5 hr |
-| 10 | `tmle_dose_response.py` | `tmle_dose_response_365d_*.csv` | 1.5 hr |
+| 9 | `tmle_shift_analysis.py` | `tmle_shift_365d_*.csv` | ~2.3 hr |
+| 10 | `tmle_dose_response.py` | `tmle_dose_response_365d_*.csv` | ~2.3 hr |
 | 11 | `tmle_mediation_analysis.py` | `tmle_mediation_365d_*.csv` | 30 min |
 
 ### Causal Forest (per-well attribution)
@@ -238,6 +250,8 @@ induced-seismicity/
 ├── rate_definition_check.py       # Injection rate multicollinearity check
 ├── compare_trim_results.py        # Trim vs no-trim TMLE comparison
 ├── evalue_sensitivity.py          # E-value bounds for unmeasured confounding
+├── mediation_sensitivity.py       # Imai et al. (2010) ρ-sensitivity
+├── literature_review.md           # Review of competing spatial CI papers
 │
 ├── # ── Visualization ──
 ├── tmle_visualizations.py         # TMLE result plots
@@ -271,7 +285,7 @@ induced-seismicity/
 @inproceedings{matthews2025causal,
   title={A Causal Inference Framework for Assessing the Relationship Between
          Saltwater Disposal and Induced Seismicity in the Permian Basin},
-  author={Matthews, Lewis and Hennings, Peter and Lund Snee, Jens-Erik},
+  author={Matthews, Lewis and Molak, Aleksander and Reudelhuber, Colton and Meek, Tyler and Rensi, Esteban and Ayala, Isaac},
   booktitle={SPE Annual Technical Conference and Exhibition},
   year={2025},
   publisher={Society of Petroleum Engineers},

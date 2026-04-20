@@ -361,13 +361,15 @@
   </p>
 
   <table class="cmp-table">
-    <thead><tr><th></th><th>OLS (Paper)</th><th>TMLE + Forest (This Work)</th></tr></thead>
+    <thead><tr><th></th><th>OLS (Paper)</th><th>TMLE v3 + Forest (This Work)</th></tr></thead>
     <tbody>
-      <tr><td><strong>Estimator</strong></td><td><span class="tag tag-r">Linear OLS</span></td><td><span class="tag tag-g">Doubly robust TMLE</span></td></tr>
-      <tr><td><strong>Per-well effects</strong></td><td><span class="tag tag-r">Not available</span></td><td><span class="tag tag-g">Causal Forest CATE + CI</span></td></tr>
-      <tr><td><strong>Dose-response</strong></td><td><span class="tag tag-r">Straight line</span></td><td><span class="tag tag-g">Nonparametric curve</span></td></tr>
-      <tr><td><strong>Confidence intervals</strong></td><td><span class="tag tag-a">Assumes equal variance</span></td><td><span class="tag tag-g">Influence-function SEs</span></td></tr>
-      <tr><td><strong>Validation</strong></td><td><span class="tag tag-a">DoWhy refuters</span></td><td><span class="tag tag-g">R tlverse cross-check (&lt;0.1%)</span></td></tr>
+      <tr><td><strong>Estimator</strong></td><td><span class="tag tag-r">Linear OLS</span></td><td><span class="tag tag-g">Doubly robust TMLE (NNLS SuperLearner, 5-fold CV)</span></td></tr>
+      <tr><td><strong>Per-well effects</strong></td><td><span class="tag tag-r">Not available</span></td><td><span class="tag tag-g">Causal Forest CATE + honest CI at all 20 radii</span></td></tr>
+      <tr><td><strong>Spatial interference</strong></td><td><span class="tag tag-r">Not addressed</span></td><td><span class="tag tag-g">Neighbor well volumes controlled (VIF 1.12)</span></td></tr>
+      <tr><td><strong>Dose-response</strong></td><td><span class="tag tag-r">Straight line</span></td><td><span class="tag tag-g">Nonparametric curve with extrapolation warnings</span></td></tr>
+      <tr><td><strong>Significant radii</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">17 / 20 radii (4&ndash;20 km)</span></td></tr>
+      <tr><td><strong>Confidence intervals</strong></td><td><span class="tag tag-a">Assumes equal variance</span></td><td><span class="tag tag-g">Bessel-corrected cluster IF SEs</span></td></tr>
+      <tr><td><strong>Validation</strong></td><td><span class="tag tag-a">DoWhy refuters</span></td><td><span class="tag tag-g">R tlverse (&lt;0.1%) + 6 sensitivity analyses</span></td></tr>
     </tbody>
   </table>
 
@@ -383,7 +385,8 @@
     <div class="card" style="border-color:var(--amber);">
       <div class="label">Per-Well</div>
       <h4>Causal Forest CATE</h4>
-      <p>"How much did this well contribute to this earthquake?" For targeted shut-ins.</p>
+      <p>"How much did <em>this specific well</em> contribute to <em>this specific earthquake</em>,
+      controlling for what neighboring wells were doing?" For targeted shut-ins.</p>
     </div>
     <div class="card" style="border-color:var(--green);">
       <div class="label" style="color:var(--green);">Threshold</div>
@@ -449,6 +452,7 @@
     <div class="stat"><div class="val">7,424</div><div class="lbl">Earthquakes (TexNet)</div></div>
     <div class="stat"><div class="val">1,056</div><div class="lbl">SWD Wells (RRC)</div></div>
     <div class="stat"><div class="val">903,887</div><div class="lbl">Well-Day Observations</div></div>
+    <div class="stat"><div class="val">17/20</div><div class="lbl">Radii Significant</div></div>
     <div class="stat"><div class="val">20</div><div class="lbl">Radii (1&ndash;20 km)</div></div>
   </div>
 </section>
