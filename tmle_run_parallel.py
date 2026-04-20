@@ -75,9 +75,10 @@ def _worker_shift(args: dict) -> dict | None:
     trim_pct = float(args.get("trim_pct", 0.01))
     use_cv = bool(args.get("cv_tmle", False))
     if use_cv:
+        max_n = args.get("max_n")
         result = tmle.cv_tmle_shift(
             df=data, A_col=W, L_cols=confs, Y_col=S, cluster_col="_cluster",
-            shift_pct=shift_pct,
+            shift_pct=shift_pct, max_n=max_n,
         )
     else:
         result = tmle.tmle_shift(
@@ -199,6 +200,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--cv-tmle", action="store_true",
                    help="Use Cross-Validated TMLE (no H-truncation needed). "
                         "~5× slower but principled positivity handling.")
+    p.add_argument("--max-n", type=int, default=None,
+                   help="(CV-TMLE only) Cluster-aware subsample to at most N rows "
+                        "before running. Recommended 50000 with haldensify/HAL.")
     p.add_argument("--radii", type=int, nargs="+", default=RADII,
                    help="Radii (km) to analyze.")
     p.add_argument("--workers", type=int, default=None,
@@ -274,7 +278,8 @@ def main() -> None:
 
     if args.driver == "shift":
         jobs = [{"R": R, "window": args.window, "shift_pct": args.shift,
-                 "trim_pct": args.trim_pct, "cv_tmle": args.cv_tmle}
+                 "trim_pct": args.trim_pct, "cv_tmle": args.cv_tmle,
+                 "max_n": args.max_n}
                 for R in args.radii]
     elif args.driver == "dose":
         jobs = [{"R": R, "window": args.window, "grid": args.grid,

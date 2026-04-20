@@ -872,6 +872,7 @@ def cv_tmle_shift(
     shift_pct: float = 0.10,
     seed: int = 42,
     n_splits: int = 5,
+    max_n: int | None = None,
 ) -> TMLEResult:
     """Cross-Validated TMLE for the multiplicative shift d(a) = a · (1 + δ).
 
@@ -886,7 +887,31 @@ def cv_tmle_shift(
       - No need for H-truncation (positivity handled by sample splitting)
       - Valid inference without Donsker class conditions on nuisance estimators
       - Better CI coverage in finite samples
+
+    max_n: if set, the full dataset is cluster-aware-subsampled to at most
+    max_n rows before running CV-TMLE. Van der Laan's recommended practice
+    when HAL/haldensify nuisance estimation is computationally infeasible
+    at full n — the n^{-1/3} convergence rate is preserved; SE reflects
+    the analysis n. Clusters are drawn whole to preserve within-cluster
+    dependence structure.
     """
+    # Cluster-aware subsample if requested
+    if max_n is not None and len(df) > max_n:
+        rng = np.random.default_rng(seed)
+        clusters_all = df[cluster_col].to_numpy()
+        unique_clusters = np.unique(clusters_all)
+        rng.shuffle(unique_clusters)
+        kept_clusters = []
+        kept_rows = 0
+        for c in unique_clusters:
+            n_c = int((clusters_all == c).sum())
+            if kept_rows + n_c > max_n and kept_rows > 0:
+                break
+            kept_clusters.append(c)
+            kept_rows += n_c
+        mask = np.isin(clusters_all, kept_clusters)
+        df = df.loc[mask].reset_index(drop=True)
+
     n = len(df)
     A = df[A_col].to_numpy(dtype=float)
     L = df[L_cols].to_numpy(dtype=float)
