@@ -171,11 +171,15 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> CausalForestBundle
     Y = COL_OUTCOME_MAX_ML
 
     G_rate = "avg_rate_365d"
+    G_neighbor = "neighbor_cum_vol_7km"
     required = [W, G_dep, G_age, G_fdist, G_fseg, Y, COL_FORMATION, COL_API]
-    # avg_rate_365d is optional — don't fail if missing (old panels)
+    # Optional confounders — don't fail if missing (old panels)
     has_rate = G_rate in panel.columns
+    has_neighbor = G_neighbor in panel.columns
     if has_rate:
         required.append(G_rate)
+    if has_neighbor:
+        required.append(G_neighbor)
     missing = [c for c in required if c not in panel.columns]
     if missing:
         log.error("[%2dkm] missing columns: %s", R, missing)
@@ -190,6 +194,8 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> CausalForestBundle
     fill_cols = [G_dep, G_age, G_fdist, G_fseg]
     if has_rate:
         fill_cols.append(G_rate)
+    if has_neighbor:
+        fill_cols.append(G_neighbor)
     for c in fill_cols:
         sub[c] = sub[c].fillna(sub[c].median())
 
@@ -211,7 +217,10 @@ def fit_one_radius(R: int, window_days: int = WINDOW_DAYS) -> CausalForestBundle
     confounder_cols = [G_dep, G_age, G_fdist, G_fseg, *formation_cols]
     if has_rate:
         confounder_cols.append(G_rate)
-        log.info("[%2dkm] Including avg_rate_365d as confounder (G5)", R)
+        log.info("[%2dkm] Including avg_rate_365d as confounder", R)
+    if has_neighbor:
+        confounder_cols.append(G_neighbor)
+        log.info("[%2dkm] Including neighbor_cum_vol_7km as confounder (spatial interference)", R)
 
     X = sub[confounder_cols].astype(float).to_numpy()
     T = sub[W].astype(float).to_numpy()

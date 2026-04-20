@@ -223,6 +223,73 @@ def write_event_index(events: pd.DataFrame, all_links: pd.DataFrame) -> None:
     log.info("✅  Wrote %s (%d events)", EVENT_INDEX_JSON, len(index))
 
 
+NEIGHBOR_RADIUS_KM = 7  # fixed radius for neighbor volume confounder
+
+def add_neighbor_volumes(panel: pd.DataFrame, wells: pd.DataFrame, tree: BallTree) -> pd.DataFrame:
+    """For each well, compute total cum_vol_365d from all OTHER wells within 7 km.
+
+    This addresses the spatial interference / SUTVA violation: injection at
+    nearby wells affects the pore-pressure field and therefore the seismicity
+    outcome. By including neighbor volume as a confounder, we estimate the
+    effect of well i's injection holding nearby wells' total injection constant.
+
+    Computed once (not per-radius) because the neighbor structure is fixed by
+    well locations — only the event-well link radius varies.
+    """
+    log.info("Computing neighbor_cum_vol_%dkm for %d wells…", NEIGHBOR_RADIUS_KM, len(wells))
+    radius_rad = NEIGHBOR_RADIUS_KM / EARTH_RADIUS_KM
+    coords_rad = np.radians(wells[["Surface Latitude", "Surface Longitude"]].values)
+
+    # For each well, find all OTHER wells within 7 km
+    neighbor_idx = tree.query_radius(coords_rad, r=radius_rad)
+
+    # Build a mapping: API → list of neighbor APIs (excluding self)
+    api_list = wells["API Number"].values
+    neighbor_map = {}
+    for i, neighbors in enumerate(neighbor_idx):
+        # Exclude self (distance = 0)
+        neighbor_apis = [api_list[j] for j in neighbors if j != i]
+        neighbor_map[api_list[i]] = neighbor_apis
+
+    # For each (well, day), sum cum_vol_365d of all neighbor wells on that day
+    # Efficient approach: pre-compute per-well-day cum_vol, then look up neighbors
+    vol_col = "cum_vol_365d_BBL"
+    if vol_col not in panel.columns:
+        log.warning("Column %s not in panel — skipping neighbor volumes", vol_col)
+        panel["neighbor_cum_vol_7km"] = 0.0
+        return panel
+
+    # Index for fast (API, date) lookup
+    panel_indexed = panel.set_index(["API Number", "Date of Injection"])[vol_col]
+
+    # For each well, sum neighbor volumes
+    # This is O(n_wells × avg_neighbors × n_days) — can be slow for large panels
+    # Optimization: compute per-well daily volume, then sum by neighbor list
+    log.info("    Computing per-well-day neighbor sums (this may take a minute)…")
+
+    # Group by API, compute mean cum_vol_365d per well (time-averaged)
+    # This is a simplification: we use the per-well MEAN rather than per-day
+    # to avoid an O(n²) join. The mean captures the structural neighbor exposure.
+    well_mean_vol = panel.groupby("API Number")[vol_col].mean()
+
+    # For each well, sum the mean volumes of its neighbors
+    neighbor_sums = {}
+    for api, neighbors in neighbor_map.items():
+        total = sum(well_mean_vol.get(n, 0) for n in neighbors)
+        neighbor_sums[api] = total
+
+    panel = panel.copy()
+    panel["neighbor_cum_vol_7km"] = panel["API Number"].map(neighbor_sums).fillna(0.0)
+
+    n_with_neighbors = (panel["neighbor_cum_vol_7km"] > 0).sum()
+    log.info("    neighbor_cum_vol_7km: %d/%d well-days have neighbors (%.1f%%)",
+             n_with_neighbors, len(panel), 100 * n_with_neighbors / len(panel))
+    log.info("    Mean neighbor volume: %.0f BBL, Median: %.0f BBL",
+             panel["neighbor_cum_vol_7km"].mean(), panel["neighbor_cum_vol_7km"].median())
+
+    return panel
+
+
 def _process_one_radius(args: dict) -> dict:
     """Worker function for parallel-radius processing.
 
@@ -235,6 +302,7 @@ def _process_one_radius(args: dict) -> dict:
 
     panel, events = load_inputs()
     wells, tree = build_well_tree(panel)
+    panel = add_neighbor_volumes(panel, wells, tree)
     out, links = join_one_radius(panel, events, wells, tree, R)
 
     if not links_only:
@@ -271,6 +339,9 @@ def main() -> None:
         panel, events = load_inputs()
         wells, tree = build_well_tree(panel)
         log.info("Built BallTree on %d unique well locations", len(wells))
+
+        # Spatial interference confounder: neighbor well volumes
+        panel = add_neighbor_volumes(panel, wells, tree)
 
         all_links: list[pd.DataFrame] = []
 

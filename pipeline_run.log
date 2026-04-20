@@ -82,3 +82,39 @@
 2026-04-10 19:45:07,677  INFO      10  killer_visualizations.py                 OK     12.8s
 2026-04-10 19:45:07,677  INFO      11  induced_seismicity_scaling_plots.py      OK     0.9s
 2026-04-10 19:45:07,677  INFO      12  measure_balrog.py                        OK     1.0s
+2026-04-11 22:29:54,025  INFO      INDUCED-SEISMICITY PIPELINE — 2026-04-11 22:29:54
+2026-04-11 22:29:54,026  INFO      Running steps: [0, 1, 2, 3, 4]
+2026-04-11 22:29:54,026  INFO      ======================================================================
+2026-04-11 22:29:54,026  INFO      ▶  swd_data_import.py
+2026-04-11 22:29:54,026  INFO         Filter SWD records to Midland Basin (extended schema)
+2026-04-11 22:29:54,026  INFO      ======================================================================
+2026-04-11 22:30:03,019  INFO      ✓  swd_data_import.py — done in 9.0s
+2026-04-11 22:30:03,019  INFO      ======================================================================
+2026-04-11 22:30:03,019  INFO      ▶  seismic_data_import.py
+2026-04-11 22:30:03,019  INFO         Filter TexNet catalog with quality cuts
+2026-04-11 22:30:03,019  INFO      ======================================================================
+2026-04-11 22:30:03,871  INFO      ✓  seismic_data_import.py — done in 0.9s
+2026-04-11 22:30:03,871  INFO      ======================================================================
+2026-04-11 22:30:03,871  INFO      ▶  build_well_day_panel.py
+2026-04-11 22:30:03,871  INFO         Build (well, day) panel + rolling features + BHP
+2026-04-11 22:30:03,871  INFO      ======================================================================
+2026-04-11 22:30:16,187  INFO      ✓  build_well_day_panel.py — done in 12.3s
+2026-04-11 22:30:16,187  INFO      ======================================================================
+2026-04-11 22:30:16,187  INFO      ▶  spatiotemporal_join.py
+2026-04-11 22:30:16,187  INFO         Spatiotemporal join: events → panel for 1..20 km
+2026-04-11 22:30:16,187  INFO      ======================================================================
+2026-04-11 22:35:09,647  INFO      ✓  spatiotemporal_join.py — done in 293.5s
+2026-04-11 22:35:09,648  INFO      ======================================================================
+2026-04-11 22:35:09,648  INFO      ▶  add_geoscience_to_panel.py
+2026-04-11 22:35:09,648  INFO         Per-well fault distance + per-radius segment counts
+2026-04-11 22:35:09,648  INFO      ======================================================================
+2026-04-11 22:39:41,101  INFO      ✓  add_geoscience_to_panel.py — done in 271.5s
+2026-04-11 22:39:41,102  INFO      ======================================================================
+2026-04-11 22:39:41,102  INFO      PIPELINE COMPLETE — total 587.1s (9.8 min)
+2026-04-11 22:39:41,102  INFO      ======================================================================
+2026-04-11 22:39:41,102  INFO      #   Script                                   Status Elapsed
+2026-04-11 22:39:41,102  INFO      0   swd_data_import.py                       OK     9.0s
+2026-04-11 22:39:41,102  INFO      1   seismic_data_import.py                   OK     0.9s
+2026-04-11 22:39:41,102  INFO      2   build_well_day_panel.py                  OK     12.3s
+2026-04-11 22:39:41,102  INFO      3   spatiotemporal_join.py                   OK     293.5s
+2026-04-11 22:39:41,102  INFO      4   add_geoscience_to_panel.py               OK     271.5s

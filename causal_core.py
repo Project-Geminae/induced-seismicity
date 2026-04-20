@@ -96,6 +96,8 @@ def build_design_matrix(
     P = mediator_column(window_days, use_bhp=use_bhp)
     S = COL_OUTCOME_MAX_ML
     base_confs = confounder_columns(radius_km)
+    # Filter to confounders actually present in the data (backward compat)
+    base_confs = [c for c in base_confs if c in df.columns]
 
     # COL_PERF_DEPTH_FT is already in base_confs; avoid duplicate columns
     cols = list(dict.fromkeys([COL_API, W, P, S, *base_confs]))
@@ -493,6 +495,10 @@ def aggregate_panel_to_event_level(
             G_seg:  (G_seg,  "mean"),
             G_age:  (G_age,  "mean"),
             COL_OUTCOME_MAX_ML: (COL_OUTCOME_MAX_ML, "max"),
+            # Spatial interference: sum neighbor volumes across the cluster
+            **({
+                "neighbor_cum_vol_7km": ("neighbor_cum_vol_7km", "sum"),
+            } if "neighbor_cum_vol_7km" in panel.columns else {}),
         },
     ).reset_index()
 

@@ -73,10 +73,17 @@ def _worker_shift(args: dict) -> dict | None:
     data["_cluster"] = cluster.values
     t0 = time.time()
     trim_pct = float(args.get("trim_pct", 0.01))
-    result = tmle.tmle_shift(
-        df=data, A_col=W, L_cols=confs, Y_col=S, cluster_col="_cluster",
-        shift_pct=shift_pct, trim_pct=trim_pct,
-    )
+    use_cv = bool(args.get("cv_tmle", False))
+    if use_cv:
+        result = tmle.cv_tmle_shift(
+            df=data, A_col=W, L_cols=confs, Y_col=S, cluster_col="_cluster",
+            shift_pct=shift_pct,
+        )
+    else:
+        result = tmle.tmle_shift(
+            df=data, A_col=W, L_cols=confs, Y_col=S, cluster_col="_cluster",
+            shift_pct=shift_pct, trim_pct=trim_pct,
+        )
     elapsed = time.time() - t0
     return {
         "radius_km":     R,
@@ -187,8 +194,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--n-iter-boot", type=int, default=100,
                    help="(mediation driver) Bootstrap iterations. Default 100.")
     p.add_argument("--trim-pct", type=float, default=0.01,
-                   help="(shift, dose) Drop bottom/top trim_pct of treatment "
-                        "before fitting. Default 0.01. Set to 0 to disable.")
+                   help="(shift, dose) Truncate H at (1-trim_pct) percentile. "
+                        "Default 0.01. Ignored if --cv-tmle is set.")
+    p.add_argument("--cv-tmle", action="store_true",
+                   help="Use Cross-Validated TMLE (no H-truncation needed). "
+                        "~5× slower but principled positivity handling.")
     p.add_argument("--radii", type=int, nargs="+", default=RADII,
                    help="Radii (km) to analyze.")
     p.add_argument("--workers", type=int, default=None,
@@ -264,7 +274,7 @@ def main() -> None:
 
     if args.driver == "shift":
         jobs = [{"R": R, "window": args.window, "shift_pct": args.shift,
-                 "trim_pct": args.trim_pct}
+                 "trim_pct": args.trim_pct, "cv_tmle": args.cv_tmle}
                 for R in args.radii]
     elif args.driver == "dose":
         jobs = [{"R": R, "window": args.window, "grid": args.grid,

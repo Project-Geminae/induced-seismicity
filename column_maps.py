@@ -76,6 +76,10 @@ def confounder_columns(radius_km: int) -> list[str]:
     G2 = Fault segment count within radius
     G3 = Injection interval midpoint depth (ft)
     G4 = Days since well first injected
+    G5 = Total cum_vol_365d from all SWD wells within 7 km (spatial interference)
+         Addresses the SUTVA violation: nearby wells share pressure fields.
+         Including neighbor volume allows estimation of "effect of well i's
+         injection, holding nearby wells' total injection constant."
 
     Note 1: formation was previously a confounder (one-hot from operator-reported
     `Current Injection Formations`). Dropped because RRC labels are unreliable.
@@ -97,6 +101,7 @@ def confounder_columns(radius_km: int) -> list[str]:
         fault_segment_col(radius_km),
         COL_PERF_DEPTH_FT,
         COL_DAYS_ACTIVE,
+        "neighbor_cum_vol_7km",
     ]
 
 

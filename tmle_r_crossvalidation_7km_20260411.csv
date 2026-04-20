@@ -1,0 +1,5 @@
+implementation,radius_km,window_days,shift_pct,parameter,estimate,se,ci_low,ci_high,note
+R_txshift_tlverse,7,365,0.10,counterfactual_mean_E[Y_shifted],0.0645,0.0006,0.0634,0.0657,Computed via txshift on minitim with sl3 + tmle3
+Python_tmle_core,7,365,0.10,counterfactual_mean_E[Y_shifted],0.064460,NA,NA,NA,From psi_under_shift in tmle_shift_365d_20260411_005019.csv
+Python_tmle_core,7,365,0.10,baseline_mean_E[Y_baseline],0.063054,NA,NA,NA,From psi_no_shift in tmle_shift_365d_20260411_005019.csv
+Python_tmle_core,7,365,0.10,shift_difference_psi_delta,0.001407,0.000980,-0.000514,0.003327,From psi in tmle_shift_365d_20260411_005019.csv
