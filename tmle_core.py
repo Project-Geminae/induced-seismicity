@@ -626,11 +626,19 @@ class HALDensifyConditionalDensity:
         import rpy2.robjects as ro
         from rpy2.robjects import numpy2ri
         from rpy2.robjects.packages import importr
-        self._converter = ro.default_converter + numpy2ri.converter
+        self._np2ri = numpy2ri
         self._ro = ro
-        with self._converter.context():
-            self._haldensify = importr("haldensify")
-            self._base = importr("base")
+        self._haldensify = importr("haldensify")
+        self._base = importr("base")
+
+    def _to_r_vec(self, arr: np.ndarray):
+        """Convert a 1D numpy array to R FloatVector."""
+        return self._ro.FloatVector(arr.tolist())
+
+    def _to_r_mat(self, arr: np.ndarray):
+        """Convert a 2D numpy array to an R matrix."""
+        flat = self._ro.FloatVector(arr.T.reshape(-1).tolist())
+        return self._ro.r["matrix"](flat, nrow=arr.shape[0], ncol=arr.shape[1])
 
     def fit(self, A: np.ndarray, L: np.ndarray) -> "HALDensifyConditionalDensity":
         A = np.asarray(A, dtype=float)
@@ -645,17 +653,19 @@ class HALDensifyConditionalDensity:
         try:
             self._init_r()
             ro = self._ro
-            with self._converter.context():
-                r_A = ro.FloatVector(A_fit)
-                r_W = ro.r.matrix(L_fit, nrow=L_fit.shape[0], ncol=L_fit.shape[1])
-                r_bins = ro.IntVector(list(self.n_bins))
-                self._hd_fit = self._haldensify.haldensify(
-                    A=r_A, W=r_W,
-                    n_bins=r_bins,
-                    grid_type=self.grid_type,
-                    max_degree=self.max_degree,
-                    smoothness_orders=self.smoothness_orders,
-                )
+            # Build R inputs via plain constructors (no converter context) so
+            # the returned fit object keeps its S3 "haldensify" class tag for
+            # downstream predict() dispatch.
+            r_A = self._to_r_vec(A_fit)
+            r_W = self._to_r_mat(L_fit)
+            r_bins = ro.IntVector(list(self.n_bins))
+            self._hd_fit = self._haldensify.haldensify(
+                A=r_A, W=r_W,
+                n_bins=r_bins,
+                grid_type=self.grid_type,
+                max_degree=self.max_degree,
+                smoothness_orders=self.smoothness_orders,
+            )
         except Exception as e:
             warnings.warn(f"haldensify fit failed ({e}); falling back to uniform density")
             self._hd_fit = None
@@ -669,12 +679,13 @@ class HALDensifyConditionalDensity:
             return np.full(len(A), 1.0 / max(np.std(A), 1e-6))
         try:
             ro = self._ro
-            with self._converter.context():
-                r_A_new = ro.FloatVector(A)
-                r_W_new = ro.r.matrix(L, nrow=L.shape[0], ncol=L.shape[1])
-                density = np.asarray(self._haldensify.predict_haldensify(
-                    self._hd_fit, new_A=r_A_new, new_W=r_W_new,
-                )).ravel()
+            r_A_new = self._to_r_vec(A)
+            r_W_new = self._to_r_mat(L)
+            # R's generic predict() does S3 dispatch to predict.haldensify
+            r_predict = ro.r["predict"]
+            density = np.asarray(r_predict(
+                self._hd_fit, new_A=r_A_new, new_W=r_W_new,
+            )).ravel()
             # Data-adaptive positivity floor (matches other density estimators)
             pos = density[density > 0]
             q025 = np.quantile(pos, 0.025) if len(pos) > 0 else 1e-12
