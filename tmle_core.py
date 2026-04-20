@@ -107,6 +107,7 @@ import os as _os
 N_FOLDS_CROSSFIT = int(_os.environ.get("TMLE_N_FOLDS", "5"))   # was 3; 5 is publication standard
 N_DENSITY_BINS    = int(_os.environ.get("TMLE_N_DENSITY_BINS", "0"))  # 0 = data-adaptive (Freedman-Diaconis)
 DENSITY_EPS_FRAC  = 0.005       # fallback floor; overridden by data-adaptive floor in HistogramConditionalDensity
+CV_DENSITY        = _os.environ.get("TMLE_CV_DENSITY", "kde")       # "kde" or "histogram" — density estimator for CV-TMLE
 
 # XGBoost / GBM tree counts. The Super Learner stack is more sensitive to
 # library DIVERSITY than to individual library depth, so we run modest trees
@@ -126,6 +127,13 @@ BIG_LIBRARY = bool(int(_os.environ.get("TMLE_BIG_LIBRARY", "0")))
 # 120 trees ≈ 10 min per worker). XGBoost gives equivalent diversity at a
 # fraction of the cost. Set this when running 30-way parallel on minitim.
 SKIP_GBM = bool(int(_os.environ.get("TMLE_SKIP_GBM", "0")))
+
+# When TMLE_USE_HAL=1 the Highly Adaptive Lasso (van der Laan, 2017) is added
+# to the SuperLearner stack via rpy2 + R's hal9001 package. HAL is the only
+# nonparametric estimator with a dimension-free n^{-1/3} MSE convergence rate,
+# making it the theoretically preferred base learner. Off by default because
+# it requires R + hal9001 + rpy2 installed.
+USE_HAL = bool(int(_os.environ.get("TMLE_USE_HAL", "0")))
 
 
 # ──────────────────── NNLS metalearner ──────────────────────────
@@ -149,6 +157,98 @@ class _NNLSRegressor:
 
     def predict(self, X):
         return X @ self.coef_
+
+
+# ──────────────────── HAL base learner (optional, requires R) ────
+
+class HALWrapper(BaseEstimator, RegressorMixin):
+    """sklearn-compatible wrapper for R's hal9001::fit_hal() via rpy2.
+
+    The Highly Adaptive Lasso (HAL) is a nonparametric estimator that
+    constructs indicator basis functions over all multivariate sections of
+    the covariate space and applies an L1 penalty. It achieves an MSE
+    convergence rate of n^{-2/3} (log n)^d — dimension-free up to log
+    factors — making it the theoretically preferred base learner for TMLE
+    (van der Laan, 2017; Benkeser & van der Laan, 2016).
+
+    Parameters
+    ----------
+    family : str
+        "gaussian" for regression, "binomial" for classification.
+    max_degree : int
+        Maximum interaction degree for basis functions. 2 is recommended
+        for moderate-dimensional data (captures pairwise interactions).
+    num_knots : tuple
+        Number of knots per degree. (200, 100) = 200 for main effects,
+        100 for interactions.
+    smoothness_orders : int
+        0 = indicator HAL (piecewise constant), 1 = piecewise linear.
+    random_state : int
+        Seed for reproducibility.
+    """
+
+    def __init__(self, family: str = "gaussian", max_degree: int = 2,
+                 num_knots: tuple = (200, 100), smoothness_orders: int = 1,
+                 random_state: int = 42):
+        self.family = family
+        self.max_degree = max_degree
+        self.num_knots = num_knots
+        self.smoothness_orders = smoothness_orders
+        self.random_state = random_state
+        self._hal_fit = None
+        self._fallback_value = 0.0
+
+    def _init_r(self):
+        """Lazily initialize rpy2 and hal9001."""
+        import rpy2.robjects as ro
+        from rpy2.robjects import numpy2ri
+        from rpy2.robjects.packages import importr
+        numpy2ri.activate()
+        self._ro = ro
+        self._hal9001 = importr("hal9001")
+        self._base = importr("base")
+
+    def fit(self, X, y):
+        X = np.asarray(X, dtype=float)
+        y = np.asarray(y, dtype=float)
+        try:
+            self._init_r()
+            ro = self._ro
+            r_X = ro.r.matrix(X, nrow=X.shape[0], ncol=X.shape[1])
+            r_Y = ro.FloatVector(y)
+            r_knots = ro.IntVector(list(self.num_knots))
+            self._hal_fit = self._hal9001.fit_hal(
+                X=r_X, Y=r_Y,
+                family=self.family,
+                max_degree=self.max_degree,
+                num_knots=r_knots,
+                smoothness_orders=self.smoothness_orders,
+            )
+            self._fallback_value = float(np.mean(y))
+        except Exception as e:
+            warnings.warn(f"HAL fit failed ({e}); falling back to constant predictor")
+            self._hal_fit = None
+            self._fallback_value = float(np.mean(y))
+        return self
+
+    def predict(self, X):
+        X = np.asarray(X, dtype=float)
+        if self._hal_fit is None:
+            return np.full(X.shape[0], self._fallback_value)
+        try:
+            ro = self._ro
+            r_X = ro.r.matrix(X, nrow=X.shape[0], ncol=X.shape[1])
+            preds = np.asarray(self._hal9001.predict_hal9001(self._hal_fit, new_data=r_X))
+            if self.family == "binomial":
+                preds = np.clip(preds, 0.0, 1.0)
+            return preds.ravel()
+        except Exception:
+            return np.full(X.shape[0], self._fallback_value)
+
+    def predict_proba(self, X):
+        """Return P(class=1) as a 2-column array for classifier compatibility."""
+        p1 = np.clip(self.predict(X), 0.0, 1.0)
+        return np.column_stack([1 - p1, p1])
 
 
 # ──────────────────── Data structures ────────────────────────────
@@ -203,6 +303,8 @@ class HurdleSuperLearner(BaseEstimator, RegressorMixin):
             stack.insert(1,
                 ("gbm", GradientBoostingClassifier(n_estimators=GBM_N_ESTIMATORS, max_depth=3,
                                                    random_state=self.random_state)))
+        if USE_HAL:
+            stack.append(("hal", HALWrapper(family="binomial", random_state=self.random_state)))
         return stack
 
     def _build_regressor_stack(self):
@@ -235,6 +337,8 @@ class HurdleSuperLearner(BaseEstimator, RegressorMixin):
                                                        early_stopping=True,
                                                        random_state=self.random_state))])),
             ])
+        if USE_HAL:
+            base.append(("hal", HALWrapper(family="gaussian", random_state=self.random_state)))
         return base
 
     def fit(self, X: np.ndarray, y: np.ndarray):
@@ -390,6 +494,76 @@ class HistogramConditionalDensity:
         # observed density values. This is what txshift (Hejazi et al., 2020)
         # recommends — automatic and data-dependent, replaces the old fixed
         # DENSITY_EPS_FRAC / max_width which was not principled.
+        q025 = np.quantile(density[density > 0], 0.025) if (density > 0).any() else 1e-12
+        floor = max(0.01 * q025, 1e-12)
+        return np.maximum(density, floor)
+
+
+class KDEConditionalDensity:
+    """Conditional density estimator g(A | L) via residual kernel density.
+
+    Instead of discretizing A into histogram bins (which causes coverage gaps
+    when training/validation splits differ), this estimator:
+
+      1. Fits a regression A_hat = f(L) via XGBoost
+      2. Computes residuals R = A - A_hat
+      3. Fits a 1D Gaussian KDE on the residuals
+
+    At prediction time, g(a | l) ≈ KDE(a - f(l)). Because the KDE is smooth
+    and defined everywhere on the real line, density ratios remain bounded even
+    when the evaluation point wasn't seen during training. This makes it safe
+    for CV-TMLE where g is fit on training folds and evaluated on held-out folds.
+
+    Bandwidth is selected via Silverman's rule on the residuals.
+    """
+
+    def __init__(self, random_state: int = 42):
+        self.random_state = random_state
+
+    def fit(self, A: np.ndarray, L: np.ndarray) -> "KDEConditionalDensity":
+        from sklearn.neighbors import KernelDensity
+
+        A = np.asarray(A, dtype=float)
+        L = np.asarray(L, dtype=float)
+
+        # Step 1: regress A on L to get conditional mean
+        self.reg_ = xgb.XGBRegressor(
+            n_estimators=200, max_depth=4, learning_rate=0.05,
+            tree_method="hist", verbosity=0, random_state=self.random_state,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            self.reg_.fit(L, A)
+
+        # Step 2: residuals
+        A_hat = self.reg_.predict(L)
+        residuals = A - A_hat
+
+        # Step 3: Silverman bandwidth on residuals
+        n = len(residuals)
+        std = max(np.std(residuals), 1e-12)
+        iqr = np.subtract(*np.percentile(residuals, [75, 25]))
+        spread = min(std, iqr / 1.349) if iqr > 0 else std
+        bandwidth = 0.9 * spread * (n ** (-0.2))  # Silverman's rule
+        bandwidth = max(bandwidth, 1e-6)
+
+        # Step 4: fit 1D KDE
+        self.kde_ = KernelDensity(kernel="gaussian", bandwidth=bandwidth)
+        self.kde_.fit(residuals.reshape(-1, 1))
+
+        return self
+
+    def density(self, A: np.ndarray, L: np.ndarray) -> np.ndarray:
+        """Return g(A_i | L_i) for each row."""
+        A = np.asarray(A, dtype=float)
+        L = np.asarray(L, dtype=float)
+
+        A_hat = self.reg_.predict(L)
+        residuals = (A - A_hat).reshape(-1, 1)
+        log_density = self.kde_.score_samples(residuals)
+        density = np.exp(log_density)
+
+        # Data-adaptive positivity floor (same as HistogramConditionalDensity)
         q025 = np.quantile(density[density > 0], 0.025) if (density > 0).any() else 1e-12
         floor = max(0.01 * q025, 1e-12)
         return np.maximum(density, floor)
@@ -623,8 +797,12 @@ def cv_tmle_shift(
         Q_hat_val = Q_model.predict(AL_val)
         Q_hat_cv[val_idx] = Q_hat_val
 
-        # Fit g on training data
-        g_model = HistogramConditionalDensity(random_state=seed + fold_idx)
+        # Fit g on training data — use KDE for CV-TMLE to avoid histogram
+        # coverage gaps between training and validation folds
+        if CV_DENSITY == "kde":
+            g_model = KDEConditionalDensity(random_state=seed + fold_idx)
+        else:
+            g_model = HistogramConditionalDensity(random_state=seed + fold_idx)
         g_model.fit(A_train, L_train)
 
         # Compute H on validation data
