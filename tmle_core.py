@@ -607,10 +607,10 @@ class HALDensifyConditionalDensity:
     TMLE_CV_DENSITY=haldensify.
     """
 
-    def __init__(self, n_bins: tuple = (3, 5, 10),
+    def __init__(self, n_bins: tuple = (5,),
                  grid_type: str = "equal_mass",
                  subsample_size: int = 5000,
-                 max_degree: int = 3,
+                 max_degree: int = 2,
                  smoothness_orders: int = 0,
                  random_state: int = 42):
         self.n_bins = n_bins
