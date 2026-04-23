@@ -343,7 +343,10 @@ Targeting:   H = g(A_pre|L) / g(A|L) / (1+&delta;)
 Variance:    Influence-function SEs with <strong>Bessel correction</strong>
              for finite number of clusters
 
-Result:      17/20 radii statistically significant (4&ndash;20 km)</pre>
+Result:      17/20 radii significant at raw &alpha;=0.05 (4&ndash;20 km)
+             <strong>Post-multiplicity:</strong> 1/19 Bonferroni, 10/19 BH-FDR
+             <strong>Combined test:</strong> pressure band 7&ndash;19 km &psi;=+2.4e-3, <em>p</em>&lt;10<sup>-17</sup>
+                                near-field 1&ndash;6 km null, <em>p</em>=0.08</pre>
 
 <p>
 TMLE estimands: shift intervention (&psi; = E[Y<sub>d(A)</sub>] &minus; E[Y<sub>A</sub>]),
@@ -351,9 +354,68 @@ dose-response curve (E[Y<sub>a*</sub>] at grid points), and mediation decomposit
 (NDE/NIE via Zheng &amp; van der Laan 2012). Python implementation validated against
 R tlverse to &lt;0.1%.
 </p>
+
+<h4 style="margin-top:1.5rem;">3.1.1 Estimator comparison at 7 km</h4>
 <p>
-Code: <code>tmle_core.py</code>, <code>tmle_run_parallel.py</code>. Output:
-<code>tmle_shift_365d_v3_full.csv</code>, <code>tmle_dose_response_365d_v3_full.csv</code>.
+Subsequent diagnostic work (April 2026) revealed a methodological tension: full-panel
+plug-in estimators (OLS, XGBoost, undersmoothed HAL) give point estimates
+5&ndash;25&times; smaller than targeting-based estimators (TMLE v3, CV-TMLE). The
+table below documents this honestly:
+</p>
+
+<table class="cmp-table" style="font-size:0.85rem;">
+  <thead>
+    <tr><th>Estimator</th><th>Sample</th><th>&psi; at 7 km</th><th>95% CI</th><th>Significant?</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>OLS plug-in</td><td>n=451k, 389 clusters</td><td>+6.4&times;10<sup>-4</sup></td><td>&mdash;</td><td>&mdash;</td></tr>
+    <tr><td>XGBoost plug-in</td><td>n=451k, 389 clusters</td><td>+7.9&times;10<sup>-4</sup></td><td>&mdash;</td><td>&mdash;</td></tr>
+    <tr><td>Undersmoothed HAL (plug-in)</td><td>n=451k, 389 clusters</td><td>+2.2&times;10<sup>-4</sup></td><td>[&minus;3.2&times;10<sup>-4</sup>, +1.4&times;10<sup>-3</sup>]</td><td>no (B=5)</td></tr>
+    <tr><td>CV-TMLE + haldensify + HAL</td><td>n=50k, 42 clusters</td><td>+2.2&times;10<sup>-3</sup></td><td>[+1.4&times;10<sup>-4</sup>, +4.2&times;10<sup>-3</sup>]</td><td>yes</td></tr>
+    <tr><td><strong>Standard TMLE v3</strong></td><td>n=451k, 389 clusters</td><td><strong>+5.3&times;10<sup>-3</sup></strong></td><td>[+3.2&times;10<sup>-3</sup>, +7.4&times;10<sup>-3</sup>]</td><td>yes (dashboard default)</td></tr>
+  </tbody>
+</table>
+
+<h4 style="margin-top:1.5rem;">3.1.2 Diagnostic findings</h4>
+<p>Four checks run on the CV-TMLE + haldensify pipeline reframe the inference:</p>
+<ul>
+  <li><strong>✅ Influence function mean:</strong> |mean(IF)| / SE(IF) &approx; 0 at
+      floating-point precision. Targeting converges correctly &mdash; no implementation bug.</li>
+  <li><strong>⚠ SuperLearner meta-weights:</strong> NNLS gives HAL 0&ndash;8% weight
+      across folds. Q is effectively XGBoost + RandomForest + Ridge; HAL is nominal.</li>
+  <li><strong>⚠ Clever covariate degeneracy:</strong> H &equiv; 1/(1+&delta;) = 0.909
+      across every observation in every fold. Targeting reduces to a constant
+      intercept shift. The CV-TMLE we ran is doubly-robust plug-in, not
+      targeting-informed TMLE.</li>
+  <li><strong>❌ Seed sensitivity:</strong> 3 of 4 tested radii (5, 13, 19) flipped
+      statistical significance between <code>seed=42</code> and <code>seed=1</code>.
+      Only R=7 is seed-robust. Per-radius significance is not publishable without
+      cluster bootstrap.</li>
+</ul>
+
+<h4 style="margin-top:1.5rem;">3.1.3 Current approach: undersmoothed HAL + regHAL-TMLE</h4>
+<p>
+Van der Laan &amp; Benkeser (<a href="https://arxiv.org/abs/1908.05607">arXiv:1908.05607</a>, 2019)
+show that undersmoothed HAL on the full panel gives an asymptotically efficient
+plug-in estimator without requiring the targeting step that produced our
+degenerate clever covariate. The 20-radius sweep using this estimator with cluster
+bootstrap (B=50) is executing on the Lambda Vector compute node; results will
+replace the TMLE v3 numbers on this site when complete.
+</p>
+<p>
+For the finite-sample inflation pattern (plug-in vs targeting), the targeted
+solution is the <strong>regularized HAL-TMLE (regHAL-TMLE)</strong> of
+<a href="https://arxiv.org/abs/2506.17214">Li, Qiu, Wang &amp; van der Laan (June 2025)</a>
+&mdash; Delta-method variant operates within HAL's implied working model via a
+ridge-regularized Newton step along the parametric efficient influence curve.
+Scaffold implementation is in the repo at <code>reghal_tmle.py</code>.
+</p>
+
+<p>
+Code: <code>tmle_core.py</code>, <code>undersmoothed_hal.py</code>,
+<code>reghal_tmle.py</code>. Output:
+<code>tmle_shift_365d_v3_full.csv</code>, <code>cv_tmle_sweep_summary.csv</code>,
+<code>hal_shift_*km.csv</code>.
 </p>
 
 <h3>3.2. Per-well: Causal Forest DML</h3>

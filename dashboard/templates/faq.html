@@ -689,12 +689,53 @@
         <p><strong>V2 (7 expert fixes):</strong> NNLS metalearner, data-adaptive bins (~140), data-adaptive positivity floor,
         H-truncation at 99th percentile, Bessel-corrected SEs, 5-fold CV, RandomForest added. 17/20 radii significant, max H=5.3.</p>
 
-        <p><strong>V3 (current, spatial interference):</strong> Added neighbor_cum_vol_7km as confounder (VIF=1.12).
+        <p><strong>V3 (spatial interference):</strong> Added neighbor_cum_vol_7km as confounder (VIF=1.12).
         Effect +24% at 7 km. Causal Forest retrained at all 20 radii with neighbor volume. All TMLE and CF models
-        now control for what neighboring wells are doing.</p>
+        now control for what neighboring wells are doing. <strong>This is the current dashboard default.</strong></p>
+
+        <p><strong>V4 (in progress, full-panel plug-in):</strong> Diagnostic work in April 2026 revealed that
+        the v3 TMLE targeting step may inflate estimates 5&ndash;25&times; versus simpler full-panel plug-in
+        methods (OLS, XGBoost, undersmoothed HAL). At 7 km: v3 says &psi;=+5.3e-3, plug-in methods cluster at
+        &psi;=+2&ndash;8e-4. Under multiplicity correction, only the <strong>combined pressure-band test
+        (7&ndash;19 km)</strong> survives as a defensible headline (&psi;=+2.4e-3, <em>p</em>&lt;10<sup>-17</sup>).
+        Per-radius significance also flips across random-seed subsamples in 3 of 4 tested radii. A full-panel
+        undersmoothed-HAL sweep with cluster bootstrap is running; when complete it will be the new dashboard
+        default. Regularized HAL-TMLE
+        (<a href="https://arxiv.org/abs/2506.17214" style="color:var(--cyan);">Li et al. 2025</a>)
+        is implemented as a scaffold in the repo for the final paper.</p>
 
         <p>Full changelog: <a href="https://github.com/Project-Geminae/induced-seismicity/blob/main/CHANGES.md"
         style="color:var(--cyan);">CHANGES.md on GitHub</a></p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>Why do different methods give different answers?</h3>
+      <div class="a">
+        <p>At radius 7 km (the most-studied radius), the same data under five estimators:</p>
+        <ul>
+          <li><strong>OLS plug-in (full n=451k):</strong> &psi;=+6.4e-4</li>
+          <li><strong>XGBoost plug-in (full n):</strong> &psi;=+7.9e-4</li>
+          <li><strong>Undersmoothed HAL plug-in (full n):</strong> &psi;=+2.2e-4 (CI crosses zero)</li>
+          <li><strong>CV-TMLE + haldensify + HAL (n=50k subsampled):</strong> &psi;=+2.2e-3</li>
+          <li><strong>Standard TMLE v3 (full n):</strong> &psi;=+5.3e-3 (dashboard default)</li>
+        </ul>
+        <p>Three independent full-panel plug-in methods cluster at +2&ndash;8e-4. Two
+        targeting-based estimators land 3&ndash;25&times; higher. The CV-TMLE clever
+        covariate was diagnosed to be numerically degenerate (H = 1/(1+&delta;) = 0.909
+        constant), reducing targeting to a uniform constant shift. The standard v3 TMLE
+        at 7 km has a healthy max_H = 4.8, so its inflation is not diagnosable via the
+        usual positivity check &mdash; it is likely due to a SuperLearner outcome-model
+        bias that targeting over-corrects.</p>
+        <p>The rigorous answer per van der Laan's lab is <strong>regularized HAL-TMLE</strong>
+        (<a href="https://arxiv.org/abs/2506.17214" style="color:var(--cyan);">arXiv:2506.17214</a>),
+        which operates within HAL's implied finite-dimensional working model and avoids
+        both failure modes. The paper is 6 months old; implementation scaffold is in our
+        repo.</p>
+        <p>Our interim recommendation: report the multiplicity-safe combined pressure-band
+        test as the headline (&psi;=+2.4e-3, <em>p</em>&lt;10<sup>-17</sup>), caveat the
+        per-radius per-method estimates, and publish the full cross-method comparison as
+        a supplement.</p>
       </div>
     </div>
 

@@ -736,8 +736,11 @@
 
     <div id="tmle-context" style="display:none">
       <div class="header-bar">
-        <span>TMLE POPULATION CONTEXT<span class="info below" data-tip="Population-level causal effect estimates from Targeted Maximum Likelihood Estimation (TMLE). These are the AVERAGE effects across all wells and events at the selected radius — the big picture before you zoom into individual wells. Methodology: doubly-robust TMLE with NNLS SuperLearner (Ridge, GBM, XGBoost, RandomForest), 5-fold cross-validated Q, data-adaptive histogram density for g (~140 bins), H-truncation at 99th percentile, Bessel-corrected cluster-IF standard errors. Validated against R tlverse to <0.1%.">i</span> @ <span id="tmle-radius">7</span> KM</span>
+        <span>TMLE POPULATION CONTEXT<span class="info below" data-tip="Population-level causal effect estimates from Targeted Maximum Likelihood Estimation (TMLE v3). These are the AVERAGE effects across all wells and events at the selected radius — the big picture before you zoom into individual wells. CAVEAT: Diagnostic work shows the v3 targeting step may inflate estimates 5-25× versus full-panel plug-in methods (OLS, XGBoost, undersmoothed HAL). The mediation decomposition (NDE/NIE) is extremely fragile to unmeasured confounding (rho <=0.0001 flips NDE sign). Use the combined pressure-band test (7-19 km, p < 10^-17) as the multiplicity-safe population claim. See /methodology for the full estimator comparison.">i</span> @ <span id="tmle-radius">7</span> KM</span>
         <span class="right">[F8]</span>
+      </div>
+      <div style="padding:3px 8px; font-size:9px; color:#ffa94d; background:#2b1810; border-bottom:1px solid #8b5a3c; letter-spacing:0.05em;">
+        V3 ESTIMATOR &bull; MEDIATION NDE/NIE FRAGILE TO CONFOUNDING &bull; SEE /FAQ
       </div>
       <div class="body">
         <div class="row">

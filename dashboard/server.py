@@ -487,6 +487,10 @@ def health() -> dict:
     cf_files = sorted(REPO_ROOT.glob("cf_cate_*.pkl"), key=lambda p: p.stat().st_mtime, reverse=True)
     cf_date = datetime.fromtimestamp(cf_files[0].stat().st_mtime).strftime("%Y-%m-%d") if cf_files else "never"
 
+    # Count undersmoothed-HAL sweep results (v4 in-progress estimator)
+    hal_files = sorted(REPO_ROOT.glob("hal_shift_*km.csv"))
+    hal_radii_complete = len(hal_files)
+
     return {
         "status":           "ok",
         "loaded_at":        state.loaded_at.isoformat(),
@@ -498,6 +502,18 @@ def health() -> dict:
         "latest_event_date": latest_event,
         "tmle_run_date":    tmle_date,
         "causal_forest_date": cf_date,
+        "methodology_version":    "v3 (standard TMLE); v4 undersmoothed-HAL sweep in progress",
+        "hal_radii_complete":     hal_radii_complete,
+        "hal_radii_total":        20,
+        "combined_test_headline": {
+            "pressure_band_km":   [7, 19],
+            "psi":                2.36e-3,
+            "ci_low":             1.83e-3,
+            "ci_high":            2.88e-3,
+            "z":                  8.81,
+            "pval":               "<1e-17",
+            "description":        "Inverse-variance-weighted combined test over 13 correlated radii.",
+        },
     }
 
 

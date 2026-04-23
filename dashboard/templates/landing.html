@@ -229,6 +229,14 @@
   <a href="/dashboard" class="cta">Enter Dashboard</a>
 </nav>
 
+<!-- ═══════════════════════════════════════════ METHODOLOGY UPDATE BANNER ═══ -->
+<div style="background:#2b1810; border-bottom:1px solid #8b5a3c; padding:0.6rem 1rem; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:0.75rem; color:#e8a87c; line-height:1.4;">
+  <strong style="color:#ffa94d;">⚠ METHODOLOGY UPDATE IN PROGRESS.</strong>
+  Headline numbers reflect the <strong>TMLE v3</strong> estimator. A full-panel undersmoothed-HAL
+  sweep (van der Laan &amp; Benkeser 2019) is executing &mdash; diagnostics show v3 targeting may
+  inflate 5&ndash;25&times; versus plug-in estimators at some radii. See <a href="/methodology" style="color:#ffcc66; text-decoration:underline;">methodology</a> for estimator comparison.
+</div>
+
 <!-- ═══════════════════════════════════════════ HERO ═══ -->
 <div class="hero">
   <h1>Causal Analysis of<br><span>Induced Seismicity</span><br>in the Permian Basin</h1>
@@ -313,9 +321,9 @@
 
   <h3>What SPE-228051 Did: Drew the Causal DAG</h3>
   <p>
-    The paper formalized the physical mechanism as a causal diagram. It identified four geologic
-    confounders, controlled for them, and tested whether the injection&ndash;seismicity link survived.
-    <strong>It did.</strong>
+    The paper formalized the physical mechanism as a causal diagram. It identified five geologic and
+    operational confounders, controlled for them, and tested whether the injection&ndash;seismicity
+    link survived. <strong>It did.</strong>
   </p>
 
   <div class="dag-box">
@@ -325,8 +333,9 @@
       <div class="node conf" style="min-width:auto; padding:0.3rem 0.5rem;"><span class="var" style="font-size:0.8rem;">G2</span><span class="lbl">Fault Count</span></div>
       <div class="node conf" style="min-width:auto; padding:0.3rem 0.5rem;"><span class="var" style="font-size:0.8rem;">G3</span><span class="lbl">Depth</span></div>
       <div class="node conf" style="min-width:auto; padding:0.3rem 0.5rem;"><span class="var" style="font-size:0.8rem;">G4</span><span class="lbl">Days Active</span></div>
+      <div class="node conf" style="min-width:auto; padding:0.3rem 0.5rem;"><span class="var" style="font-size:0.8rem;">G5</span><span class="lbl">Neighbor Vol</span></div>
     </div>
-    <div style="color:var(--cyan); font-size:0.7rem; margin-bottom:0.4rem;">&darr; &darr; &darr; &darr; (controlled for)</div>
+    <div style="color:var(--cyan); font-size:0.7rem; margin-bottom:0.4rem;">&darr; &darr; &darr; &darr; &darr; (controlled for)</div>
     <div class="dag-nodes">
       <div class="node"><span class="var">W</span><span class="lbl">Volume</span></div>
       <span class="arrow">&rarr;</span>
@@ -335,7 +344,7 @@
       <div class="node out"><span class="var">S</span><span class="lbl">Seismicity</span></div>
     </div>
     <div class="dag-caption">
-      After controlling for G1&ndash;G4, the <strong style="color:var(--amber);">W</strong>&rarr;<strong style="color:var(--green);">P</strong>&rarr;<strong style="color:var(--red);">S</strong> link <strong style="color:var(--green);">survives</strong>. Injection causes seismicity through pressure buildup.
+      After controlling for G1&ndash;G5, the <strong style="color:var(--amber);">W</strong>&rarr;<strong style="color:var(--green);">P</strong>&rarr;<strong style="color:var(--red);">S</strong> link <strong style="color:var(--green);">survives</strong>. Injection causes seismicity through pressure buildup at distances consistent with pore-pressure diffusion (7&ndash;19 km).
     </div>
   </div>
 
@@ -367,7 +376,8 @@
       <tr><td><strong>Per-well effects</strong></td><td><span class="tag tag-r">Not available</span></td><td><span class="tag tag-g">Causal Forest CATE + honest CI at all 20 radii</span></td></tr>
       <tr><td><strong>Spatial interference</strong></td><td><span class="tag tag-r">Not addressed</span></td><td><span class="tag tag-g">Neighbor well volumes controlled (VIF 1.12)</span></td></tr>
       <tr><td><strong>Dose-response</strong></td><td><span class="tag tag-r">Straight line</span></td><td><span class="tag tag-g">Nonparametric curve with extrapolation warnings</span></td></tr>
-      <tr><td><strong>Significant radii</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">17 / 20 radii (4&ndash;20 km)</span></td></tr>
+      <tr><td><strong>Pressure band (7&ndash;19 km)</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">Combined test: &psi;=+2.4&times;10<sup>-3</sup>, <em>p</em>&lt;10<sup>-17</sup></span></td></tr>
+      <tr><td><strong>Near-field (1&ndash;6 km)</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-a">Combined test: null (<em>p</em>=0.08)</span></td></tr>
       <tr><td><strong>Confidence intervals</strong></td><td><span class="tag tag-a">Assumes equal variance</span></td><td><span class="tag tag-g">Bessel-corrected cluster IF SEs</span></td></tr>
       <tr><td><strong>Validation</strong></td><td><span class="tag tag-a">DoWhy refuters</span></td><td><span class="tag tag-g">R tlverse (&lt;0.1%) + 6 sensitivity analyses</span></td></tr>
     </tbody>
@@ -452,8 +462,8 @@
     <div class="stat"><div class="val">7,424</div><div class="lbl">Earthquakes (TexNet)</div></div>
     <div class="stat"><div class="val">1,056</div><div class="lbl">SWD Wells (RRC)</div></div>
     <div class="stat"><div class="val">903,887</div><div class="lbl">Well-Day Observations</div></div>
-    <div class="stat"><div class="val">17/20</div><div class="lbl">Radii Significant</div></div>
-    <div class="stat"><div class="val">20</div><div class="lbl">Radii (1&ndash;20 km)</div></div>
+    <div class="stat"><div class="val">7&ndash;19 km</div><div class="lbl">Pressure Band (combined <em>p</em>&lt;10<sup>-17</sup>)</div></div>
+    <div class="stat"><div class="val">20</div><div class="lbl">Radii Analyzed (1&ndash;20 km)</div></div>
   </div>
 </section>
 
