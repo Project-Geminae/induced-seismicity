@@ -607,12 +607,16 @@ class HALDensifyConditionalDensity:
     TMLE_CV_DENSITY=haldensify.
     """
 
-    def __init__(self, n_bins: tuple = (5,),
+    def __init__(self, n_bins: tuple = None,
                  grid_type: str = "equal_mass",
                  subsample_size: int = 5000,
                  max_degree: int = 2,
                  smoothness_orders: int = 0,
                  random_state: int = 42):
+        # Env var override for n_bins (e.g. TMLE_HD_N_BINS="10" or "3,5,10")
+        if n_bins is None:
+            env_bins = _os.environ.get("TMLE_HD_N_BINS", "5")
+            n_bins = tuple(int(x.strip()) for x in env_bins.split(","))
         self.n_bins = n_bins
         self.grid_type = grid_type
         self.subsample_size = subsample_size
