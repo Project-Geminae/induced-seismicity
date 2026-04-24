@@ -191,6 +191,11 @@ def reghal_tmle_shift(
         return D, direction, sigma2
 
     # ── 5. Targeting loop ────────────────────────────────────────────
+    # Solve P_n(D*_β) = 0 via a line-search Newton step. The paper's
+    # recommendation of fixed step_size = 1e-4 with sign-scaled gradient
+    # descent is too conservative for our covariate structure — at n=50k
+    # with 79 active bases we hit max_iter without meaningful progress.
+    # Line search along the Newton direction converges in ~5 iterations.
     beta_cur = beta.copy()
     converged = False
     n_iter = 0
@@ -201,13 +206,33 @@ def reghal_tmle_shift(
         se_D = float(np.std(D, ddof=1) / np.sqrt(n))
         threshold = se_D / np.sqrt(n) / np.log(max(n, 2))
         D_history.append((P_n_D, se_D))
-        if verbose and n_iter % 10 == 0:
+        if verbose and n_iter % 5 == 0:
             print(f"    iter {n_iter}: P_n(D*) = {P_n_D:+.3e}  thresh = {threshold:.3e}", flush=True)
         if abs(P_n_D) < threshold:
             converged = True
             break
-        # Update β along direction scaled by sign of mean(D)
-        beta_cur = beta_cur - step_size * np.sign(P_n_D) * direction
+
+        # Backtracking line search: start with a Newton-like step (α = P_n_D)
+        # and halve until |P_n(D*)| strictly decreases.
+        alpha = P_n_D
+        best_beta = beta_cur
+        best_abs = abs(P_n_D)
+        for _ in range(20):
+            trial_beta = beta_cur - alpha * direction
+            D_trial, _, _ = compute_eic_components(trial_beta)
+            abs_trial = abs(float(np.mean(D_trial)))
+            if abs_trial < best_abs:
+                best_beta = trial_beta
+                best_abs = abs_trial
+                break
+            alpha *= 0.5
+        beta_cur = best_beta
+
+        # Safety: bail out if no α improves at all → stuck at optimum
+        if best_abs >= abs(P_n_D):
+            if verbose:
+                print(f"    iter {n_iter}: line search stuck at |P_n(D*)| = {best_abs:.3e}", flush=True)
+            break
 
     if verbose:
         print(f"  Targeting {'converged' if converged else 'hit max_iter'} at iter {n_iter}", flush=True)
