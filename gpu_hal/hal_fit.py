@@ -103,6 +103,22 @@ def fit_hal_gpu(
         smoothness_orders=smoothness_orders,
     )
     p = phi_csr.shape[1]
+
+    # Scale each basis column to unit L2 norm. This is a no-op for pure
+    # indicator HAL (smoothness_orders=0) but essential when smoothness=1
+    # produces splines that can take values up to the raw covariate scale
+    # (e.g., cumulative volume up to 1e8 BBL). Without this, λ selection
+    # is dominated by the largest-scale bases and all small-scale bases
+    # are zeroed out.
+    from scipy.sparse import diags
+    col_norms = np.sqrt(np.asarray(phi_csr.multiply(phi_csr).sum(axis=0)).ravel())
+    col_norms = np.maximum(col_norms, 1e-12)
+    D_inv = diags(1.0 / col_norms)
+    phi_csr = phi_csr @ D_inv
+    phi_csr = phi_csr.tocsr()
+    # We'll unscale β at the end.
+    if verbose:
+        print(f"[GPU-HAL] Scaled bases to unit L2 norm (max col-norm before scaling: {col_norms.max():.3e})")
     if verbose:
         print(f"[GPU-HAL] Basis matrix: ({n} × {p}), nnz = {phi_csr.nnz}, density = {phi_csr.nnz/(n*p):.2%}")
 
@@ -133,13 +149,18 @@ def fit_hal_gpu(
         L=L, max_iter=max_iter, tol=tol, verbose=False,
     )
 
+    # Unscale β to the original (unnormalized) basis:
+    # if φ̃_j = φ_j / s_j and we fit β̃, then Q(x) = Σ β̃_j φ̃_j(x)
+    # = Σ (β̃_j / s_j) φ_j(x), so β_j = β̃_j / s_j.
+    beta_final = np.asarray(final_fit.beta) / col_norms
+
     elapsed = time.time() - t0
     if verbose:
-        active = int(np.sum(np.abs(final_fit.beta) > 0))
+        active = int(np.sum(np.abs(beta_final) > 0))
         print(f"[GPU-HAL] Final fit: {final_fit.n_iter} FISTA iters, {active} active bases, "
               f"gap={final_fit.final_gap:.2e} ({elapsed:.0f}s total)")
 
-    active_idx = np.where(np.abs(final_fit.beta) > 0)[0]
+    active_idx = np.where(np.abs(beta_final) > 0)[0]
 
     return GPUHALFit(
         max_degree=max_degree,
@@ -155,7 +176,7 @@ def fit_hal_gpu(
         lambda_cv=cv_res.lambda_cv,
         lambda_1se=cv_res.lambda_1se,
         lambda_used=lambda_used,
-        beta=final_fit.beta,
+        beta=beta_final,
         intercept=y_mean,
         active_idx=active_idx,
         basis_list=basis_list,

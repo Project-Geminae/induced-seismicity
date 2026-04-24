@@ -162,7 +162,7 @@ def cv_fista_lasso_sparse(
         y_tr_mean = float(y_tr.mean())
         y_tr_c = y_tr - y_tr_mean
         matvec, rmatvec, L = make_sparse_matvec(X_tr)
-        y_tr_j = jnp.asarray(y_tr_c)
+        y_tr_j = jnp.asarray(y_tr_c, dtype=jnp.float32)
         fits = fista_lasso_path(
             matvec, rmatvec, y_tr_j, p, lambdas, len(y_tr),
             L=L, max_iter=max_iter, tol=tol, verbose=False,
