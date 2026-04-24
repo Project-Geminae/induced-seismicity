@@ -693,16 +693,20 @@
         Effect +24% at 7 km. Causal Forest retrained at all 20 radii with neighbor volume. All TMLE and CF models
         now control for what neighboring wells are doing. <strong>This is the current dashboard default.</strong></p>
 
-        <p><strong>V4 (in progress, full-panel plug-in):</strong> Diagnostic work in April 2026 revealed that
-        the v3 TMLE targeting step may inflate estimates 5&ndash;25&times; versus simpler full-panel plug-in
-        methods (OLS, XGBoost, undersmoothed HAL). At 7 km: v3 says &psi;=+5.3e-3, plug-in methods cluster at
-        &psi;=+2&ndash;8e-4. Under multiplicity correction, only the <strong>combined pressure-band test
-        (7&ndash;19 km)</strong> survives as a defensible headline (&psi;=+2.4e-3, <em>p</em>&lt;10<sup>-17</sup>).
-        Per-radius significance also flips across random-seed subsamples in 3 of 4 tested radii. A full-panel
-        undersmoothed-HAL sweep with cluster bootstrap is running; when complete it will be the new dashboard
-        default. Regularized HAL-TMLE
-        (<a href="https://arxiv.org/abs/2506.17214" style="color:var(--cyan);">Li et al. 2025</a>)
-        is implemented as a scaffold in the repo for the final paper.</p>
+        <p><strong>V4 (diagnostic pivot):</strong> Diagnostic work in April 2026 revealed that the v3
+        TMLE targeting step inflates estimates 5&ndash;25&times; versus simpler full-panel plug-in methods.
+        At 7 km: v3 says &psi;=+5.3e-3, plug-in methods (OLS, XGBoost, undersmoothed HAL) cluster at
+        &psi;=+2&ndash;8e-4. Diagnostics identified a degenerate clever covariate (H &equiv; 0.909) in
+        CV-TMLE and seed sensitivity in subsampled methods.</p>
+
+        <p><strong>V5 (current, XGBoost-GPU plug-in):</strong> The rigorous answer. Hurdle XGBoost fit on
+        full n=451,212 (389 clusters) with NVIDIA GPU acceleration, cluster bootstrap <strong>B=500</strong>,
+        full 20-radius sweep in under 1 hour of wall time. <strong>Per-radius: 0/20 have CIs that exclude
+        zero.</strong> Pooled across all 20 radii: &psi;=+3.2&times;10<sup>-4</sup>, z=4.08,
+        <em>p</em>=4.4&times;10<sup>-5</sup>. Pressure-band (7&ndash;19 km) pooled:
+        &psi;=+6.1&times;10<sup>-4</sup>, <em>p</em>=1.3&times;10<sup>-4</sup>. Effect is real but small;
+        previous "17/20 significant" was a methodological artifact. <strong>This is the new dashboard
+        default and the paper's headline number.</strong></p>
 
         <p>Full changelog: <a href="https://github.com/Project-Geminae/induced-seismicity/blob/main/CHANGES.md"
         style="color:var(--cyan);">CHANGES.md on GitHub</a></p>

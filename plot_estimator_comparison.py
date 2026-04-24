@@ -58,7 +58,7 @@ def load_hal():
 
 
 def load_benchmark_plugins():
-    """Load the OLS and XGBoost benchmark points (radius 7 only for now)."""
+    """Load the OLS benchmark points (radius 7 only)."""
     p = ROOT / "benchmark_shift_7km.csv"
     if not p.exists():
         return pd.DataFrame()
@@ -70,11 +70,22 @@ def load_benchmark_plugins():
             rows.append({"radius_km": 7, "psi": float(r["psi"]),
                          "ci_low": np.nan, "ci_high": np.nan,
                          "estimator": "OLS plug-in (full n)"})
-        elif "XGBoost" in method:
-            rows.append({"radius_km": 7, "psi": float(r["psi"]),
-                         "ci_low": np.nan, "ci_high": np.nan,
-                         "estimator": "XGBoost plug-in (full n)"})
     return pd.DataFrame(rows)
+
+
+def load_xgb_gpu():
+    frames = []
+    for f in ROOT.glob("xgb_shift_*km.csv"):
+        d = pd.read_csv(f)
+        if "ci_low" not in d.columns and "se_boot" in d.columns:
+            d["ci_low"] = d["psi"] - 1.96 * d["se_boot"]
+            d["ci_high"] = d["psi"] + 1.96 * d["se_boot"]
+        frames.append(d[["radius_km", "psi", "ci_low", "ci_high"]])
+    if not frames:
+        return pd.DataFrame()
+    df = pd.concat(frames, ignore_index=True)
+    df["estimator"] = "XGBoost-GPU (full n, B=500)"
+    return df
 
 
 def make_figure(df_all: pd.DataFrame, outpath: Path = Path("estimator_comparison.png")):
@@ -82,14 +93,14 @@ def make_figure(df_all: pd.DataFrame, outpath: Path = Path("estimator_comparison
         "Standard TMLE v3 (full n)",
         "CV-TMLE + haldensify + HAL (n=50k)",
         "Undersmoothed HAL (full n)",
-        "XGBoost plug-in (full n)",
+        "XGBoost-GPU (full n, B=500)",
         "OLS plug-in (full n)",
     ]
     colors = {
-        "Standard TMLE v3 (full n)":            "#D62728",  # red (the prior headline)
+        "Standard TMLE v3 (full n)":            "#D62728",  # red (prior headline, inflated)
         "CV-TMLE + haldensify + HAL (n=50k)":   "#FF7F0E",  # orange
         "Undersmoothed HAL (full n)":           "#2CA02C",  # green (van der Laan-faithful)
-        "XGBoost plug-in (full n)":             "#1F77B4",  # blue
+        "XGBoost-GPU (full n, B=500)":          "#000000",  # black (new v5 headline)
         "OLS plug-in (full n)":                 "#9467BD",  # purple
     }
 
@@ -128,7 +139,7 @@ def make_figure(df_all: pd.DataFrame, outpath: Path = Path("estimator_comparison
 
 
 def main():
-    frames = [load_v3_tmle(), load_cv_tmle(), load_hal(), load_benchmark_plugins()]
+    frames = [load_v3_tmle(), load_cv_tmle(), load_hal(), load_xgb_gpu(), load_benchmark_plugins()]
     frames = [f for f in frames if not f.empty]
     if not frames:
         print("No estimator data found in cwd.")

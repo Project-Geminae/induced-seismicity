@@ -355,26 +355,62 @@ dose-response curve (E[Y<sub>a*</sub>] at grid points), and mediation decomposit
 R tlverse to &lt;0.1%.
 </p>
 
-<h4 style="margin-top:1.5rem;">3.1.1 Estimator comparison at 7 km</h4>
+<h4 style="margin-top:1.5rem;">3.1.1 V5 Headline: XGBoost-GPU plug-in with B=500 cluster bootstrap</h4>
 <p>
-Subsequent diagnostic work (April 2026) revealed a methodological tension: full-panel
-plug-in estimators (OLS, XGBoost, undersmoothed HAL) give point estimates
-5&ndash;25&times; smaller than targeting-based estimators (TMLE v3, CV-TMLE). The
-table below documents this honestly:
+The most rigorous inference we report runs a hurdle XGBoost outcome model on the
+full n=451,212 panel (389 clusters) on NVIDIA GPUs, then cluster-bootstraps the
+shift target parameter with <strong>B=500</strong> resamples of the 389 clusters.
+Each bootstrap is a full refit. This takes ~6 minutes per radius on a single
+RTX 3080 and ~1 hour for the full 20-radius sweep across 3 GPUs.
 </p>
 
 <table class="cmp-table" style="font-size:0.85rem;">
   <thead>
-    <tr><th>Estimator</th><th>Sample</th><th>&psi; at 7 km</th><th>95% CI</th><th>Significant?</th></tr>
+    <tr><th>Band</th><th>n_radii</th><th>&psi; pooled</th><th>95% CI</th><th>z</th><th>p</th></tr>
   </thead>
   <tbody>
-    <tr><td>OLS plug-in</td><td>n=451k, 389 clusters</td><td>+6.4&times;10<sup>-4</sup></td><td>&mdash;</td><td>&mdash;</td></tr>
-    <tr><td>XGBoost plug-in</td><td>n=451k, 389 clusters</td><td>+7.9&times;10<sup>-4</sup></td><td>&mdash;</td><td>&mdash;</td></tr>
-    <tr><td>Undersmoothed HAL (plug-in)</td><td>n=451k, 389 clusters</td><td>+2.2&times;10<sup>-4</sup></td><td>[&minus;3.2&times;10<sup>-4</sup>, +1.4&times;10<sup>-3</sup>]</td><td>no (B=5)</td></tr>
-    <tr><td>CV-TMLE + haldensify + HAL</td><td>n=50k, 42 clusters</td><td>+2.2&times;10<sup>-3</sup></td><td>[+1.4&times;10<sup>-4</sup>, +4.2&times;10<sup>-3</sup>]</td><td>yes</td></tr>
-    <tr><td><strong>Standard TMLE v3</strong></td><td>n=451k, 389 clusters</td><td><strong>+5.3&times;10<sup>-3</sup></strong></td><td>[+3.2&times;10<sup>-3</sup>, +7.4&times;10<sup>-3</sup>]</td><td>yes (dashboard default)</td></tr>
+    <tr><td><strong>All 20 radii (1&ndash;20 km)</strong></td><td>20</td><td><strong>+3.16&times;10<sup>-4</sup></strong></td><td>[+1.65&times;10<sup>-4</sup>, +4.68&times;10<sup>-4</sup>]</td><td>4.08</td><td>4.4&times;10<sup>-5</sup></td></tr>
+    <tr><td>Pressure band (7&ndash;19 km)</td><td>13</td><td>+6.08&times;10<sup>-4</sup></td><td>[+2.97&times;10<sup>-4</sup>, +9.19&times;10<sup>-4</sup>]</td><td>3.83</td><td>1.3&times;10<sup>-4</sup></td></tr>
+    <tr><td>Far-field (15&ndash;20 km)</td><td>6</td><td>+9.29&times;10<sup>-4</sup></td><td>[+3.86&times;10<sup>-4</sup>, +1.47&times;10<sup>-3</sup>]</td><td>3.35</td><td>8.0&times;10<sup>-4</sup></td></tr>
+    <tr><td>Near-field (1&ndash;6 km)</td><td>6</td><td>+2.10&times;10<sup>-4</sup></td><td>[+3.5&times;10<sup>-5</sup>, +3.85&times;10<sup>-4</sup>]</td><td>2.35</td><td>1.9&times;10<sup>-2</sup></td></tr>
   </tbody>
 </table>
+
+<p>
+<strong>Per-radius individually:</strong> 0 of 20 radii have a CI that excludes
+zero under B=500 cluster bootstrap. This is the honest per-radius picture: the
+shift effect is small and per-radius noisy, but pooled across all radii the
+effect is robustly positive and highly significant.
+</p>
+
+<h4 style="margin-top:1.5rem;">3.1.2 Cross-estimator comparison at 7 km</h4>
+<p>
+Earlier estimators gave larger point estimates, but diagnostic work revealed
+that the targeting-based ones had pathologies (degenerate clever covariate,
+subsample seed sensitivity) that inflated results:
+</p>
+
+<table class="cmp-table" style="font-size:0.85rem;">
+  <thead>
+    <tr><th>Estimator</th><th>Sample</th><th>&psi; at 7 km</th><th>95% CI</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>XGBoost-GPU plug-in (B=500)</strong></td><td>n=451k, 389 clusters</td><td><strong>+5.7&times;10<sup>-4</sup></strong></td><td>[&minus;2.0&times;10<sup>-4</sup>, +1.29&times;10<sup>-3</sup>]</td><td><strong>V5 headline</strong></td></tr>
+    <tr><td>OLS plug-in</td><td>n=451k, 389 clusters</td><td>+6.4&times;10<sup>-4</sup></td><td>&mdash;</td><td>transparent baseline</td></tr>
+    <tr><td>Undersmoothed HAL (plug-in)</td><td>n=451k, 389 clusters</td><td>+2.2&times;10<sup>-4</sup></td><td>[&minus;3.2&times;10<sup>-4</sup>, +1.4&times;10<sup>-3</sup>]</td><td>B=5 only</td></tr>
+    <tr><td>CV-TMLE + haldensify + HAL</td><td>n=50k, 42 clusters</td><td>+2.2&times;10<sup>-3</sup></td><td>[+1.4&times;10<sup>-4</sup>, +4.2&times;10<sup>-3</sup>]</td><td>subsampled, targeting degenerate</td></tr>
+    <tr><td>Standard TMLE v3</td><td>n=451k, 389 clusters</td><td>+5.3&times;10<sup>-3</sup></td><td>[+3.2&times;10<sup>-3</sup>, +7.4&times;10<sup>-3</sup>]</td><td>former dashboard default (inflated)</td></tr>
+  </tbody>
+</table>
+
+<p>
+Three independent full-panel plug-in estimators (OLS, XGBoost-GPU, undersmoothed HAL)
+agree: &psi; at 7 km is between +2&times;10<sup>-4</sup> and +6&times;10<sup>-4</sup>.
+The two targeting-based estimators produced values 5&ndash;25&times; larger,
+which diagnostics traced to (a) degenerate clever covariate in CV-TMLE
+(H &equiv; 0.909 constant) and (b) unexplained inflation in v3 targeting
+despite healthy max_H.
+</p>
 
 <h4 style="margin-top:1.5rem;">3.1.2 Diagnostic findings</h4>
 <p>Four checks run on the CV-TMLE + haldensify pipeline reframe the inference:</p>

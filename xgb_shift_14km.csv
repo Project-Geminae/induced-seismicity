@@ -1,0 +1,2 @@
+radius_km,window_days,shift_pct,n,n_clusters,psi,ci_low,ci_high,se_boot,B,device,elapsed_sec,estimator
+14,365,0.1,451212,389,0.0004615179786924273,-0.0006747360035660677,0.0018431993434205628,0.0006300760930373488,500,cuda,446.979957818985,xgb_hurdle_gpu

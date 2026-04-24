@@ -487,9 +487,11 @@ def health() -> dict:
     cf_files = sorted(REPO_ROOT.glob("cf_cate_*.pkl"), key=lambda p: p.stat().st_mtime, reverse=True)
     cf_date = datetime.fromtimestamp(cf_files[0].stat().st_mtime).strftime("%Y-%m-%d") if cf_files else "never"
 
-    # Count undersmoothed-HAL sweep results (v4 in-progress estimator)
+    # Count undersmoothed-HAL and XGBoost-GPU sweep results
     hal_files = sorted(REPO_ROOT.glob("hal_shift_*km.csv"))
     hal_radii_complete = len(hal_files)
+    xgb_files = sorted(REPO_ROOT.glob("xgb_shift_*km.csv"))
+    xgb_radii_complete = len(xgb_files)
 
     return {
         "status":           "ok",
@@ -502,17 +504,39 @@ def health() -> dict:
         "latest_event_date": latest_event,
         "tmle_run_date":    tmle_date,
         "causal_forest_date": cf_date,
-        "methodology_version":    "v3 (standard TMLE); v4 undersmoothed-HAL sweep in progress",
+        "methodology_version":    "v5 (XGBoost-GPU plug-in, B=500 cluster bootstrap, full n=451k)",
         "hal_radii_complete":     hal_radii_complete,
-        "hal_radii_total":        20,
+        "xgb_radii_complete":     xgb_radii_complete,
+        "xgb_radii_total":        20,
         "combined_test_headline": {
+            "estimator":          "XGBoost-GPU hurdle plug-in",
+            "n":                  451212,
+            "n_clusters":         389,
+            "B":                  500,
+            "all_radii": {
+                "psi":    3.16e-4,
+                "ci_low": 1.65e-4,
+                "ci_high": 4.68e-4,
+                "z":      4.08,
+                "pval":   4.41e-5,
+            },
             "pressure_band_km":   [7, 19],
-            "psi":                2.36e-3,
-            "ci_low":             1.83e-3,
-            "ci_high":            2.88e-3,
-            "z":                  8.81,
-            "pval":               "<1e-17",
-            "description":        "Inverse-variance-weighted combined test over 13 correlated radii.",
+            "pressure_band": {
+                "psi":    6.08e-4,
+                "ci_low": 2.97e-4,
+                "ci_high": 9.19e-4,
+                "z":      3.83,
+                "pval":   1.28e-4,
+            },
+            "near_field_km":      [1, 6],
+            "near_field": {
+                "psi":    2.10e-4,
+                "ci_low": 3.5e-5,
+                "ci_high": 3.85e-4,
+                "z":      2.35,
+                "pval":   1.89e-2,
+            },
+            "description": "Inverse-variance-weighted combined test. Per-radius estimates are individually null under B=500 cluster bootstrap; pooled across bands remains significant.",
         },
     }
 
