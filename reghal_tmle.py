@@ -88,12 +88,13 @@ def extract_hal_basis(hal_fit, X, ro, hal9001):
     # Convert X to R matrix
     flat = ro.FloatVector(X.T.reshape(-1).tolist())
     r_X = ro.r["matrix"](flat, nrow=X.shape[0], ncol=X.shape[1])
-    # Ask hal9001 for the design matrix at new data
-    r_design = hal9001.make_design_matrix(
-        X=r_X,
-        basis_list=ro.r("function(f) f$basis_list")(hal_fit),
-    )
-    # Bring it into Python as a sparse-ish dense matrix
+    # Ask hal9001 for the design matrix at new data.
+    # make_design_matrix signature: (X, blist, p_reserve=0.5). Pass the
+    # basis list via R's generic call; result is a dgCMatrix which we
+    # convert to dense via base::as.matrix.
+    r_blist = ro.r("function(f) f$basis_list")(hal_fit)
+    r_make = ro.r("function(X, blist) as.matrix(hal9001::make_design_matrix(X, blist))")
+    r_design = r_make(r_X, r_blist)
     design = np.asarray(r_design)
     # Get the coefficient vector at lambda_star to identify active bases
     r_coefs = ro.r("function(f) as.numeric(stats::coef(f$lasso_fit, s=f$lambda_star))")(hal_fit)
