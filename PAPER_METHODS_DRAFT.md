@@ -35,7 +35,7 @@ covariates (G₁…G₅):
 
 ## 2. Estimator evolution
 
-The published SPE-228051 paper (Matthews et al. 2025) used OLS with
+The published SPE-228051 paper (Matthews 2025) used OLS with
 DoWhy and Baron-Kenny mediation on 3,050 quality-filtered events. This
 rebuild iterates the methodology while holding the causal DAG fixed:
 
