@@ -693,20 +693,30 @@
         Effect +24% at 7 km. Causal Forest retrained at all 20 radii with neighbor volume. All TMLE and CF models
         now control for what neighboring wells are doing. <strong>This is the current dashboard default.</strong></p>
 
-        <p><strong>V4 (diagnostic pivot):</strong> Diagnostic work in April 2026 revealed that the v3
-        TMLE targeting step inflates estimates 5&ndash;25&times; versus simpler full-panel plug-in methods.
-        At 7 km: v3 says &psi;=+5.3e-3, plug-in methods (OLS, XGBoost, undersmoothed HAL) cluster at
-        &psi;=+2&ndash;8e-4. Diagnostics identified a degenerate clever covariate (H &equiv; 0.909) in
-        CV-TMLE and seed sensitivity in subsampled methods.</p>
+        <p><strong>V4 (diagnostic pivot):</strong> Diagnostic work in April 2026 confirmed two findings:
+        (a) the CV-TMLE clever covariate was numerically degenerate (H &equiv; 1/(1+&delta;) &asymp; 0.909
+        constant), reducing CV-TMLE's targeting step to a uniform shift; (b) per-radius CV-TMLE results
+        were not seed-stable across cluster subsamples (3 of 4 tested radii flipped significance between
+        seed=42 and seed=1). These motivated the move away from CV-TMLE.</p>
 
-        <p><strong>V5 (current, XGBoost-GPU plug-in):</strong> The rigorous answer. Hurdle XGBoost fit on
-        full n=451,212 (389 clusters) with NVIDIA GPU acceleration, cluster bootstrap <strong>B=500</strong>,
-        full 20-radius sweep in under 1 hour of wall time. <strong>Per-radius: 0/20 have CIs that exclude
-        zero.</strong> Pooled across all 20 radii: &psi;=+3.2&times;10<sup>-4</sup>, z=4.08,
-        <em>p</em>=4.4&times;10<sup>-5</sup>. Pressure-band (7&ndash;19 km) pooled:
-        &psi;=+6.1&times;10<sup>-4</sup>, <em>p</em>=1.3&times;10<sup>-4</sup>. Effect is real but small;
-        previous "17/20 significant" was a methodological artifact. <strong>This is the new dashboard
-        default and the paper's headline number.</strong></p>
+        <p><strong>V5 (XGBoost-GPU plug-in comparator):</strong> Hurdle XGBoost fit on full n=451,212
+        (389 clusters) with NVIDIA GPU acceleration, cluster bootstrap <strong>B=500</strong>. Full
+        20-radius sweep in under 1 hour. Pressure-band (7&ndash;19 km) pooled:
+        &psi;=+6.1&times;10<sup>-4</sup>, <em>p</em>=1.3&times;10<sup>-4</sup>. Initially we believed this
+        plug-in answer was the rigorous headline because it had tight CIs at full sample size. Subsequent
+        regHAL-TMLE results show this number is a downward-biased plug-in &mdash; the targeting step
+        (which XGBoost-GPU plug-in does not perform) corrects outcome-model bias and yields a larger
+        estimate. We retain XGBoost-GPU as the full-n plug-in <strong>comparator</strong>.</p>
+
+        <p><strong>V6 (current, regHAL-TMLE Delta-method):</strong> The rigorous causal headline.
+        Implements <a href="https://arxiv.org/abs/2506.17214" style="color:var(--cyan);">Li, Qiu, Wang
+        &amp; van der Laan (June 2025)</a> Delta-method regHAL-TMLE: targeting via the parametric
+        efficient influence curve inside HAL's finite-dimensional implied working model. Cluster-aware
+        subsampled to n=49,519 (42 clusters) for tractable hal9001 fitting on CPU; a GPU HAL backend is
+        in development to scale this to full n. <strong>Pressure-band (7&ndash;19 km) pooled
+        &psi;=+7.65&times;10<sup>-3</sup>, CI [+3.2e-3, +1.21e-2], z=3.38, <em>p</em>=7.2&times;10<sup>-4</sup>.</strong>
+        This is the dashboard's V6 default and the paper's defensible headline. Near-field per-radius
+        regHAL-TMLE estimates at R=1 and R=2 are basis-sensitive (see below).</p>
 
         <p>Full changelog: <a href="https://github.com/Project-Geminae/induced-seismicity/blob/main/CHANGES.md"
         style="color:var(--cyan);">CHANGES.md on GitHub</a></p>
@@ -716,30 +726,80 @@
     <div class="faq-item">
       <h3>Why do different methods give different answers?</h3>
       <div class="a">
-        <p>At radius 7 km (the most-studied radius), the same data under five estimators:</p>
+        <p>At radius 7 km, the same data under six estimators:</p>
+        <table class="cmp-table" style="font-size:0.85rem;">
+          <thead><tr><th>Estimator</th><th>Sample</th><th>&psi; at R=7</th></tr></thead>
+          <tbody>
+            <tr><td>OLS plug-in</td><td>full n=451k</td><td>+6.4&times;10<sup>-4</sup></td></tr>
+            <tr><td>XGBoost-GPU plug-in (B=500)</td><td>full n=451k</td><td>+5.7&times;10<sup>-4</sup></td></tr>
+            <tr><td>Undersmoothed HAL plug-in</td><td>full n=451k</td><td>+2.2&times;10<sup>-4</sup></td></tr>
+            <tr><td>XGBoost-GPU plug-in</td><td>n=50k, 42 clusters</td><td>+1.95&times;10<sup>-3</sup></td></tr>
+            <tr><td>CV-TMLE + haldensify + HAL</td><td>n=50k, 42 clusters</td><td>+2.2&times;10<sup>-3</sup></td></tr>
+            <tr><td><strong>regHAL-TMLE Delta-method</strong></td><td>n=50k, 42 clusters</td><td><strong>+5.55&times;10<sup>-3</sup></strong></td></tr>
+            <tr><td>Standard TMLE v3 (SL ensemble)</td><td>full n=451k</td><td>+5.3&times;10<sup>-3</sup></td></tr>
+          </tbody>
+        </table>
+
+        <p><strong>The picture used to look like &quot;plug-in vs targeting&quot; was a 10&times; gap in
+        magnitude.</strong> Once we ran the same XGBoost plug-in at the same n=50k subsample as
+        regHAL-TMLE (matched-sample comparator), the gap decomposed cleanly:</p>
+
         <ul>
-          <li><strong>OLS plug-in (full n=451k):</strong> &psi;=+6.4e-4</li>
-          <li><strong>XGBoost plug-in (full n):</strong> &psi;=+7.9e-4</li>
-          <li><strong>Undersmoothed HAL plug-in (full n):</strong> &psi;=+2.2e-4 (CI crosses zero)</li>
-          <li><strong>CV-TMLE + haldensify + HAL (n=50k subsampled):</strong> &psi;=+2.2e-3</li>
-          <li><strong>Standard TMLE v3 (full n):</strong> &psi;=+5.3e-3 (dashboard default)</li>
+          <li><strong>Sample-size effect (~3&times;):</strong> XGBoost-GPU plug-in goes from +5.7e-4 at
+          full n to +1.95e-3 at n=50k. Same estimator, smaller sample &rarr; larger estimate due to
+          finite-sample shrinkage of XGBoost's outcome predictions.</li>
+          <li><strong>Targeting correction (~3&times;):</strong> At matched n=50k, plug-in XGBoost gives
+          +1.95e-3 while regHAL-TMLE gives +5.55e-3. The targeting step inside HAL's working model
+          corrects outcome-model bias that XGBoost's plug-in carries.</li>
+          <li>Combined: 3&times; &times; 3&times; = ~10&times; total gap from full-n plug-in to subsampled targeting.</li>
         </ul>
-        <p>Three independent full-panel plug-in methods cluster at +2&ndash;8e-4. Two
-        targeting-based estimators land 3&ndash;25&times; higher. The CV-TMLE clever
-        covariate was diagnosed to be numerically degenerate (H = 1/(1+&delta;) = 0.909
-        constant), reducing targeting to a uniform constant shift. The standard v3 TMLE
-        at 7 km has a healthy max_H = 4.8, so its inflation is not diagnosable via the
-        usual positivity check &mdash; it is likely due to a SuperLearner outcome-model
-        bias that targeting over-corrects.</p>
-        <p>The rigorous answer per van der Laan's lab is <strong>regularized HAL-TMLE</strong>
-        (<a href="https://arxiv.org/abs/2506.17214" style="color:var(--cyan);">arXiv:2506.17214</a>),
-        which operates within HAL's implied finite-dimensional working model and avoids
-        both failure modes. The paper is 6 months old; implementation scaffold is in our
-        repo.</p>
-        <p>Our interim recommendation: report the multiplicity-safe combined pressure-band
-        test as the headline (&psi;=+2.4e-3, <em>p</em>&lt;10<sup>-17</sup>), caveat the
-        per-radius per-method estimates, and publish the full cross-method comparison as
-        a supplement.</p>
+
+        <p><strong>Which is right?</strong> Both estimators are estimating the same population &psi;,
+        but the plug-in is biased while the targeted is doubly-robust. Per <a
+        href="https://arxiv.org/abs/2506.17214" style="color:var(--cyan);">Li, Qiu, Wang &amp; van der Laan
+        (2025)</a>, regHAL-TMLE is the asymptotically efficient estimator under standard TMLE assumptions
+        when HAL's implied basis is rich enough. We treat it as the primary causal headline.</p>
+
+        <p>Standard TMLE v3 (full n with SuperLearner outcome model + histogram density targeting) lands
+        at +5.3e-3, very close to regHAL-TMLE's +5.55e-3 at n=50k. This is methodologically reassuring
+        &mdash; v3's targeting magnitude was approximately correct; what v3 got wrong was over-narrow
+        IF-based confidence intervals and per-radius significance claims that did not survive seed
+        sensitivity. We <strong>do not</strong> conclude that v3 was inflated.</p>
+
+        <p>CV-TMLE + haldensify (n=50k) sits at +2.2e-3, between plug-in and properly-targeted.
+        Diagnostic work showed this estimator's clever covariate was numerically degenerate
+        (H &equiv; 1/(1+&delta;) = 0.909 constant), reducing its targeting step to a uniform shift
+        rather than basis-aware correction. We retain CV-TMLE as a <strong>methodological cautionary
+        comparator</strong> rather than a primary estimate.</p>
+
+        <p><strong>Headline framing:</strong> the paper reports the combined pressure-band (7&ndash;19 km)
+        regHAL-TMLE result &psi;=+7.65&times;10<sup>-3</sup>, p=7.2&times;10<sup>-4</sup> as primary,
+        with the full cross-estimator table as Supplementary. The XGBoost-GPU plug-in result is reported
+        as a precise but biased comparator that confirms the qualitative pattern (positive effect
+        concentrated at pressure-diffusion distances, monotone with radius).</p>
+      </div>
+    </div>
+
+    <div class="faq-item">
+      <h3>Why does R=1 (and R=2) have a negative regHAL-TMLE estimate?</h3>
+      <div class="a">
+        <p>At R=1 with default <code>max_degree=2</code> HAL (basis includes pairwise interactions),
+        regHAL-TMLE returns a significant negative pooled effect (&psi;=-1.16&times;10<sup>-2</sup>,
+        CI [-1.56e-2, -7.5e-3]). This appears to suggest injection <em>reduces</em> seismicity at
+        very near distances.</p>
+        <p>A basis-simplification sensitivity check disposes of this finding. With
+        <code>max_degree=1</code> (main effects only, no interactions), R=1 regHAL-TMLE gives
+        &psi;=+7.3&times;10<sup>-5</sup> (CI [-7.9e-3, +8.1e-3]) &mdash; null, indistinguishable
+        from zero. The negative result was an artifact of the hurdle-XGBoost-style basis interacting
+        with the very small positive-outcome subsample at R=1 (only 823 events of 451,212 rows fall
+        within 1 km of any well, further reduced in the 50k cluster subsample).</p>
+        <p>We therefore interpret near-field (R=1, R=2) regHAL-TMLE estimates as <strong>inconclusive
+        pending the GPU-HAL full-n analysis</strong>. The pressure-band (7&ndash;19 km) and far-field
+        (15&ndash;20 km) results are stable across basis configurations and are the defensible
+        causal claims.</p>
+        <p>Note this caveat applies to the <strong>population-level</strong> regHAL-TMLE estimate,
+        not to the per-well Causal Forest CATEs visible on the dashboard. CATEs are computed on the
+        full panel via DML and are not subject to the basis-sensitivity issue described here.</p>
       </div>
     </div>
 

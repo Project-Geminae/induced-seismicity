@@ -442,7 +442,47 @@ which diagnostics traced to (a) degenerate clever covariate in CV-TMLE
 despite healthy max_H.
 </p>
 
-<h4 style="margin-top:1.5rem;">3.1.2 Diagnostic findings</h4>
+<h4 style="margin-top:1.5rem;">3.1.3 Dose-response curves (XGBoost-GPU, B=500)</h4>
+<p>
+Beyond the single shift estimand, we estimated E[Y_a] at five injection levels
+spanning 10<sup>3</sup> to 10<sup>7</sup> BBL using the hurdle XGBoost outcome
+model on the full panel (n=451,212, 389 clusters), bootstrap B=500. Across all
+20 radii &times; 5 doses = 100 (radius, dose) combinations, every 95% CI
+excluded zero. Sampled values at five representative radii:
+</p>
+
+<table class="cmp-table" style="font-size:0.78rem;">
+  <thead>
+    <tr><th>Radius</th><th>E[Y\|A=10<sup>3</sup>]</th><th>E[Y\|A=10<sup>5</sup>]</th><th>E[Y\|A=10<sup>7</sup>]</th><th>Factor (10<sup>7</sup>/10<sup>3</sup>)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1 km (near-field)</td><td>+7.2&times;10<sup>-4</sup></td><td>+1.48&times;10<sup>-3</sup></td><td>+3.55&times;10<sup>-3</sup></td><td>4.9&times;</td></tr>
+    <tr><td>4 km</td><td>+1.48&times;10<sup>-2</sup></td><td>+1.88&times;10<sup>-2</sup></td><td>+3.41&times;10<sup>-2</sup></td><td>2.3&times;</td></tr>
+    <tr><td>7 km</td><td>+6.23&times;10<sup>-2</sup></td><td>+6.31&times;10<sup>-2</sup></td><td>+7.29&times;10<sup>-2</sup></td><td>1.17&times;</td></tr>
+    <tr><td>13 km</td><td>+1.63&times;10<sup>-1</sup></td><td>+1.70&times;10<sup>-1</sup></td><td>+1.82&times;10<sup>-1</sup></td><td>1.11&times;</td></tr>
+    <tr><td>19 km (far-field)</td><td>+2.32&times;10<sup>-1</sup></td><td>+2.71&times;10<sup>-1</sup></td><td>+3.15&times;10<sup>-1</sup></td><td>1.36&times;</td></tr>
+  </tbody>
+</table>
+
+<p>
+<strong>Pattern:</strong> Near-field (R=1) shows a steep 5&times; increase from
+10<sup>3</sup> to 10<sup>7</sup> BBL, but from a very low base rate (only 823 events
+within 1 km of any well in the full panel). Mid-field (R=7&ndash;13) is mostly
+flat &mdash; high absolute level due to larger catchment, small marginal effect of
+volume. Far-field (R=19) shows both high level and 36% increase across the dose
+range, consistent with pressure-diffusion requiring sufficient total volume and
+time to propagate to those distances.
+</p>
+
+<p>
+<strong>Policy implication:</strong> reductions at the highest-volume wells
+(near 10<sup>7</sup> BBL) yield the largest per-BBL marginal decrease in
+expected seismicity. The marginal effect is strongest at distances of 13&ndash;19 km
+where the pressure front arrives within the 365-day treatment window. Full table
+of 100 (radius, dose) estimates is in <code>xgb_dose_response_sweep.csv</code>.
+</p>
+
+<h4 style="margin-top:1.5rem;">3.1.4 Diagnostic findings</h4>
 <p>Four checks run on the CV-TMLE + haldensify pipeline reframe the inference:</p>
 <ul>
   <li><strong>✅ Influence function mean:</strong> |mean(IF)| / SE(IF) &approx; 0 at
