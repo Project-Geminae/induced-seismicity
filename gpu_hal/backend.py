@@ -64,11 +64,28 @@ def build_hal_basis(
     """)
     basis_list = enumerate_fn(r_X, max_degree, r_knots, smoothness_orders)
 
-    design_fn = ro.r("function(X, blist) as.matrix(hal9001::make_design_matrix(X, blist))")
-    r_design = design_fn(r_X, basis_list)
-    design = np.asarray(r_design)
-    basis_csr = csr_matrix(design)
-
+    # Build the sparse design matrix in R, then extract its dgCMatrix
+    # slots WITHOUT a dense coercion. as.matrix() on a sparse Matrix at
+    # n=451k can need 5+ GB; we avoid that by reading the CSC triple
+    # (i = row indices, p = column pointers, x = values, Dim = shape).
+    extract_fn = ro.r("""
+    function(X, blist) {
+        m <- hal9001::make_design_matrix(X, blist)
+        list(i = m@i, p = m@p, x = m@x,
+             nrow = m@Dim[1], ncol = m@Dim[2])
+    }
+    """)
+    parts = extract_fn(r_X, basis_list)
+    # rpy2 returns these as R vectors; numpy.asarray copies into Python.
+    indptr  = np.asarray(parts.rx2("p"), dtype=np.int64)
+    indices = np.asarray(parts.rx2("i"), dtype=np.int64)
+    data    = np.asarray(parts.rx2("x"), dtype=np.float64)
+    nrow    = int(parts.rx2("nrow")[0])
+    ncol    = int(parts.rx2("ncol")[0])
+    # dgCMatrix is column-compressed (CSC). Build CSC then convert to CSR.
+    from scipy.sparse import csc_matrix
+    basis_csc = csc_matrix((data, indices, indptr), shape=(nrow, ncol))
+    basis_csr = basis_csc.tocsr()
     return basis_csr, basis_list
 
 
@@ -85,6 +102,19 @@ def apply_basis(
     ro, hal9001, base = _init_r()
     X_new = np.asarray(X_new, dtype=float)
     r_X = _to_r_mat(ro, X_new)
-    design_fn = ro.r("function(X, blist) as.matrix(hal9001::make_design_matrix(X, blist))")
-    r_design = design_fn(r_X, basis_list)
-    return csr_matrix(np.asarray(r_design))
+    # Same dense-allocation avoidance as build_hal_basis.
+    extract_fn = ro.r("""
+    function(X, blist) {
+        m <- hal9001::make_design_matrix(X, blist)
+        list(i = m@i, p = m@p, x = m@x,
+             nrow = m@Dim[1], ncol = m@Dim[2])
+    }
+    """)
+    parts = extract_fn(r_X, basis_list)
+    indptr  = np.asarray(parts.rx2("p"), dtype=np.int64)
+    indices = np.asarray(parts.rx2("i"), dtype=np.int64)
+    data    = np.asarray(parts.rx2("x"), dtype=np.float64)
+    nrow    = int(parts.rx2("nrow")[0])
+    ncol    = int(parts.rx2("ncol")[0])
+    from scipy.sparse import csc_matrix
+    return csc_matrix((data, indices, indptr), shape=(nrow, ncol)).tocsr()
