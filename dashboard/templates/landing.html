@@ -231,10 +231,10 @@
 
 <!-- ═══════════════════════════════════════════ METHODOLOGY UPDATE BANNER ═══ -->
 <div style="background:#102215; border-bottom:1px solid #3a6b4c; padding:0.6rem 1rem; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:0.75rem; color:#9fd8b3; line-height:1.4;">
-  <strong style="color:#7ee5a3;">✓ V5 ESTIMATOR:</strong>
-  XGBoost-GPU hurdle plug-in, <strong>B=500</strong> cluster bootstrap, full n=451,212 (389 clusters).
-  Pooled shift effect &psi; = <strong>+3.2&times;10<sup>-4</sup></strong>, CI [+1.7, +4.7]&times;10<sup>-4</sup>, <em>z</em>=4.08, <em>p</em>=4.4&times;10<sup>-5</sup>.
-  Per-radius individually null &mdash; see <a href="/methodology" style="color:#ffd27f; text-decoration:underline;">methodology</a>.
+  <strong style="color:#7ee5a3;">✓ V6 ESTIMATOR:</strong>
+  regHAL-TMLE (Li, Qiu, Wang &amp; van der Laan 2025; arXiv:2506.17214), n=50k cluster-aware subsample.
+  Pressure-band (7&ndash;19 km) pooled &psi; = <strong>+7.7&times;10<sup>-3</sup></strong>, CI [+3.2, +12.1]&times;10<sup>-3</sup>, <em>z</em>=3.38, <em>p</em>=7.2&times;10<sup>-4</sup>.
+  &mdash; see <a href="/methodology" style="color:#ffd27f; text-decoration:underline;">methodology</a> for the cross-estimator comparison.
 </div>
 
 <!-- ═══════════════════════════════════════════ HERO ═══ -->
@@ -376,9 +376,9 @@
       <tr><td><strong>Per-well effects</strong></td><td><span class="tag tag-r">Not available</span></td><td><span class="tag tag-g">Causal Forest CATE + honest CI at all 20 radii</span></td></tr>
       <tr><td><strong>Spatial interference</strong></td><td><span class="tag tag-r">Not addressed</span></td><td><span class="tag tag-g">Neighbor well volumes controlled (VIF 1.12)</span></td></tr>
       <tr><td><strong>Dose-response</strong></td><td><span class="tag tag-r">Straight line</span></td><td><span class="tag tag-g">Nonparametric curve with extrapolation warnings</span></td></tr>
-      <tr><td><strong>All 20 radii pooled</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">&psi;=+3.2&times;10<sup>-4</sup>, <em>p</em>=4.4&times;10<sup>-5</sup> (XGB-GPU, B=500)</span></td></tr>
-      <tr><td><strong>Pressure band (7&ndash;19 km)</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">&psi;=+6.1&times;10<sup>-4</sup>, <em>p</em>=1.3&times;10<sup>-4</sup></span></td></tr>
-      <tr><td><strong>Near-field (1&ndash;6 km)</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">&psi;=+2.1&times;10<sup>-4</sup>, <em>p</em>=0.019</span></td></tr>
+      <tr><td><strong>Pressure band (7&ndash;19 km), regHAL-TMLE</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">&psi;=+7.7&times;10<sup>-3</sup>, <em>p</em>=7.2&times;10<sup>-4</sup></span></td></tr>
+      <tr><td><strong>Pressure band (7&ndash;19 km), XGBoost-GPU</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">&psi;=+6.1&times;10<sup>-4</sup>, <em>p</em>=1.3&times;10<sup>-4</sup> (plug-in)</span></td></tr>
+      <tr><td><strong>Near-field (1&ndash;6 km)</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-a">Inconclusive (basis-sensitive)</span></td></tr>
       <tr><td><strong>Confidence intervals</strong></td><td><span class="tag tag-a">Assumes equal variance</span></td><td><span class="tag tag-g">Bessel-corrected cluster IF SEs</span></td></tr>
       <tr><td><strong>Validation</strong></td><td><span class="tag tag-a">DoWhy refuters</span></td><td><span class="tag tag-g">R tlverse (&lt;0.1%) + 6 sensitivity analyses</span></td></tr>
     </tbody>
@@ -463,7 +463,7 @@
     <div class="stat"><div class="val">7,424</div><div class="lbl">Earthquakes (TexNet)</div></div>
     <div class="stat"><div class="val">1,056</div><div class="lbl">SWD Wells (RRC)</div></div>
     <div class="stat"><div class="val">903,887</div><div class="lbl">Well-Day Observations</div></div>
-    <div class="stat"><div class="val">+3.2e-4</div><div class="lbl">Pooled &psi; (XGB-GPU B=500, <em>p</em>=4.4e-5)</div></div>
+    <div class="stat"><div class="val">+7.7e-3</div><div class="lbl">Pressure-band &psi; (regHAL-TMLE, <em>p</em>=7.2e-4)</div></div>
     <div class="stat"><div class="val">20</div><div class="lbl">Radii Analyzed (1&ndash;20 km)</div></div>
   </div>
 </section>

@@ -1,0 +1,2 @@
+radius_km,window_days,shift_pct,n,n_clusters,n_basis,psi_plugin,psi_targeted,se_cluster,ci_low,ci_high,pval,n_iter,converged,elapsed_sec,estimator
+11,365,0.1,49519,42,76,0.006707627246055501,0.007422195091102112,0.007890621945206552,-0.008043139737124113,0.02288752991932834,0.34689194469519014,5,False,228.22466802597046,reghal_tmle_delta

@@ -57,6 +57,28 @@ def load_hal():
     return df
 
 
+def load_reghal():
+    frames = []
+    for f in ROOT.glob("reghal_shift_*km.csv"):
+        # Skip diagnostic variants like reghal_shift_1km_maxdeg1.csv
+        if "maxdeg" in f.name:
+            continue
+        d = pd.read_csv(f)
+        # regHAL CSV has psi_targeted, not psi
+        d_renamed = pd.DataFrame({
+            "radius_km": d["radius_km"],
+            "psi": d["psi_targeted"],
+            "ci_low": d["ci_low"],
+            "ci_high": d["ci_high"],
+        })
+        frames.append(d_renamed)
+    if not frames:
+        return pd.DataFrame()
+    df = pd.concat(frames, ignore_index=True)
+    df["estimator"] = "regHAL-TMLE (n=50k, 42 clusters)"
+    return df
+
+
 def load_benchmark_plugins():
     """Load the OLS benchmark points (radius 7 only)."""
     p = ROOT / "benchmark_shift_7km.csv"
@@ -92,15 +114,17 @@ def make_figure(df_all: pd.DataFrame, outpath: Path = Path("estimator_comparison
     estimators = [
         "Standard TMLE v3 (full n)",
         "CV-TMLE + haldensify + HAL (n=50k)",
+        "regHAL-TMLE (n=50k, 42 clusters)",
         "Undersmoothed HAL (full n)",
         "XGBoost-GPU (full n, B=500)",
         "OLS plug-in (full n)",
     ]
     colors = {
-        "Standard TMLE v3 (full n)":            "#D62728",  # red (prior headline, inflated)
+        "Standard TMLE v3 (full n)":            "#D62728",  # red (prior headline)
         "CV-TMLE + haldensify + HAL (n=50k)":   "#FF7F0E",  # orange
-        "Undersmoothed HAL (full n)":           "#2CA02C",  # green (van der Laan-faithful)
-        "XGBoost-GPU (full n, B=500)":          "#000000",  # black (new v5 headline)
+        "regHAL-TMLE (n=50k, 42 clusters)":     "#8B0000",  # dark red (van der Laan 2025)
+        "Undersmoothed HAL (full n)":           "#2CA02C",  # green
+        "XGBoost-GPU (full n, B=500)":          "#000000",  # black (v5 plug-in)
         "OLS plug-in (full n)":                 "#9467BD",  # purple
     }
 
@@ -139,7 +163,7 @@ def make_figure(df_all: pd.DataFrame, outpath: Path = Path("estimator_comparison
 
 
 def main():
-    frames = [load_v3_tmle(), load_cv_tmle(), load_hal(), load_xgb_gpu(), load_benchmark_plugins()]
+    frames = [load_v3_tmle(), load_cv_tmle(), load_reghal(), load_hal(), load_xgb_gpu(), load_benchmark_plugins()]
     frames = [f for f in frames if not f.empty]
     if not frames:
         print("No estimator data found in cwd.")
