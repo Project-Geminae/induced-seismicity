@@ -122,15 +122,19 @@ def fit_hal_gpu(
     if verbose:
         print(f"[GPU-HAL] Basis matrix: ({n} × {p}), nnz = {phi_csr.nnz}, density = {phi_csr.nnz/(n*p):.2%}")
 
-    # ── Step 2: CV λ selection via FISTA path ───────────────────────
+    # ── Step 2: CV λ selection via Gram-based coordinate descent ────
+    # CD converges in O(log 1/ε) iterations vs FISTA's O(1/sqrt(ε)) — for
+    # sparse problems with very small λ, CD is dramatically faster and
+    # produces glmnet-equivalent solutions.
+    from . import cv_cd, fista_gram, cd_gram
     if verbose:
-        print(f"[GPU-HAL] k={n_folds}-fold CV λ selection (FISTA, n_lambdas={n_lambdas})...")
+        print(f"[GPU-HAL] k={n_folds}-fold CV λ selection (Gram-CD, n_lambdas={n_lambdas})...")
     y_mean = float(y.mean())
     y_centered = y - y_mean
-    cv_res = cv_mod.cv_fista_lasso_sparse(
+    cv_res = cv_cd.cv_cd_gram_sparse(
         phi_csr, y, lambdas=lambda_grid,
         n_lambdas=n_lambdas, ratio=lambda_ratio,
-        n_folds=n_folds, max_iter=max_iter, tol=tol, seed=seed,
+        n_folds=n_folds, max_sweeps=max_iter, tol=tol, seed=seed,
         verbose=verbose,
     )
     if verbose:
@@ -141,23 +145,23 @@ def fit_hal_gpu(
     lambda_used = cv_res.lambda_cv * factor
     if verbose:
         print(f"[GPU-HAL] Final fit at λ = {lambda_used:.4e} (undersmoothing factor = {factor:.3f})")
-    matvec, rmatvec, L = fista.make_sparse_matvec(phi_csr)
+    G_full, Xty_full = fista_gram.compute_gram(phi_csr, y_centered)
     import jax.numpy as jnp
-    y_j = jnp.asarray(y_centered)
-    final_fit = fista.fista_lasso(
-        matvec, rmatvec, y_j, p, lambda_used, n,
-        L=L, max_iter=max_iter, tol=tol, verbose=False,
+    G_j = jnp.asarray(G_full)
+    Xty_j = jnp.asarray(Xty_full)
+    final_fit = cd_gram.cd_lasso_gram(
+        G=G_j, Xty=Xty_j, lam=lambda_used,
+        max_sweeps=max_iter, tol=tol, verbose=False,
     )
 
-    # Unscale β to the original (unnormalized) basis:
-    # if φ̃_j = φ_j / s_j and we fit β̃, then Q(x) = Σ β̃_j φ̃_j(x)
-    # = Σ (β̃_j / s_j) φ_j(x), so β_j = β̃_j / s_j.
+    # Unscale β to the original (unnormalized) basis
     beta_final = np.asarray(final_fit.beta) / col_norms
 
     elapsed = time.time() - t0
     if verbose:
         active = int(np.sum(np.abs(beta_final) > 0))
-        print(f"[GPU-HAL] Final fit: {final_fit.n_iter} FISTA iters, {active} active bases, "
+        n_iters = getattr(final_fit, "n_sweeps", getattr(final_fit, "n_iter", 0))
+        print(f"[GPU-HAL] Final fit: {n_iters} CD sweeps, {active} active bases, "
               f"gap={final_fit.final_gap:.2e} ({elapsed:.0f}s total)")
 
     active_idx = np.where(np.abs(beta_final) > 0)[0]

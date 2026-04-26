@@ -220,16 +220,15 @@ def make_sparse_matvec(X_sparse):
         X_sparse = X_sparse.tocsr()
     X_coo = X_sparse.tocoo()
 
-    # Build JAX BCOO for X and X^T (avoid transpose allocation per-iter)
-    indices_X = _np.stack([X_coo.row, X_coo.col], axis=1)
+    # Build a single JAX BCOO for X. Compute X^T @ v via BCOO.T so we
+    # don't materialize both X and X^T on GPU (cuts sparse memory in half).
+    # Use int32 indices (saves 50% vs int64) and float32 values — at
+    # n=451k max basis index ~5000, both fit easily in int32.
+    indices_X = _np.stack([X_coo.row, X_coo.col], axis=1).astype(_np.int32)
     X_bcoo = jsp.BCOO((jnp.asarray(X_coo.data, dtype=jnp.float32),
-                        jnp.asarray(indices_X)),
+                        jnp.asarray(indices_X, dtype=jnp.int32)),
                        shape=X_coo.shape)
-    XT_coo = X_sparse.T.tocoo()
-    indices_XT = _np.stack([XT_coo.row, XT_coo.col], axis=1)
-    XT_bcoo = jsp.BCOO((jnp.asarray(XT_coo.data, dtype=jnp.float32),
-                        jnp.asarray(indices_XT)),
-                       shape=XT_coo.shape)
+    XT_bcoo = X_bcoo.T
 
     def matvec(v):
         return X_bcoo @ v
