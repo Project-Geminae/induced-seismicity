@@ -1,0 +1,43 @@
+name: gpu_hal tests
+
+on:
+  push:
+    branches: [main, tmle-rebuild]
+    paths:
+      - 'gpu_hal/**'
+      - '.github/workflows/gpu_hal_test.yml'
+  pull_request:
+    paths:
+      - 'gpu_hal/**'
+
+jobs:
+  synthetic-validation:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install jax numpy scipy scikit-learn pytest pytest-cov
+
+      - name: Install gpu_hal (CPU-only for CI)
+        run: |
+          cd gpu_hal && pip install -e . || pip install -e .
+
+      - name: Run FISTA vs sklearn validation
+        run: |
+          python gpu_hal/tests/test_fista_vs_sklearn.py
+
+      - name: Run CD vs sklearn validation
+        run: |
+          python gpu_hal/tests/test_cd_vs_sklearn.py

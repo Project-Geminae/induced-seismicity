@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpu-hal"
+version = "0.1.0"
+description = "GPU-accelerated Highly Adaptive Lasso for population-level causal inference at scale"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [
+    {name = "L. Matthews"},
+]
+keywords = ["highly adaptive lasso", "TMLE", "causal inference", "GPU", "JAX"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "jax>=0.5.0",
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "scikit-learn>=1.3",
+]
+
+[project.optional-dependencies]
+gpu = ["jax[cuda12]>=0.5.0"]
+backend = ["rpy2>=3.6"]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "https://github.com/Project-Geminae/induced-seismicity"
+Repository = "https://github.com/Project-Geminae/induced-seismicity"
+Issues = "https://github.com/Project-Geminae/induced-seismicity/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gpu_hal*"]
+exclude = ["gpu_hal.tests*"]
