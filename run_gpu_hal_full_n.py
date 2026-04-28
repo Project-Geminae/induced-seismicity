@@ -64,7 +64,7 @@ def main():
 
     # Plug-in psi for the shift target
     A_post = data[W].to_numpy() * (1.0 + args.shift_pct)
-    X_post = data[[W] + list(confs)].to_numpy(dtype=np.float64)
+    X_post = data[[W] + list(confs)].to_numpy(dtype=np.float64).copy()
     X_post[:, 0] = A_post
     y_post_pred = fit.predict(X_post)
     y_obs_pred = fit.predict(X)

@@ -88,13 +88,29 @@ def confounder_columns(radius_km: int) -> list[str]:
     shows the indirect (pressure-mediated) effect is robust to this substitution,
     but the direct effect is sensitive.
 
-    Note 2: avg_rate_365d (avg daily injection rate) was tested as a confounder
-    but rejected (rate_definition_check.py). Cumulative volume = rate × duration,
-    so any rate definition is mechanically near-collinear with the treatment
-    (correlation 0.84-0.89, VIF 3.7-5.5). Adding it inflated CATE estimates 12×
-    with proportionally wider CIs, leaving zero wells statistically significant.
-    The current model interprets effects as policy-relevant cumulative-volume
-    effects averaged over the rate distribution.
+    Note 2 (2026-04 update): avg_rate_365d (avg daily injection rate) was
+    initially rejected as a confounder per rate_definition_check.py — the
+    objection was that rate is mechanically near-collinear with the
+    cum_vol_365d treatment (correlation 0.84–0.89, VIF 3.7–5.5), and an
+    early sensitivity test showed CATE estimates inflating 12× with
+    proportionally wider CIs.
+
+    A subsequent sensitivity analysis (model_improvements.py, 2026-04)
+    revisited this with the per-radius Causal Forest pipeline and found
+    a +295 % effect change at R = 7 km when avg_rate_365d is added to
+    the confounder set — the largest specification gap in the pipeline.
+    The Causal Forest's tree-splitting handles the rate × volume
+    interaction without the linear-model collinearity problem that
+    blocked the original OLS sensitivity test.
+
+    Decision (2026-04): the deployed dashboard `cf_cate_*.pkl` models
+    include `avg_rate_365d` and `neighbor_cum_vol_7km` as G5/G6 via the
+    optional `has_rate` / `has_neighbor` guards in build_causal_forest.py
+    (which adds them when present in the panel). `confounder_columns()`
+    here returns the canonical G1–G5 spec used by the TMLE/regHAL
+    pipeline, where the linear-model collinearity consideration still
+    applies — the per-radius CF pipeline opts in via its own column
+    selection logic.
     """
     return [
         COL_NEAREST_FAULT_KM,
