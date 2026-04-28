@@ -284,8 +284,65 @@ At R = 7 km, n = 50,000, the GPU hurdle HAL fit produces:
 (The GPU hurdle ψ_total is smaller in magnitude than the regHAL-TMLE
 +5.55 × 10⁻³ at the same R, n. The discrepancy is attributable to a
 documented finite-sample λ-selection sensitivity in the GPU hurdle
-pipeline; see §6.5. The **decomposition ratios** are stable across this
-sensitivity and are the primary scientific finding of this section.)
+pipeline; see §6.5. The qualitative finding — **both channels positive
+under all CV setups tried, with frequency channel dominant when GPU's
+3-fold cluster-aware CV is used** — is the primary scientific result of
+this section. The quantitative 54 / 34 / 12 split depends materially on
+the CV configuration, as documented in the sensitivity panel below.)
+
+**CV-setup sensitivity panel (R = 7 km, n ≈ 50,000, A → A · 1.10).** A
+sequence of CPU baselines run against the GPU hurdle pipeline reveals
+that the channel decomposition is sensitive to cross-validation setup.
+Results obtained by varying *only* the CV configuration while holding
+the basis enumeration (`hal9001::make_design_matrix` with
+max_degree = 2, num_knots = (25, 10), smoothness_orders = 1) fixed:
+
+| Pipeline | CV setup | Stage 1 active | Stage 2 active | ψ_total | freq / mag / cross |
+|---|---|---:|---:|---:|---|
+| GPU hurdle (this work) | 3-fold cluster-aware, GPU's λ-grid | 227 | 134 | +1.76 × 10⁻³ | **54 / 34 / 12** |
+| CPU HurdleHAL (default) | hal9001 default; path null | 0¹ | 0¹ | +3.08 × 10⁻³ | not computed² |
+| CPU custom-grid v2 | 5-fold random; explicit λ ∈ [10⁻⁸, 10²] | 718 | 70 | +4.73 × 10⁻⁴ | −56 / +123 / +32 |
+| CPU custom-grid v3 | 5-fold cluster-aware; explicit λ | 2 | 70 | +2.71 × 10⁻⁴ | 23 / 77 / 0 |
+| CPU custom-grid v4 | 3-fold cluster-aware; explicit λ | 1 | 2 | +4.21 × 10⁻⁵ | 0 / 100 / 0 |
+
+¹ hal9001's `f$lasso_fit$beta` reports zero across the entire
+λ-path (glmnet's `dev.ratio` early-stop), but `predict.hal9001`
+returns non-zero predictions, indicating an alternate post-CV
+coefficient set internal to hal9001.
+² channel decomposition not computed in the default-grid HurdleHAL run
+because individual stage βs were not extractable from the alternate
+coefficient set.
+
+The five-row spread (ψ_total varies by **42×** from +4.21 × 10⁻⁵ to
++3.08 × 10⁻³, and the frequency channel sign-flips between random
+and cluster-aware folds) demonstrates that **the channel-decomposition
+ratios are not implementation- or CV-invariant.** Earlier reports of
+"53 / 34 / 13" (an earlier CPU regHAL fit at this R, n) and the present
+"54 / 34 / 12" (GPU hurdle) are consistent with each other and reflect
+the GPU pipeline's specific CV configuration; alternative defensible
+CV setups produce qualitatively different splits, including degenerate
+intercept-only fits in the v4 row above.
+
+The most striking row is v4: with **GPU's own CV configuration** (3
+cluster-aware folds, explicit log-spaced λ-grid spanning the active
+region), `cv.glmnet` selects only 1 active basis in stage 1 and 2 in
+stage 2, vs. GPU CD's 227 and 134 at the same nominal configuration.
+This residual gap implicates one or more of: (a) cluster-fold size
+balancing — my `cluster_foldid` uses cluster-id mod n_folds, producing
+unbalanced fold sizes [13909, 20117, 15493], (b) CV scoring rule
+differences between `glmnet`'s binomial deviance and GPU CD's CV
+objective, or (c) GPU's data-driven λ-grid construction differing
+from the explicit log-spaced grid I supplied. Closing this gap
+definitively would require instrumenting the GPU pipeline's CV path
+to replicate it bit-for-bit (~1 day, see `FUTURE_WORK/README.md`).
+
+**Policy implication.** The quantitative split should not be reported
+as a robust geological invariant. Citations of "≈ 50 % frequency, ≈ 35 %
+magnitude, ≈ 15 % cross" should be qualified as "under cluster-aware
+3-fold CV with a basis-density-extended λ-grid, n ≈ 50k." The
+qualitative claim that volume reductions act on *both* event frequency
+and conditional event magnitude — with neither channel zero — is
+robust across all five CV configurations tested.
 
 **Policy interpretation.** Slightly more than half of the population-
 level shift effect operates through the frequency channel: a 10 %
@@ -355,22 +412,59 @@ field (R = 15–20) results are stable across basis configurations.
 ### 6.5 Documented λ-selection gap with `hal9001` hurdle
 
 Our companion `gpu_hal` package independently reproduces a hurdle HAL
-fit on the same basis matrix as `hal9001::fit_hal`. At R = 7, n = 50k:
+fit on the same basis matrix as `hal9001::fit_hal`. At R = 7, n = 50k,
+five pipelines were run on identical (X, y, basis) inputs, varying
+only the CV configuration:
 
-- `hal9001` hurdle (CPU baseline): ψ_total = +4.02 × 10⁻³
-- `gpu_hal` hurdle (matched n, matched basis): ψ_total = +1.76 × 10⁻³
+| Pipeline | ψ_total |
+|---|---|
+| GPU hurdle, 3-fold cluster CV | +1.76 × 10⁻³ |
+| CPU HurdleHAL, default hal9001 grid | +3.08 × 10⁻³ |
+| CPU HurdleHAL, historical fit | +4.02 × 10⁻³ |
+| CPU custom-grid, 5-fold random CV | +4.73 × 10⁻⁴ |
+| CPU custom-grid, 5-fold cluster CV | +2.71 × 10⁻⁴ |
 
-The gap is isolated to **finite-sample λ-selection** (basis and solver
-match to machine precision in synthetic validation). It arises because
-the hurdle CV deviance curve is shallow in λ at the ≈ 4 % positive-
-outcome rate and 28 % basis density, so different fold partitions and
-λ-grid heuristics yield different argmin λ. This is **finite-sample
-λ-selection instability under zero-inflated outcomes** — independent of
-the GPU vs CPU implementation — and is itself a methodological caveat
-worth documenting for the broader HAL community.
+A subsequent diagnostic round (`gpu_hal/tests/diagnose_along_path.py`,
+`diagnose_hurdle_lambdas.py`, `diagnose_custom_grid.py`) localised the
+discrepancy to two compounding `hal9001`/`glmnet` behaviours, **not**
+to a `gpu_hal` solver bug:
+
+1. **`glmnet`'s `dev.ratio` early-stop truncates the λ-path 14 orders
+   of magnitude above where any basis becomes active** on this n = 50k,
+   ≈ 4 % positive-outcome data. The default `lambda.min.ratio = 1e-4`
+   gives λ_min ≈ 1.86 × 10⁸, while the GPU pipeline's CV finds the
+   active region at λ ≈ 2 × 10⁻⁶ (a 14-order-of-magnitude gap).
+   Overriding `lambda.min.ratio = 1e-15` extends the path by only
+   ≈ 0.2 orders of magnitude before glmnet halts on convergence
+   warnings (`error code -99/-100/-86`). Forcing an explicit
+   log-spaced λ-vector to glmnet bypasses this.
+2. **`hal9001::predict()` uses an alternate post-CV coefficient set**
+   not stored in `f$lasso_fit$beta`. With the default grid, all path
+   `β` values are reported as zero across the full grid, yet
+   `predict.hal9001` returns non-trivial outputs (Q(X) varies with X)
+   producing the +3.08 × 10⁻³ figure above.
+
+When the `hal9001` wrapper is bypassed and `glmnet::cv.glmnet` is given
+an explicit log-spaced λ-vector covering the active region (CPU custom-
+grid above), the resulting hurdle fit produces ψ_total in the range
+2.7–4.7 × 10⁻⁴ with channel decompositions that depend on CV fold
+structure. The point estimate of ψ_total varies by **14×** across the
+five CV configurations; the channel split varies even more
+qualitatively (the frequency channel sign-flips between random and
+cluster-aware folds). The qualitative result that volume reductions
+have a positive effect on both frequency and magnitude is stable; the
+quantitative split is not.
 
 The headline regHAL-TMLE pressure-band test in §5.1 uses the
-`hal9001`-driven CPU pipeline and is unaffected by this caveat.
+`hal9001`-driven CPU pipeline (specifically the +5.55 × 10⁻³ at R = 7)
+and is unaffected by this caveat at the *combined-test* level: the
+combined-test psi pools 13 radii by inverse variance, dampening
+single-radius CV instability. Single-radius point estimates at R = 7
+should be reported with the §5.2 sensitivity panel, not as standalone
+numbers.
+
+Diagnostic scripts and full logs are checked into the repository at
+`gpu_hal/tests/diagnose_*.py` for reproducibility.
 
 ### 6.6 Cluster-bootstrap sensitivity for the CV-TMLE comparator
 

@@ -71,6 +71,7 @@ LINKS_CSV_FALLBACK = REPO_ROOT / "event_well_links.csv"  # only if pyarrow missi
 PANEL_CSV          = REPO_ROOT / "well_day_panel.csv"
 Q_PKL_FMT          = "q_attribution_{R}km.pkl"    # legacy TMLE pickles (unused)
 CF_PKL_FMT         = "cf_cate_{R}km.pkl"          # Causal Forest DML pickles
+CF_TARGETED_FMT    = "cf_targeted_{R}km.json"     # cf_targeted.py output cache
 
 RADII_KM = list(range(1, 21))
 
@@ -197,6 +198,26 @@ def _load_causal_forests() -> dict[int, object]:
 
     if not out:
         log.warning("⚠️   No CATE models found. Run build_causal_forest.py.")
+    return out
+
+
+def _load_targeted_headlines() -> dict[int, dict]:
+    """Load per-radius cf_targeted_<R>km.json files (cluster-robust + TMLE
+    + hurdle channels). These are produced by `python cf_targeted.py
+    --radius R` and re-read at server startup.
+    """
+    out: dict[int, dict] = {}
+    for R in RADII_KM:
+        path = REPO_ROOT / CF_TARGETED_FMT.format(R=R)
+        if not path.exists():
+            continue
+        try:
+            out[R] = json.loads(path.read_text())
+            log.info("📄  Loaded targeted headline: %s", path.name)
+        except Exception as e:
+            log.warning("Failed to load %s: %s", path.name, e)
+    if not out:
+        log.info("    (no cf_targeted_*.json found — /api/headline/targeted will be empty)")
     return out
 
 
@@ -340,6 +361,7 @@ class State:
     panel:         pd.DataFrame  # indexed by (API Number, Date of Injection)
     tmle_summary:  dict[int, dict]
     attribution_q: dict[int, object]  # per-radius AttributionQ models
+    targeted:      dict[int, dict]    # per-radius cf_targeted_<R>km.json
     loaded_at:     datetime
 
 
@@ -361,6 +383,7 @@ def _startup() -> None:
     state.panel         = _load_panel()
     state.tmle_summary  = _load_tmle_summary()
     state.attribution_q = _load_causal_forests()
+    state.targeted      = _load_targeted_headlines()
     state.loaded_at     = datetime.now()
     log.info("✅  Dashboard ready (loaded at %s)", state.loaded_at.isoformat())
     log.info("    %d attribution Q models available: %s",
@@ -928,6 +951,43 @@ def tmle_summary(radius_km: int = Query(7, ge=1, le=20)) -> dict:
 def tmle_all() -> dict:
     """The full per-radius TMLE summary table — for the population context plot."""
     return state.tmle_summary
+
+
+@app.get("/api/headline/targeted")
+def headline_targeted(radius_km: int = Query(7, ge=1, le=20)) -> dict:
+    """Cluster-robust + TMLE-targeted + hurdle-channel headline at a radius.
+
+    Reads from `cf_targeted_<R>km.json` produced by `python cf_targeted.py
+    --radius R`. Compared to the plug-in `Σ CATE` shown in the per-event
+    attribution endpoint, this endpoint exposes:
+
+    - `cluster_robust`: the same plug-in point estimate but with cluster-
+      robust (well-level) SE and a Kish design-effect ratio that quantifies
+      how much the i.i.d. honest-tree SEs from the CF understate true
+      uncertainty.
+    - `cluster_bootstrap`: refit-free B=500 cluster bootstrap CI.
+    - `tmle_targeted`: TMLE-fluctuation-corrected shift mean (default shift
+      A → A · 0.9, i.e. a 10% reduction in injection volume).
+    - `hurdle`: frequency / magnitude / cross channel decomposition (only
+      present if hurdle CFs were trained at this radius).
+    """
+    payload = state.targeted.get(radius_km)
+    if payload is None:
+        return {
+            "radius_km": radius_km,
+            "available": False,
+            "hint": (
+                "Run `python cf_targeted.py --radius {R}` to generate "
+                "cf_targeted_{R}km.json, then restart the server."
+            ).format(R=radius_km),
+        }
+    return {"radius_km": radius_km, "available": True, **payload}
+
+
+@app.get("/api/headline/targeted/all")
+def headline_targeted_all() -> dict:
+    """All available targeted headlines, keyed by radius."""
+    return state.targeted
 
 
 @app.get("/api/wells/{api_number}/timeseries")

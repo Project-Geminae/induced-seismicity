@@ -156,6 +156,21 @@ Compare to `hal9001::fit_hal` hurdle on the same problem on CPU: ~2 hours.
   matrix. This contributes to a documented finite-sample λ-selection
   gap with `hal9001` on zero-inflated outcomes (~factor 2 on the
   induced-seismicity application).
+- **Cross-implementation gap traced to `hal9001`/`glmnet`, not `gpu_hal`.**
+  At n = 50k, ≈ 4 % positive-outcome data, `gpu_hal` and `hal9001`
+  produce ψ_total values that disagree by 1.7–14× depending on CV
+  setup. The diagnostic scripts in `tests/diagnose_along_path.py`,
+  `diagnose_hurdle_lambdas.py`, and `diagnose_custom_grid.py` localise
+  the source: (a) `glmnet`'s `dev.ratio` early-stop halts the λ-path
+  ~14 orders of magnitude above where any basis becomes active on this
+  data; even `lambda.min.ratio = 1e-15` is overridden by glmnet's
+  internal convergence-warning gating. (b) `predict.hal9001` uses an
+  alternate post-CV coefficient set not stored in `f$lasso_fit$beta`,
+  producing non-zero predictions even when the path is reported as
+  null. `gpu_hal` CD itself is validated against `sklearn.Lasso` to
+  7-digit precision in CI; the discrepancy is purely in
+  CV/λ-selection. See PAPER_DRAFT.md §5.2 sensitivity panel for the
+  five-pipeline comparison.
 
 ## License
 
