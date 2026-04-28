@@ -213,8 +213,9 @@
     <li><a href="#what-we-compute">3. What the dashboard actually computes</a></li>
     <li><a href="#assumptions">4. Assumptions and disclaimers</a></li>
     <li><a href="#interpretation">5. How to read the per-well numbers</a></li>
-    <li><a href="#limits">6. Known limitations</a></li>
-    <li><a href="#references">7. References</a></li>
+    <li><a href="#inference">6. Statistical inference notes (read this before citing any number)</a></li>
+    <li><a href="#limits">7. Known limitations</a></li>
+    <li><a href="#references">8. References</a></li>
   </ul>
 </div>
 
@@ -686,7 +687,129 @@ The regulator draws a horizontal line at their risk tolerance (e.g., CATE
 </tbody>
 </table>
 
-<h2 id="limits">6. Known limitations</h2>
+<h2 id="inference">6. Statistical inference notes (read this before citing any number)</h2>
+
+<p>The dashboard reports two parallel sets of statistics for each event,
+each correct under different assumptions. Treating them as
+interchangeable produces wrong inferences. This section is the
+authoritative reference for which to cite when.</p>
+
+<h3>6.1 Per-well CIs are i.i.d. honest-tree intervals</h3>
+
+<p>The 95 % CIs shown next to each well in the WELL ATTRIBUTION list
+come from the Causal Forest's <strong>honest sample-splitting variance
+estimator</strong> (Wager &amp; Athey 2018). They are computed under the
+i.i.d. observation assumption — every row of the well-day panel is
+treated as an independent draw. This is computationally tractable and
+produces the natural per-prediction interval that the GRF library
+exposes via <code>cf.effect_interval()</code>.</p>
+
+<p>These CIs are the right choice when ranking wells by individual
+contribution at a single event. They are <em>not</em> the right choice
+when summing across wells or aggregating to population-level claims.</p>
+
+<h3>6.2 Population-total CI is cluster-robust at the well level</h3>
+
+<p>The well-day panel is clustered: each of the ~389 wells contributes
+roughly 1,000 daily rows over the 21-year study window. Daily
+observations within a well are heavily correlated (well-specific
+operating regimes, perforation depth, fault proximity), violating the
+i.i.d. assumption that the per-well honest-tree CIs are built on.</p>
+
+<p>For population-level inference (the <strong>POPULATION CONTEXT</strong>
+panel), we instead use a cluster-robust sandwich variance with the well
+as the cluster (Liang &amp; Zeger 1986; Wooldridge 2003):</p>
+
+<pre style="background:#1a1a1a;padding:10px;font-size:12px;">
+Var(Σ_i τ̂(L_i)·A_i) = (n_c / (n_c−1)) · Σ_c (Σ_{i∈c} τ̂(L_i)·A_i)²
+</pre>
+
+<p>where the inner sum runs over all rows in well-cluster <em>c</em>.</p>
+
+<h3>6.3 The design effect (Kish ratio) bridges the two</h3>
+
+<p>The ratio of cluster-robust SE to i.i.d. SE — the
+<strong>Kish design effect</strong> — quantifies how much the i.i.d.
+intervals understate true uncertainty:</p>
+
+<ul>
+  <li><strong>Design effect ≈ 1</strong>: data is effectively i.i.d.; honest-tree CIs are valid as published.</li>
+  <li><strong>Design effect ≈ 2–5</strong>: moderate clustering; i.i.d. CIs roughly halved in width are more honest.</li>
+  <li><strong>Design effect &gt; 5</strong>: heavy clustering; i.i.d. CIs are ≥√5 ≈ 2.2× too narrow and should not be cited as inferential intervals.</li>
+</ul>
+
+<p>At <em>R = 7 km on the deployed model</em> the design effect is
+<strong>28.97×</strong>. This means the honest-tree CIs are roughly
+<strong>√29 ≈ 5.4× too narrow</strong> at the population aggregate
+level. A per-well CI that "excludes zero" by a 2-sigma margin under the
+i.i.d. honest-tree variance often does <em>not</em> exclude zero under
+the cluster-corrected variance.</p>
+
+<p>Implication: the POPULATION CONTEXT panel is the headline. The
+WELL ATTRIBUTION cards are a distributional sketch of which wells the
+plug-in CF model attributes its predicted effect to — useful for
+ranking and discussion, not for binary "this well is causal" /
+"this well is exonerated" determinations.</p>
+
+<h3>6.4 Plug-in vs TMLE-targeted</h3>
+
+<p>The per-well CATE shown in the WELL ATTRIBUTION list is a
+<strong>plug-in estimate</strong>: <code>τ̂(L_i) · A_i</code> from the
+DML Causal Forest, with no targeting step. The POPULATION CONTEXT panel
+additionally reports a <strong>TMLE-targeted shift mean</strong> for the
+counterfactual <em>A → A · 0.9</em> (a 10 % volume reduction):</p>
+
+<ol>
+  <li>Reconstruct Q̂(A, L) = m̂(L) + τ̂(L)·(A − ê(L)) from the CF's
+      cross-fitted nuisance models (m̂ for E[Y|L], ê for E[A|L]).</li>
+  <li>Fit a kernel-density conditional density g(A | L) for the clever
+      covariate H(A, L) = g(A · 0.9 | L) / g(A | L).</li>
+  <li>Solve for ε via OLS of (Y − Q̂) on H, no intercept.</li>
+  <li>Update Q* = Q̂ + ε·H, then compute ψ* = Σ_i [Q*(A_i·0.9) − Q*(A_i)].</li>
+</ol>
+
+<p>This is the standard txshift / Diaz–van der Laan shift TMLE adapted
+for the CF's nuisance reconstruction. At <em>R = 7 km</em> the
+fluctuation step shifts the population total <strong>~43 % downward</strong>
+from the plug-in: targeting matters.</p>
+
+<h3>6.5 Hurdle channel decomposition is CV-setup-dependent</h3>
+
+<p>The frequency / magnitude / cross channel split shown in POPULATION
+CONTEXT decomposes the shift effect into:</p>
+
+<ul>
+  <li><strong>ψ_freq</strong>: effect on probability of any seismic event in 365 days</li>
+  <li><strong>ψ_mag</strong>: effect on conditional event size given an event</li>
+  <li><strong>ψ_cross</strong>: interaction term</li>
+</ul>
+
+<p>computed from a two-stage hurdle CF (logistic stage 1, Gaussian stage 2 on positives only).</p>
+
+<p><strong>Caveat (added 2026-04-27):</strong> a sensitivity round
+across five CV configurations at <em>R = 7 km, n ≈ 50,000</em> found
+the channel decomposition to be <strong>not implementation-invariant</strong>:</p>
+
+<table style="margin:10px 0; font-size:12px;">
+<thead><tr><th>CV setup</th><th>ψ_total</th><th>freq / mag / cross</th></tr></thead>
+<tbody>
+<tr><td>GPU 3-fold cluster CV (this dashboard)</td><td>+1.76 × 10⁻³</td><td>54 / 34 / 12</td></tr>
+<tr><td>CPU HurdleHAL default grid</td><td>+3.08 × 10⁻³</td><td>(not computed)</td></tr>
+<tr><td>CPU 5-fold random folds</td><td>+4.73 × 10⁻⁴</td><td>−56 / +123 / +32</td></tr>
+<tr><td>CPU 5-fold cluster folds</td><td>+2.71 × 10⁻⁴</td><td>23 / 77 / 0</td></tr>
+<tr><td>CPU 3-fold cluster folds</td><td>+4.21 × 10⁻⁵</td><td>0 / 100 / 0</td></tr>
+</tbody>
+</table>
+
+<p>The qualitative finding — both channels positive, neither zero — is
+robust under the GPU pipeline's CV configuration but not in all five
+defensible setups. Cite the channel ratios as
+<em>"under cluster-aware 3-fold CV with a basis-density-extended
+λ-grid, n ≈ 50k"</em>, not as geological invariants. Full diagnosis is
+in the science paper §5.2 sensitivity panel and the diagnostic scripts
+under <code>gpu_hal/tests/diagnose_*.py</code> in the repository.</p>
+
+<h2 id="limits">7. Known limitations</h2>
 
 <ul>
   <li><strong>The Q is fit per-radius.</strong> The dashboard uses 20
@@ -725,7 +848,7 @@ The regulator draws a horizontal line at their risk tolerance (e.g., CATE
   </li>
 </ul>
 
-<h2 id="references">7. References</h2>
+<h2 id="references">8. References</h2>
 
 <ul>
   <li>Pearl, J. &amp; Tian, J. (2000). "Probabilities of Causation: Bounds

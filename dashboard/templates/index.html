@@ -333,6 +333,68 @@
   #attribution-summary .disclaimer a { color: var(--cyan); text-decoration: none; }
   #attribution-summary .disclaimer a:hover { text-decoration: underline; color: var(--white); }
 
+  /* ──────────────── Population context ──────────────── */
+  #population-context {
+    border: 1px solid var(--cyan);
+    background: linear-gradient(180deg, rgba(0, 255, 255, 0.05), transparent);
+    margin: 0 10px 8px;
+    padding: 0;
+  }
+  #population-context .header-bar {
+    background: var(--cyan); color: var(--bg);
+    padding: 2px 8px;
+    font-size: 9px; font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  #population-context .body { padding: 8px 10px; }
+  #population-context .row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 11px; color: var(--white-dim); margin-bottom: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  #population-context .row .key {
+    color: var(--muted-bright);
+    text-transform: uppercase;
+    font-size: 9px; letter-spacing: 0.05em;
+  }
+  #population-context .row .val { color: var(--white); }
+  #population-context .row .val.headline {
+    color: var(--cyan); font-size: 14px; font-weight: 700;
+  }
+  #population-context .row .ci { color: var(--muted-bright); font-size: 10px; }
+  #population-context .badge-de {
+    display: inline-block;
+    background: var(--red);
+    color: var(--bg);
+    padding: 1px 5px;
+    font-size: 9px; font-weight: 700;
+    margin-left: 4px;
+    border-radius: 2px;
+  }
+  #population-context .channels {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border);
+  }
+  #population-context .channels .row { margin-bottom: 2px; }
+  #population-context .channels .bar {
+    flex: 1; height: 4px; background: #2a2a2a;
+    margin: 0 6px; position: relative; overflow: hidden;
+  }
+  #population-context .channels .bar .fill {
+    height: 100%; background: var(--cyan);
+  }
+  #population-context .caveat {
+    margin-top: 8px; padding-top: 6px;
+    border-top: 1px dashed var(--border);
+    font-size: 9px; color: var(--amber); line-height: 1.4;
+  }
+  #population-context .unavailable {
+    padding: 8px 10px;
+    font-size: 10px; color: var(--muted-bright);
+  }
+
   /* ──────────────── Well cards ──────────────── */
   #well-list {
     padding: 0 10px 10px;
@@ -707,6 +769,8 @@
 
     <div id="attribution-summary" style="display:none"></div>
 
+    <div id="population-context" style="display:none"></div>
+
     <div class="panel-section">
       <div class="panel-header"><span>WELL ATTRIBUTION<span class="info below" data-tip="Every SWD well within the search radius, ranked by causal contribution (CATE). Each well card shows: distance from epicenter, perforation depth (with DEEP/MID/SHALLOW tag), injection volumes at 30/90/180/365-day windows, wellhead and bottom-hole pressure, and the Causal Forest's CATE estimate with 95% CI. The model controls for fault distance, fault count, well depth, days active, depth class, AND total injection from neighboring wells within 7 km (spatial interference). Click any well card to see its threshold curve.">i</span></span><span class="meta" id="well-list-meta">[F7]</span></div>
       <div id="well-list" class="panel-body empty">—</div>
@@ -894,6 +958,12 @@
     return r.json();
   }
 
+  async function fetchTargetedHeadline(radiusKm) {
+    const r = await fetch(`/api/headline/targeted?radius_km=${radiusKm}`);
+    if (!r.ok) return null;
+    return r.json();
+  }
+
   async function fetchHealth() {
     const r = await fetch("/api/health");
     return r.json();
@@ -962,11 +1032,14 @@
     document.getElementById("well-list").innerHTML =
       `<div class="empty">Loading wells within ${state.radius} km…</div>`;
     document.getElementById("attribution-summary").style.display = "none";
-    const [data, attribution, tmle] = await Promise.all([
+    document.getElementById("population-context").style.display = "none";
+    const [data, attribution, tmle, targeted] = await Promise.all([
       fetchEventWells(ev.id, state.radius),
       fetchEventAttribution(ev.id, state.radius),
       fetchTmleSummary(state.radius),
+      fetchTargetedHeadline(state.radius),
     ]);
+    renderPopulationContext(targeted, state.radius);
 
     // Merge attribution into the wells (lookup by API)
     if (attribution && attribution.wells) {
@@ -1009,10 +1082,10 @@
     const top = a.top_contributor;
     el.style.display = "block";
     el.innerHTML = `
-      <div class="header-bar">PER-WELL CATE<span class="info below" data-tip="CATE = Conditional Average Treatment Effect. Each well's individual estimated causal contribution to this earthquake's magnitude. The model asks: 'How much higher is the expected max magnitude BECAUSE this well injected what it did, compared to a counterfactual where it injected nothing?' Positive = contributed to the quake. Negative = may have reduced stress on this fault. The model controls for fault distance, fault count, depth, days active, depth class, AND total injection from neighboring wells within 7 km (spatial interference confounder, VIF=1.12).">i</span> · CAUSAL FOREST DML<span class="info below" data-tip="Causal Forest with Double Machine Learning (Athey, Tibshirani & Wager 2019; Chernozhukov et al. 2018). 'Honest' = uses separate data to build tree structure vs estimate effects (prevents overfitting). 'DML' = cross-fitted XGBoost nuisance models for both the outcome E[Y|L] and treatment E[A|L]. Doubly robust: consistent if EITHER the outcome or treatment model is correct. Confounders: fault distance, fault count, perf depth, days active, depth class (shallow/mid/deep), neighbor well volumes. Per-well 95% CIs from the forest's honest variance estimate.">i</span></div>
+      <div class="header-bar">PER-WELL CATE<span class="info below" data-tip="CATE = Conditional Average Treatment Effect. Each well's individual estimated causal contribution to this earthquake's magnitude. The model asks: 'How much higher is the expected max magnitude BECAUSE this well injected what it did, compared to a counterfactual where it injected nothing?' Positive = contributed to the quake. Negative = may have reduced stress on this fault. Confounders: fault distance, fault count, perf depth, days active, depth class, neighbor wells within 7 km, AND avg daily injection rate (added 2026-04 after a +295% sensitivity finding). These are PLUG-IN point estimates with i.i.d. honest-tree CIs — the targeted/cluster-robust population headline lives in POPULATION CONTEXT below.">i</span> · CAUSAL FOREST DML<span class="info below" data-tip="Causal Forest with Double Machine Learning (Athey, Tibshirani & Wager 2019; Chernozhukov et al. 2018). 'Honest' = uses separate data to build tree structure vs estimate effects. 'DML' = cross-fitted XGBoost nuisance models for both the outcome E[Y|L] and treatment E[A|L]. Doubly robust: consistent if EITHER nuisance model is correct. Note: the per-well CATEs shown here are PLUG-IN values and i.i.d. honest-tree CIs. The TMLE-targeted population total (POPULATION CONTEXT panel below) shifts ~43% downward from the plug-in at 7 km — the targeted estimate is what you should cite, not the per-well sum.">i</span></div>
       <div class="body">
         <div class="total">
-          Σ CATE = ${fmtML(a.positive_total_ml)}<span class="unit">ML  (positive contributors)<span class="info below" data-tip="Sum of all POSITIVE per-well CATEs. This estimates the total anthropogenic (human-caused) addition to the earthquake's magnitude from all SWD wells within the search radius, controlling for geology and neighbor well interference. If this number is small and every well's CI crosses zero, this is 'distributed causation' — injection caused the event collectively but no individual well can be identified. In that case, use the population TMLE shift analysis (bottom panel) for area-wide policy instead of targeted shut-ins.">i</span></span>
+          Σ CATE = ${fmtML(a.positive_total_ml)}<span class="unit">ML  (positive contributors)<span class="info below" data-tip="Sum of all POSITIVE per-well CATEs at this event — a SUMMARY OF THE PLUG-IN MODEL, not a publishable inferential statistic. The i.i.d. honest-tree CIs on individual wells are ~6× too narrow at the population level: at 7 km the well-level cluster design effect is 29×, so per-well 'CI excludes zero' wells often fall back into ambiguity once well-level dependence is accounted for. Cite the cluster-robust population total in POPULATION CONTEXT below for inference, and use this number only as a distributional sketch of which wells the plug-in model attributes effect to. Distributed causation = small total + many CIs crossing zero.">i</span></span>
         </div>
         <div class="top-line">
           <span class="key">TOP</span>
@@ -1020,12 +1093,108 @@
         </div>
         <div class="top-line">
           <span class="key">ESTIMAND</span>
-          <span class="val">${attribution.estimand || "CATE-TMLE"}</span>
+          <span class="val">${attribution.estimand || "CATE-DML (plug-in)"}<span class="info below" data-tip="The per-well number shown here is a Causal Forest DML plug-in: τ̂(L_i) · A_i with no targeting step and no cluster correction. The TMLE-targeted shift mean and cluster-robust population CI are in POPULATION CONTEXT below — use those for inference, not the per-well sum.">i</span></span>
         </div>
         <div class="disclaimer" style="display:flex; justify-content:space-between;">
           <a href="/methodology" target="_blank">Methodology →</a>
           <a href="/api/event/${attribution.event.id}/report?radius_km=${attribution.radius_km}" target="_blank" style="color:var(--green);">↓ Download Report</a>
         </div>
+      </div>
+    `;
+  }
+
+  // ──────────────── Population context (cluster-robust + TMLE + hurdle) ────────────────
+  function renderPopulationContext(targeted, radiusKm) {
+    const el = document.getElementById("population-context");
+    if (!targeted) {
+      el.style.display = "none";
+      return;
+    }
+    el.style.display = "block";
+    if (!targeted.available) {
+      el.innerHTML = `
+        <div class="header-bar">POPULATION CONTEXT @ ${radiusKm} KM</div>
+        <div class="unavailable">
+          Cluster-robust + TMLE-targeted headline not available for this radius.
+          <br>Run <code>python cf_targeted.py --radius ${radiusKm}</code> on the
+          server and restart to populate this panel.
+        </div>
+      `;
+      return;
+    }
+    const cr = targeted.cluster_robust  || {};
+    const tt = targeted.tmle_targeted   || {};
+    const hu = targeted.hurdle          || null;
+
+    const fmt2 = (x) => (x == null || isNaN(x)) ? "—" : Number(x).toExponential(2);
+    const fmt2sig = (x) => (x == null || isNaN(x)) ? "—"
+                          : (Math.abs(x) >= 0.01 ? Number(x).toFixed(3)
+                            : Number(x).toExponential(2));
+    const de = cr.design_effect;
+    const deColor = de == null ? "var(--muted-bright)"
+                  : de > 10 ? "var(--red)"
+                  : de > 5  ? "var(--amber)"
+                  : "var(--green)";
+
+    let channelsHtml = "";
+    if (hu) {
+      const total = Math.abs(hu.psi_total) > 1e-30 ? hu.psi_total : 1.0;
+      const pctF = (hu.psi_freq  / total) * 100;
+      const pctM = (hu.psi_mag   / total) * 100;
+      const pctC = (hu.psi_cross / total) * 100;
+      const barW = (p) => Math.max(0, Math.min(100, Math.abs(p))).toFixed(0) + "%";
+      channelsHtml = `
+        <div class="channels">
+          <div class="row">
+            <span class="key">HURDLE CHANNELS<span class="info below" data-tip="Decomposes the shift effect into: ψ_freq = does volume affect WHETHER an event happens? ψ_mag = does volume affect EVENT SIZE GIVEN an event? ψ_cross = interaction. These are different policy levers — frequency-driven effects respond to volume caps that take wells out of the event-producing regime; magnitude-driven effects respond to caps that affect event size given that an event still happens. Computed via two-stage hurdle CF (logistic for P(Y>0), Gaussian for log(1+Y)|Y>0).">i</span></span>
+            <span class="val">${fmt2(hu.psi_total)}</span>
+          </div>
+          <div class="row">
+            <span class="key">FREQ<span class="info" data-tip="Effect of the volume shift on P(any seismic event in 365 days). Computed as -E[(P_post − P_obs) · M_obs] from the logistic stage holding the magnitude predictions at observed levels.">i</span></span>
+            <div class="bar"><div class="fill" style="width:${barW(pctF)}; background:${pctF < 0 ? 'var(--red)' : 'var(--cyan)'}"></div></div>
+            <span class="val">${pctF.toFixed(0)}%</span>
+          </div>
+          <div class="row">
+            <span class="key">MAG<span class="info" data-tip="Effect of the volume shift on E[max ML | any event] for those wells that DO have events. Computed from the Gaussian stage holding probabilities at observed: -E[P_obs · (M_post − M_obs)].">i</span></span>
+            <div class="bar"><div class="fill" style="width:${barW(pctM)}; background:${pctM < 0 ? 'var(--red)' : 'var(--cyan)'}"></div></div>
+            <span class="val">${pctM.toFixed(0)}%</span>
+          </div>
+          <div class="row">
+            <span class="key">CROSS<span class="info" data-tip="Interaction term — wells where volume changes BOTH probability and conditional size. Usually small (5-15% of total). When this term dominates, the freq/mag decomposition is unstable.">i</span></span>
+            <div class="bar"><div class="fill" style="width:${barW(pctC)}; background:${pctC < 0 ? 'var(--red)' : 'var(--cyan)'}"></div></div>
+            <span class="val">${pctC.toFixed(0)}%</span>
+          </div>
+        </div>
+        <div class="caveat">
+          ⚠ CV-sensitivity caveat<span class="info" data-tip="These channel ratios were computed under the GPU pipeline's CV configuration (3-fold cluster-aware, explicit log-spaced λ-grid). Alternative CV setups produce qualitatively different splits: 5-fold random folds give the frequency channel a sign-flip, 5-fold cluster folds give magnitude-dominant 23/77/0. The qualitative finding 'both channels positive' is robust; the quantitative split is not. See PAPER_DRAFT.md §5.2.">i</span>: split depends on CV configuration. Cite ratios as "under cluster-aware 3-fold CV at n≈50k", not as geological invariants.
+        </div>
+      `;
+    }
+
+    el.innerHTML = `
+      <div class="header-bar">POPULATION CONTEXT @ ${radiusKm} KM</div>
+      <div class="body">
+        <div class="row">
+          <span class="key">Σ CATE (cluster-robust)<span class="info below" data-tip="Σ_i τ̂(L_i) · A_i over all ${cr.n ? cr.n.toLocaleString() : '~200k'} well-days in the training panel, with cluster-robust standard error at the well level (${cr.n_clusters || '~389'} wells). Same point estimate as the per-well sum above; CI now accounts for within-well dependence (Liang–Zeger 1986). This is the headline inferential statistic.">i</span></span>
+          <span class="val headline">${fmt2(cr.psi_plugin)}</span>
+        </div>
+        <div class="row">
+          <span class="key">95% CI</span>
+          <span class="ci">[${fmt2(cr.ci_low)}, ${fmt2(cr.ci_high)}]</span>
+        </div>
+        <div class="row">
+          <span class="key">DESIGN EFFECT<span class="info below" data-tip="Ratio of cluster-robust SE to i.i.d. SE — the Kish ratio. Values >5 mean i.i.d. CIs are unreliable. ${de != null ? de.toFixed(1) : '?'}× at this radius reflects heavy intra-well correlation of repeated daily measurements. Implication: the per-well honest-tree CIs in the well list are ~${de != null ? Math.sqrt(de).toFixed(1) : '?'}× too narrow for population-level inference.">i</span></span>
+          <span class="val"><span class="badge-de" style="background:${deColor}">${de != null ? de.toFixed(1) + '×' : 'n/a'}</span></span>
+        </div>
+        <div class="row" style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);">
+          <span class="key">TMLE-TARGETED (A → A·0.9)<span class="info below" data-tip="Plug-in: Σ_i [Q̂(W_i, A_i·0.9) − Q̂(W_i, A_i)] = ${fmt2(tt.psi_plugin)}. Targeted: same after one TMLE fluctuation step using a histogram-density clever covariate = ${fmt2(tt.psi_targeted)}. The targeted estimate is the doubly-robust population mean of a 10% volume reduction; the plug-in is the regression-implied counterfactual without bias correction. ε = ${fmt2sig(tt.epsilon)}.">i</span></span>
+          <span class="val">${fmt2(tt.psi_targeted)}</span>
+        </div>
+        <div class="row">
+          <span class="key">95% CI · p</span>
+          <span class="ci">[${fmt2(tt.ci_low)}, ${fmt2(tt.ci_high)}]&nbsp;·&nbsp;p=${tt.pval != null ? Number(tt.pval).toFixed(3) : '—'}</span>
+        </div>
+        ${channelsHtml}
       </div>
     `;
   }
@@ -1084,7 +1253,7 @@
           attrBlock = `
             <div class="attribution">
               <div class="attr-label">
-                <span>CATE SHARE<span class="info below" data-tip="This well's percentage of the total positive CATE sum. If one well has 25% share, the Causal Forest estimates it's responsible for a quarter of the total anthropogenic contribution. Focus regulatory action on wells with the largest shares AND whose 95% CIs exclude zero. Wells with large shares but CIs crossing zero are suggestive but not statistically confirmed.">i</span></span>
+                <span>CATE SHARE<span class="info below" data-tip="This well's percentage of the total positive CATE sum. If one well has 25% share, the plug-in CF model attributes a quarter of its predicted causal effect to this well. Focus regulatory attention on wells with the largest shares AND whose 95% CIs exclude zero — but interpret with caution: per-well i.i.d. honest-tree CIs are not cluster-robust. At 7 km the well-level design effect is 29×, so 'CI excludes zero' wells under the i.i.d. CI may become ambiguous under cluster correction. Cross-check against the POPULATION CONTEXT cluster-robust total before taking enforcement action on a single well.">i</span></span>
                 <span class="share-pct">${sharePct.toFixed(0)}%</span>
               </div>
               <div class="attr-bar">
@@ -1093,7 +1262,7 @@
               <div class="attr-detail">
                 <span class="label">CATE<span class="info" data-tip="Conditional Average Treatment Effect in ML (magnitude) units. 'How much did this well's injection add to the expected maximum earthquake magnitude, compared to if it had not been injecting?' The estimate controls for geology, well characteristics, AND what neighboring wells were doing. A CATE of +0.05 means this well added an estimated 0.05 ML. This is a CAUSAL estimate, not a correlation — it uses a Causal Forest with doubly-robust cross-fitted nuisance models.">i</span></span>
                 <span class="val ${isNeg ? 'neg-contribution' : 'pos-contribution'}">${fmtML(attr.cate_ml)} ML</span>
-                <span class="label">95% CI<span class="info" data-tip="95% Confidence Interval from the Causal Forest's honest sample-splitting variance estimate. We're 95% sure the true CATE is between these two numbers. KEY: if the CI EXCLUDES zero (both bounds positive), this well's contribution is statistically significant at the 5% level. If the CI CROSSES zero, the data is too noisy to confirm this well contributed — but 'inconclusive' is NOT the same as 'innocent.' A narrow CI near zero is more exonerating than a wide CI that happens to cross zero.">i</span></span>
+                <span class="label">95% CI<span class="info" data-tip="95% honest-tree CI from the Causal Forest's sample-splitting variance — assumes i.i.d. observations. KEY: if the CI EXCLUDES zero (both bounds positive), the i.i.d. test calls this well significant at 5%. But the data is clustered at the well level (~1k rows per well, design effect 29× at 7 km), so the i.i.d. CI is ~6× too narrow at the population level. A per-well CI that excludes zero may become ambiguous under cluster correction. Cluster-robust per-well CIs would require a refit-bootstrap that's not currently cached; for headline inference use the cluster-robust population total in POPULATION CONTEXT.">i</span></span>
                 <span class="val">[${ciLo}, ${ciHi}]</span>
                 <span class="label">VOL 365D</span>
                 <span class="val">${fmtVol(attr.cum_vol_window)} BBL</span>
@@ -1117,7 +1286,7 @@
             <div class="features">
               <span class="label">DEPTH<span class="info" data-tip="Perforation depth in feet — how far underground the well injects water, measured from the midpoint of the completed injection interval. SHALLOW (<6,000 ft): typically carbonate formations like San Andres/Grayburg. MID (6,000-10,000 ft): transitional. DEEP (>10,000 ft): near crystalline basement (Ellenburger, Devonian) where most induced earthquakes nucleate. Depth is a key confounder — deeper wells have systematically different causal effects. The model uses depth as both a continuous confounder AND a categorical depth-class proxy.">i</span></span>
               <span class="val">${fmtFt(p.perf_depth_ft)} FT</span>
-              <span class="label">DAYS ON<span class="info" data-tip="Days since this well's first injection record in the RRC H-10 data. A confounder in the causal model — longer-running wells have had more time to build cumulative pore pressure AND are more likely to appear near historical events (survivorship). The model controls for days_active to separate the effect of volume from the effect of duration.">i</span></span>
+              <span class="label">DAYS ON<span class="info" data-tip="Days since this well's first injection record in the RRC H-10 data. Confounder G4 in the causal model — longer-running wells have had more time to build cumulative pore pressure AND are more likely to appear near historical events (survivorship). The full confounder set as of 2026-04: G1 nearest fault distance, G2 fault-segment count within R, G3 perforation depth (with shallow/mid/deep proxy), G4 days_active, G5 neighbor cumulative volume within 7 km (spatial spillover), G6 avg daily injection rate (added after a +295% sensitivity finding).">i</span></span>
               <span class="val">${fmtDays(p.days_active)}</span>
 
               <span class="label">VOL D</span>
