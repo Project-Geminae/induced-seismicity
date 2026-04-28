@@ -57,6 +57,47 @@ source pipeline that:
 - Estimates per-well CATE via Causal Forest
 - Reports population shift effect via OLS + DoWhy refutation
 
+### 1.1a Concurrent prior art and the two-axis emergence of causal
+inference for induced seismicity
+
+Concurrent with this update, Xiao, Zigler, Hennings & Savvaidis (2025;
+arXiv:2510.16360, submitted to *JGR: Solid Earth*) published the first
+formal potential-outcomes treatment of induced seismicity, applied to
+the **Fort-Worth Basin / Dallas–Fort Worth (DFW)** region (December
+2013 – March 2016, 30 SWD cluster centroids drawn from 65 wells, 71
+earthquakes from the SMU NTXES catalog, M_c = 2.5). They estimate a
+**Marginal Structural Model with stabilized inverse-probability-of-
+treatment weighting** (MSM-IPTW; Robins et al. 2000) and find a
+relative risk of **1.028 per +1 MMbbl of cumulative injection volume**
+(Wald p = 0.0037), explicitly contrasting this with biased naive and
+covariate-adjusted Poisson regressions in a 2,000-replication
+simulation study to demonstrate the threat of **time-varying
+confounding via treatment-confounder feedback** — the loop in which
+operators reduce injection in response to seismicity.
+
+Their contribution is **complementary to the present work along an
+orthogonal methodological axis**:
+
+| Axis | Xiao et al. 2025 | This work |
+|---|---|---|
+| Identification | Longitudinal / sequential ignorability under operator-feedback | Cross-sectional under standard exchangeability + positivity |
+| Estimator | MSM-IPTW (Robins 2000) | regHAL-TMLE Delta-method (Li/Qiu/Wang/van der Laan 2025) |
+| Outcome model | Poisson on cumulative count | Hurdle: P(Y > 0) × E[Y \| Y > 0] |
+| Spatial | Single 15 km radius via clustering | 1–20 km sweep, inverse-variance pressure-band pool |
+| Scale | n = 30 × 7 cluster-quarters; 71 events | n = 451,212 well-days; 7,424 events; 1,056 wells |
+| Basin | Fort-Worth (post-2015 volume cap, declining) | Permian Midland (active) |
+| Code/data | Data via Texas Data Repository; no code released | `gpu_hal` (PyPI, Apache-2.0); live regulatory dashboard; full GitHub |
+
+The two papers split the emerging causal-inference-for-induced-
+seismicity space along the two natural axes that Pearl–Robins
+methodology distinguishes: **identification under longitudinal
+treatment-confounder feedback** (their axis) and **estimator efficiency
+within a fixed identification setting** (our axis). §6.7 lists time-
+varying confounding as a carried-over limitation of the present work,
+and §9 proposes the integration of both axes — a **longitudinal
+regHAL-TMLE on a HAL-implied working model with hurdle outcome** — as
+the natural next step.
+
 ### 1.2 What changed in the 2025-2026 update
 
 Three methodological advances:
@@ -479,9 +520,39 @@ at smaller absolute magnitude reflecting the plug-in vs targeting gap.
 
 - Isotropic search radius (Midland Basin has anisotropic stress)
 - Wellhead pressure as imperfect proxy for fault-depth pore pressure
-- No time-varying confounding model (operator-feedback loop)
 - TexNet detection threshold spatial heterogeneity
 - Operator-reported formation labels excluded as unreliable
+
+### 6.8 No time-varying confounding model (operator-feedback loop)
+
+The cross-sectional regHAL-TMLE estimator treats each well-day as an
+exchangeable observation conditional on the confounder set L =
+(G₁, …, G₆). It does not model the longitudinal feedback loop in which
+operators reduce injection volumes in response to seismic activity at
+or near their wells. This is the central limitation addressed by Xiao
+et al. (2025; arXiv:2510.16360) in their Fort-Worth Basin analysis,
+where the time-varying confounder L(t) is a binary indicator of whether
+any earthquake occurred at the cluster in quarter t, capturing
+operator-feedback adjustments to injection rates. Their MSM-IPTW
+simulation study demonstrates that naive and covariate-adjusted Poisson
+regressions are biased downward (coverage 22 % / 36 %) under this
+feedback structure, while the longitudinally-adjusted MSM recovers the
+true effect (coverage 91 %).
+
+In the Permian Basin our application addresses, the regulatory feedback
+loop is comparatively weaker than in DFW (where it triggered formal
+injection-volume caps in 2015), but it is non-zero — TexNet's State of
+Texas Seismic Network (SSN) automated alerts and the Railroad
+Commission's seismicity-response protocols introduce well-specific
+volume-reduction events that the cross-sectional analysis cannot
+absorb. We do not model this in the present paper because (a) the
+near-cross-sectional shift estimand is the immediate regulatory
+question, (b) the longitudinal extension is a substantial methods-
+level contribution that warrants its own paper, and (c) the active-set
+IRLS development (FUTURE_WORK README) is a prerequisite for
+longitudinal HAL-TMLE at full n. Section 9 sketches the integration of
+both axes — a longitudinal regHAL-TMLE on a HAL-implied working model
+with hurdle outcome — as the natural next methodological step.
 
 ---
 
@@ -547,6 +618,21 @@ The remaining methodological frontier — full-n GPU hurdle HAL via active-
 set IRLS — is documented in `FUTURE_WORK/README.md` and deferred to a
 subsequent contribution.
 
+Beyond the GPU / active-set IRLS frontier, the natural next step is to
+merge Xiao et al.'s (2025) sequentially-ignorable identification with
+the regHAL-TMLE outcome modelling developed here — i.e. a
+**longitudinal TMLE** (LTMLE; van der Laan & Gruber 2012) on a
+HAL-implied working model with a hurdle outcome and stochastic shift
+intervention. This would bring the time-varying confounding axis
+(operator-feedback adjustments to injection in response to TexNet
+alerts and SSN protocols) under the same doubly-robust umbrella that
+currently handles the time-fixed shift, completing a full longitudinal
+causal-inference pipeline for the Permian. The two axes — longitudinal
+identification (Xiao et al. 2025) and estimator efficiency (this work)
+— are the two halves of what a fully-targeted Permian-scale induced-
+seismicity causal-inference framework should look like, and we sketch
+the integration in `FUTURE_WORK/README.md` for a follow-up paper.
+
 ---
 
 ## Acknowledgments
@@ -579,8 +665,18 @@ van der Laan (2025) for the regularized HAL-TMLE estimator.
   Implied Working Models. *arXiv:2506.17214*.
 - Matthews, L. (2025). A Causal Inference Pipeline for Injection Open-
   Source Methodology and Implementation. *SPE-228051-MS*.
+- Robins, J. M., Hernán, M. Á., & Brumback, B. (2000). Marginal
+  Structural Models and Causal Inference in Epidemiology.
+  *Epidemiology* 11(5), 550–560.
+- van der Laan, M., & Gruber, S. (2012). Targeted Minimum Loss Based
+  Estimation of Causal Effects of Multiple Time Point Interventions.
+  *International Journal of Biostatistics* 8(1).
 - van der Laan, M., & Rose, S. (2011). *Targeted Learning: Causal
   Inference for Observational and Experimental Data*. Springer.
+- Xiao, Y., Zigler, C. M., Hennings, P. H., & Savvaidis, A. (2025).
+  Time-Varying Confounding Bias in Observational Geoscience with
+  Application to Induced Seismicity. *arXiv:2510.16360* (submitted
+  to *JGR: Solid Earth*).
 - Zheng, W., & van der Laan, M. (2012). Targeted Maximum Likelihood
   Estimation of Natural Direct Effect.
 
