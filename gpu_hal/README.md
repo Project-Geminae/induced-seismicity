@@ -131,25 +131,41 @@ pytest gpu_hal/tests/
 
 ## Performance
 
-At n = 50,000, p ≈ 1,500 (real HAL basis from induced-seismicity panel,
-density 28%):
+### n = 50,000, p ≈ 1,500 (real HAL basis from induced-seismicity panel, density 28%)
 
 | Stage | Time |
 |---|---|
 | Build sparse basis (R hal9001 → scipy) | ~5 sec |
 | Compute Gram once (CPU sparse-sparse mult) | ~5 sec |
-| 5-fold CV path × 30 lambdas, GPU CD | ~3 min |
+| 5-fold CV path × 30 lambdas, GPU CD (gaussian) | ~3 min |
 | Final fit at λ_cv | ~2 sec |
-| Hurdle (logistic + gaussian) | ~30 min total |
+| Hurdle (logistic full-Gram + gaussian) | ~30 min total |
 
 Compare to `hal9001::fit_hal` hurdle on the same problem on CPU: ~2 hours.
 
-## Known limitations
+### n = 451,212 full-panel hurdle (active-set IRLS, fixed λ from n=50k CV)
 
-- **Full-n logistic IRLS is infeasible** with the current Gram-rebuild
-  approach. At n = 451,212 the weighted Gram rebuild takes ~25-30 min
-  per IRLS iteration → days of wall time. Active-set IRLS would address
-  this; not yet implemented (see `FUTURE_WORK/README.md`).
+| Stage | Time | Notes |
+|---|---|---|
+| Build sparse basis | ~30 sec | n=451k, p=1564, density=28% |
+| Stage 1 logistic (active-set IRLS, 30 iters) | **3 min 53 sec** | 7.7 sec/iter avg, |S| = 133 |
+| Stage 2 gaussian on positives (n_pos=18,679) | 29 sec | |S| = 70 |
+| Compose Q + ψ + cluster-IF SE | 35 sec | — |
+| **Total** | **5.0 min** | (140× faster than full-Gram projection) |
+
+Active-set IRLS solver (`cd_logistic_active_set.py`) validates against
+the full-Gram baseline at 7-digit precision on synthetic data and at
+4.36× wall-time speedup at n = 49,519. At full n = 451,212 the
+full-Gram IRLS would require ≈ 10-12 hours per fit; the active-set
+solver brings this to 4 minutes, making **full-n hurdle HAL-TMLE
+operationally feasible for the first time**.
+
+## Known limitations
+- **Full-n CV is the next frontier.** Single full-n hurdle fits are
+  feasible (~5 min); 5-fold × 15-λ cross-validation still requires
+  ~6 hours wall time. Warm-starting CD and IRLS across the λ-path is
+  the obvious 10×+ speedup; not yet implemented (see
+  `FUTURE_WORK/README.md`).
 - **Gram approach scales poorly when p ≳ 10,000** — the dense Gram is
   O(p²) memory.
 - **No `hal9001::screen_basis` port** — we use the raw enumerated basis

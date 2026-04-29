@@ -42,10 +42,15 @@ active-set agreement, rel-L2 ≤ 1.8 × 10⁻⁷, intercept agreement to
 
 **What still needs to be done:**
 
-1. **Full-n empirical benchmark.** Run on the n = 451k, p = 1564
-   induced-seismicity panel and confirm wall-time drops from
-   ~25 min/iter to ~30-60 sec/iter when |S| ≈ 100-200. Estimated:
-   ~1 day of CV-path tuning + benchmark.
+1. ~~**Full-n empirical benchmark.**~~ ✅ **Done 2026-04-29.** Measured
+   on the n = 451,212, p = 1,564 induced-seismicity panel:
+   **7.7 s/iter** average for active-set IRLS (vs the projected
+   25-30 min/iter for full-Gram), |S| stable at ~133 from iter 8
+   onward. End-to-end full-n hurdle (logistic + Gaussian on positives
+   + ψ-decomposition + cluster-IF SE) completes in **5.0 minutes**.
+   Empirical confirmation that active-set IRLS unlocks the full-n
+   hurdle. Logs: `bench_active_set_50k.log`, `bench_active_set_451k.log`,
+   `hurdle_full_n_R7.log`.
 2. **Path solver for `logistic_lasso_active_set_path`.** Warm-start
    across decreasing λ — the natural way to fit a regularization path
    without paying the warmup cost at every λ. Estimated: 0.5 day.
