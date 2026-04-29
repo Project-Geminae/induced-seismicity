@@ -1125,6 +1125,7 @@
     const cr = targeted.cluster_robust  || {};
     const tt = targeted.tmle_targeted   || {};
     const hu = targeted.hurdle          || null;
+    const fc = targeted.full_n_cv       || null;
 
     const fmt2 = (x) => (x == null || isNaN(x)) ? "—" : Number(x).toExponential(2);
     const fmt2sig = (x) => (x == null || isNaN(x)) ? "—"
@@ -1194,6 +1195,19 @@
           <span class="key">95% CI · p</span>
           <span class="ci">[${fmt2(tt.ci_low)}, ${fmt2(tt.ci_high)}]&nbsp;·&nbsp;p=${tt.pval != null ? Number(tt.pval).toFixed(3) : '—'}</span>
         </div>
+        ${fc ? `
+        <div class="row" style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);">
+          <span class="key">FULL-n HURDLE CV (n=${(fc.n/1000).toFixed(0)}k, A → A·1.10)<span class="info below" data-tip="Hurdle HAL-TMLE at the FULL panel (n=${fc.n.toLocaleString()}, ${fc.n_clusters} well clusters, ${fc.n_positives.toLocaleString()} positives) with proper cluster-aware 5-fold CV across a 15-point log-spaced λ-grid. Made feasible by the active-set IRLS solver (gpu_hal/cd_logistic_active_set.py): ~34 min wall vs ~10-12 hr for full-Gram. Stage 1 active=${fc.n_active_pos}, Stage 2 active=${fc.n_active_mag}. λ_pos = ${fmt2(fc.lambda_pos_cv)}, λ_mag = ${fmt2(fc.lambda_mag_cv)}. The full-n CV picks λ_pos 15× smaller than the n=50k CV, confirming the n=50k subsample over-regularizes for the full panel. ψ_total = ${fmt2(fc.psi_total)} (z=${fc.z.toFixed(2)}, p=${fc.pval.toFixed(3)}); CI95 cluster [${fmt2(fc.ci_low)}, ${fmt2(fc.ci_high)}]. Channels recover the qualitative pattern of the n=50k subsample (frequency-dominant positive). NOT statistically significant at this single radius — see the §5.1 combined pressure-band test in PAPER_DRAFT.md for the defensible inferential headline.">i</span></span>
+          <span class="val">${fmt2(fc.psi_total)}</span>
+        </div>
+        <div class="row">
+          <span class="key">95% CI · p</span>
+          <span class="ci">[${fmt2(fc.ci_low)}, ${fmt2(fc.ci_high)}]&nbsp;·&nbsp;p=${fc.pval.toFixed(3)}</span>
+        </div>
+        <div class="row">
+          <span class="key">CHANNELS (full-n)</span>
+          <span class="val" style="font-size:10px;">freq ${(fc.psi_freq/Math.abs(fc.psi_total)*100).toFixed(0)}% / mag ${(fc.psi_mag/Math.abs(fc.psi_total)*100).toFixed(0)}% / cross ${(fc.psi_cross/Math.abs(fc.psi_total)*100).toFixed(0)}%</span>
+        </div>` : ''}
         ${channelsHtml}
       </div>
     `;
