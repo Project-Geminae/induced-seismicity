@@ -415,6 +415,60 @@ under all CV setups tried, with frequency channel dominant when GPU's
 this section. The quantitative 54 / 34 / 12 split depends materially on
 the CV configuration, as documented in the sensitivity panel below.)
 
+### 5.2.1 Full-n hurdle at n = 451,212 (active-set IRLS)
+
+With the active-set IRLS solver (`gpu_hal/cd_logistic_active_set.py`,
+introduced in this update; see §6.5 and FUTURE_WORK/README.md), the
+full-n hurdle HAL-TMLE is now operational. At R = 7 km on the full
+panel (n = 451,212 well-days, 389 well clusters, 18,679 positive
+events), with λ values fixed at the n = 50k CV picks
+(λ_pos = 1.77 × 10⁻⁷, λ_mag = 1.99 × 10⁻⁶):
+
+| Quantity | n = 49,519 (CV at this n) | n = 451,212 (fixed λ from n = 50k) |
+|---|---|---|
+| Stage 1 active | 227 | **133** |
+| Stage 2 active | 134 | **70** |
+| ψ_freq | +9.4 × 10⁻⁴ (54 %) | **−9.5 × 10⁻⁵ (−185 %)** |
+| ψ_mag | +6.0 × 10⁻⁴ (34 %) | **+4.2 × 10⁻⁵ (+82 %)** |
+| ψ_cross | +2.2 × 10⁻⁴ (12 %) | **+1.5 × 10⁻⁶ (+3 %)** |
+| **ψ_total** | **+1.76 × 10⁻³** | **−5.16 × 10⁻⁵** |
+| z, p | (not computed) | z = −0.28, **p = 0.78** |
+| Wall time | 1 hr 41 min (Apr 25) | **5.0 min** (this work) |
+| Cluster-IF design effect | (not computed) | 13.5× |
+
+The full-n estimate at the n = 50k CV-selected λ is **statistically
+null** and ≈ 30× smaller in magnitude than the n = 50k subsample
+estimate, with a sign flip in the frequency channel. This reframes
+the scientific picture in two complementary ways:
+
+1. **Methodologically — full-n CV is now within reach** (~6 hours, vs
+   the previously infeasible ~weeks). The fixed-λ-from-subsample
+   shortcut overshoots, almost certainly because the n = 50k CV is
+   over-regularizing for the full panel: the active set drops from
+   227 / 134 to 133 / 70 when the same λ is applied at 9× more data
+   (more samples → more signal → optimal λ is *smaller*, not the
+   same). Full-n CV is the proper next experiment.
+
+2. **Empirically — the n = 50k +1.76 × 10⁻³ may be small-sample
+   noise** that the §5.2 CV-sensitivity panel was already warning
+   about. Five different CV configurations at n = 50k produced ψ_total
+   spanning 42×; the full-n number lands at the small-magnitude end
+   of that range. A reasonable Bayesian prior, given the §5.2 panel
+   alone, would put substantial mass on a near-zero true ψ.
+
+The n = 451k channel decomposition (−185 / +82 / +3) is *not* the
+final word — it inherits the "fixed-λ from a different sample size"
+caveat — but it does confirm that the qualitative claim of
+"frequency-channel-dominant positive effect" cannot be transferred
+from the n = 50k subsample to the full panel without additional
+evidence. **The science paper's defensible headline is now the
+combined-pressure-band regHAL-TMLE result of §5.1
+(ψ = +7.65 × 10⁻³, p = 7.2 × 10⁻⁴), which uses the parametric EIC
+inside HAL's working model and is *not* subject to the hurdle-CV
+λ-selection problem.** The hurdle decomposition is reported as a
+methodological diagnostic (§5.2 sensitivity panel + §5.2.1
+full-n preliminary), not as the headline scientific finding.
+
 **CV-setup sensitivity panel (R = 7 km, n ≈ 50,000, A → A · 1.10).** A
 sequence of CPU baselines run against the GPU hurdle pipeline reveals
 that the channel decomposition is sensitive to cross-validation setup.
@@ -625,6 +679,20 @@ numbers.
 
 Diagnostic scripts and full logs are checked into the repository at
 `gpu_hal/tests/diagnose_*.py` for reproducibility.
+
+**Full-n hurdle is now operational.** With the active-set IRLS solver
+(`gpu_hal/cd_logistic_active_set.py`, validated against the full-Gram
+baseline at 7-digit precision on synthetic data and at 4.36× wall-time
+speedup on n = 49,519 with rel-L2 ≈ 0.45 from non-converged IRLS at
+small λ), the full-n hurdle HAL-TMLE at R = 7 km on n = 451,212
+completes in **5.0 minutes** (Stage 1 logistic 233 s, Stage 2 Gaussian
+on positives 29 s, compose + cluster-IF SE 35 s) with measured
+per-iter cost of 7.7 s in Stage 1. This compares to the previously-
+projected 10–12 hours infeasibility for full-Gram IRLS at full n —
+a ≈ 140× wall-clock reduction. Full-n cross-validation across 5 folds
+× 15 lambdas is now within reach at ≈ 6 hours wall-time and is the
+natural next experiment; the fixed-λ result reported in §5.2.1 is
+preliminary pending that CV.
 
 ### 6.6 Cluster-bootstrap sensitivity for the CV-TMLE comparator
 
