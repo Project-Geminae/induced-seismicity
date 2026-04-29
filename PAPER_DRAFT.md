@@ -415,59 +415,59 @@ under all CV setups tried, with frequency channel dominant when GPU's
 this section. The quantitative 54 / 34 / 12 split depends materially on
 the CV configuration, as documented in the sensitivity panel below.)
 
-### 5.2.1 Full-n hurdle at n = 451,212 (active-set IRLS)
+### 5.2.1 Full-n hurdle at n = 451,212 (active-set IRLS, full-n CV)
 
 With the active-set IRLS solver (`gpu_hal/cd_logistic_active_set.py`,
 introduced in this update; see §6.5 and FUTURE_WORK/README.md), the
-full-n hurdle HAL-TMLE is now operational. At R = 7 km on the full
-panel (n = 451,212 well-days, 389 well clusters, 18,679 positive
-events), with λ values fixed at the n = 50k CV picks
-(λ_pos = 1.77 × 10⁻⁷, λ_mag = 1.99 × 10⁻⁶):
+full-n hurdle HAL-TMLE is now operational. We report three
+configurations at R = 7 km on the full panel (n = 451,212 well-days,
+389 well clusters, 18,679 positive events):
 
-| Quantity | n = 49,519 (CV at this n) | n = 451,212 (fixed λ from n = 50k) |
-|---|---|---|
-| Stage 1 active | 227 | **133** |
-| Stage 2 active | 134 | **70** |
-| ψ_freq | +9.4 × 10⁻⁴ (54 %) | **−9.5 × 10⁻⁵ (−185 %)** |
-| ψ_mag | +6.0 × 10⁻⁴ (34 %) | **+4.2 × 10⁻⁵ (+82 %)** |
-| ψ_cross | +2.2 × 10⁻⁴ (12 %) | **+1.5 × 10⁻⁶ (+3 %)** |
-| **ψ_total** | **+1.76 × 10⁻³** | **−5.16 × 10⁻⁵** |
-| z, p | (not computed) | z = −0.28, **p = 0.78** |
-| Wall time | 1 hr 41 min (Apr 25) | **5.0 min** (this work) |
-| Cluster-IF design effect | (not computed) | 13.5× |
+| Quantity | n = 49,519 (CV at n=50k) | n = 451,212 (λ from n=50k) | **n = 451,212 (full-n CV)** |
+|---|---:|---:|---:|
+| λ_pos | 1.77 × 10⁻⁷ | 1.77 × 10⁻⁷ | **2.73 × 10⁻⁸** (15× smaller) |
+| λ_mag | 1.99 × 10⁻⁶ | 1.99 × 10⁻⁶ | **5.36 × 10⁻⁶** (3× larger) |
+| Stage 1 active | 227 | 133 | **331** |
+| Stage 2 active | 134 | 70 | **27** |
+| ψ_freq | +9.4 × 10⁻⁴ (54 %) | −9.5 × 10⁻⁵ (−185 %) | **+1.32 × 10⁻⁴ (65 %)** |
+| ψ_mag | +6.0 × 10⁻⁴ (34 %) | +4.2 × 10⁻⁵ (+82 %) | **+6.16 × 10⁻⁵ (30 %)** |
+| ψ_cross | +2.2 × 10⁻⁴ (12 %) | +1.5 × 10⁻⁶ (+3 %) | **+1.03 × 10⁻⁵ (+5 %)** |
+| **ψ_total** | **+1.76 × 10⁻³** | −5.16 × 10⁻⁵ | **+2.04 × 10⁻⁴** |
+| z, p | (not computed) | −0.28, p = 0.78 | **0.52, p = 0.60** |
+| 95 % CI (cluster) | — | [−4.1, +3.1] × 10⁻⁴ | **[−5.6, +9.7] × 10⁻⁴** |
+| Cluster-IF design effect | — | 13.5× | **19.9×** |
+| Wall time | 1 hr 41 min (Apr 25) | 5.0 min | **34 min** (parallel folds + aggregate) |
 
-The full-n estimate at the n = 50k CV-selected λ is **statistically
-null** and ≈ 30× smaller in magnitude than the n = 50k subsample
-estimate, with a sign flip in the frequency channel. This reframes
-the scientific picture in two complementary ways:
+**Three findings from this panel:**
 
-1. **Methodologically — full-n CV is now within reach** (~6 hours, vs
-   the previously infeasible ~weeks). The fixed-λ-from-subsample
-   shortcut overshoots, almost certainly because the n = 50k CV is
-   over-regularizing for the full panel: the active set drops from
-   227 / 134 to 133 / 70 when the same λ is applied at 9× more data
-   (more samples → more signal → optimal λ is *smaller*, not the
-   same). Full-n CV is the proper next experiment.
+1. **The n = 50k CV did over-regularize at full n.** Proper full-n
+   CV (5-fold cluster-aware, 15-point log-spaced λ-grid via warm-
+   started active-set IRLS) picks λ_pos = 2.73 × 10⁻⁸, fully 15×
+   smaller than the n = 50k pick. The active set at full n grows
+   to 331 from 133 at the wrong λ. The "more samples → smaller
+   optimal λ" intuition is confirmed empirically.
 
-2. **Empirically — the n = 50k +1.76 × 10⁻³ may be small-sample
-   noise** that the §5.2 CV-sensitivity panel was already warning
-   about. Five different CV configurations at n = 50k produced ψ_total
-   spanning 42×; the full-n number lands at the small-magnitude end
-   of that range. A reasonable Bayesian prior, given the §5.2 panel
-   alone, would put substantial mass on a near-zero true ψ.
+2. **The qualitative channel decomposition is robust.** Across the
+   two CV-supported runs (n = 50k CV and full-n CV), the split is
+   54 / 34 / 12 vs 65 / 30 / 5 — both **frequency-channel-dominant
+   positive**. The middle column (fixed-λ-at-full-n) is the only one
+   with a sign flip in the freq channel, and we now know that
+   column was running at the wrong λ. The interpretive claim of
+   "frequency channel dominates" survives a proper full-n analysis.
 
-The n = 451k channel decomposition (−185 / +82 / +3) is *not* the
-final word — it inherits the "fixed-λ from a different sample size"
-caveat — but it does confirm that the qualitative claim of
-"frequency-channel-dominant positive effect" cannot be transferred
-from the n = 50k subsample to the full panel without additional
-evidence. **The science paper's defensible headline is now the
-combined-pressure-band regHAL-TMLE result of §5.1
-(ψ = +7.65 × 10⁻³, p = 7.2 × 10⁻⁴), which uses the parametric EIC
-inside HAL's working model and is *not* subject to the hurdle-CV
-λ-selection problem.** The hurdle decomposition is reported as a
-methodological diagnostic (§5.2 sensitivity panel + §5.2.1
-full-n preliminary), not as the headline scientific finding.
+3. **The single-radius point estimate is not significant at full n
+   under cluster-robust inference** (z = 0.52, p = 0.60, CI
+   [−5.6, +9.7] × 10⁻⁴). The full-n CV estimate (+2.04 × 10⁻⁴) is
+   smaller than the n = 50k estimate (+1.76 × 10⁻³) by about 9×, and
+   the cluster-robust CI crosses zero. **The defensible headline of
+   this paper is therefore the combined-pressure-band regHAL-TMLE
+   result of §5.1 (ψ = +7.65 × 10⁻³, p = 7.2 × 10⁻⁴), which pools
+   13 correlated radii by inverse variance.** Single-radius hurdle
+   estimates — at any sample size we can run — are too noisy to
+   publish as primary inference. The hurdle decomposition is
+   reported as a methodological diagnostic for the channel
+   structure of the effect (§5.2 sensitivity + §5.2.1 panel), not
+   as a competing headline.
 
 **CV-setup sensitivity panel (R = 7 km, n ≈ 50,000, A → A · 1.10).** A
 sequence of CPU baselines run against the GPU hurdle pipeline reveals
