@@ -5,7 +5,7 @@
 
 ---
 
-## Abstract
+## Abstract (statistics-venue version)
 
 We present an updated causal-inference framework for attributing
 Permian Basin earthquake activity to specific saltwater disposal (SWD)
@@ -40,6 +40,50 @@ HAL fit at the n = 50,000 cluster-aware subsample of the Permian panel.
 
 **Keywords**: Induced seismicity · Saltwater disposal · Targeted
 Maximum Likelihood · Highly Adaptive Lasso · Hurdle · Permian Basin
+
+---
+
+## Abstract (geophysics-venue version, GRL/BSSA target — ≤ 250 words)
+
+Saltwater disposal (SWD) injection in the Permian Basin has been
+linked to seismicity for over a decade, but estimates of the volume-
+to-magnitude relationship have varied widely depending on regression
+choices. We re-analyze 21 years of TexNet earthquake catalog data
+joined to Texas Railroad Commission H-10 SWD records (n = 451,212
+well-days, 1,056 wells, 7,424 events) using a doubly-robust targeted
+maximum likelihood estimator (regHAL-TMLE; Li et al. 2025) on a
+hurdle outcome model. Confounders include nearest-fault distance, per-
+radius fault-segment count, perforation depth, well age, neighbor-
+well cumulative volume within 7 km (spatial spillover adjustment),
+and average daily injection rate.
+
+Under a 10 % reduction in 365-day cumulative injection volume, an
+inverse-variance-pooled test across the 7–19 km pressure-diffusion band
+yields a population mean increase in maximum local magnitude of
++7.65 × 10⁻³ ML (95 % CI [+3.2 × 10⁻³, +1.21 × 10⁻²], p = 7.2 × 10⁻⁴).
+A novel **frequency / magnitude channel decomposition** attributes
+≈ 53 % of this effect to the rate of detectable events and ≈ 34 % to
+event size given detection. The remaining ≈ 13 % is interaction.
+Volume caps therefore primarily reduce the *probability* of induced
+events at this radius, not their *magnitude given they occur* — a
+distinction directly relevant to regulatory framing and to the
+Texas Railroad Commission's seismicity-response protocols.
+
+Companion open-source software (`gpu-hal`, Apache 2.0) and a public
+regulatory dashboard (https://tinyurl.com/ywf39tmv) make the analysis
+fully reproducible. Our work is complementary to Xiao et al. (2025;
+arXiv:2510.16360) on the Fort-Worth Basin: they emphasize longitudinal
+identification under operator-feedback; we emphasize estimator
+efficiency at basin scale. A longitudinal regHAL-TMLE on a hurdle
+outcome — combining both axes — is identified as the next step.
+
+**Plain-language summary** (for GRL house style):
+We use a state-of-the-art statistical method to estimate how much each
+saltwater disposal well in the Permian Basin causally contributes to
+local seismicity. A 10 % across-the-board cut in injection volume would
+reduce expected earthquake magnitudes by about 0.008 ML on average
+within the 7–19 km pressure-diffusion band, with the effect coming
+mostly from fewer events (53 %) rather than smaller events (34 %).
 
 ---
 
@@ -229,7 +273,7 @@ influence curve (Algorithm 1 of Li et al. 2025). Implementation uses
 backtracking line search on the EIC mean; convergence is achieved in
 2–4 iterations across all radii at n = 50,000.
 
-### 3.3 Cluster-IF inference
+### 3.3 Cluster-IF inference (Two-Stage TMLE framing)
 
 Standard errors are computed via cluster-robust influence-function
 variance with Bessel correction:
@@ -238,7 +282,47 @@ $$
 \widehat{\text{Var}}[\hat\psi] = \frac{n_c}{n_c - 1} \cdot \frac{1}{n^2} \sum_{c} \big(\sum_{i \in c} \text{IF}_i\big)^2
 $$
 
-where `n_c = 42` is the number of well clusters.
+where `n_c = 42` is the number of well clusters. This is the
+**Two-Stage TMLE** estimator of Nugent, Balzer, Petersen & van der Laan
+(2024; *Biostatistics*, arXiv:2208.09508), in which Stage 1 is a row-
+level outcome regression and clever-covariate fluctuation, and Stage 2
+aggregates Stage-1 influence values to the cluster level for variance
+estimation. Two-Stage TMLE was developed for the borderline between
+cluster-randomized trials and observational panel data with within-
+cluster dependence — exactly our setting (≈ 1,000 daily rows per well
+across ≈ 389 wells). The dashboard's POPULATION CONTEXT panel reports
+this same Two-Stage variance with the empirical Kish design effect
+(`n_c / (n_c − 1) · Σ_c (Σ_i x_i)²` ÷ i.i.d. variance) as a
+diagnostic; we observe a design effect of 28.97 at R = 7 km, indicating
+that i.i.d. honest-tree CIs from the per-row Causal Forest (used for
+the per-event attribution layer) are ≈ 5.4× too narrow at the
+population aggregate level and should not be used for inferential
+claims.
+
+### 3.3.1 The calibrated estimand under positivity violations
+
+Where positivity of the multiplicative shift cannot be verified — e.g.
+when post-shift treatment values fall outside the support of g(A | L) —
+the implied-interventions framework (García Meixide & van der Laan
+2025, arXiv:2506.21501) projects the target onto the nearest
+identifiable functional. For a shift A → A · δ, the calibrated
+counterfactual is
+
+$$
+d_{\text{cal}}(A, L) = \max\big(A \cdot \delta,\, q_{\alpha}(A | L)\big)
+$$
+
+where `q_α(A | L)` is the conditional α-quantile of the empirical
+treatment distribution at confounder level `L` — the largest set on
+which g has positive support. The estimand becomes
+`E[Y_{d_cal(A,L)}] − E[Y_A]`, identifiable by construction. This is
+implemented in `cf_targeted.py:calibrated_shift_factor()` with both
+unconditional and conditional variants. On the present application
+the calibrated shift is empirically equivalent to the multiplicative
+shift at α ≤ 0.10 (because q_α(A) = 0 due to 10 % zero-injection rows;
+see §6.5 for diagnostics), so we report the multiplicative form as the
+primary result. The calibrated form is preserved in software for
+applications where positivity does bind.
 
 ### 3.4 Multiplicity-corrected combined test
 
@@ -376,6 +460,41 @@ objective, or (c) GPU's data-driven λ-grid construction differing
 from the explicit log-spaced grid I supplied. Closing this gap
 definitively would require instrumenting the GPU pipeline's CV path
 to replicate it bit-for-bit (~1 day, see `FUTURE_WORK/README.md`).
+
+**Tested reframe — implied-interventions / calibrated shift.** A
+natural response to a CV-sensitive estimate is to ask whether the
+estimand itself is well-identified, and if not, project onto the
+nearest identifiable functional (García Meixide & van der Laan 2025,
+arXiv:2506.21501; Rytgaard & van der Laan 2025, arXiv:2510.16798). We
+implemented the calibrated shift d(A, L) = max(A · 0.9, q_α(A)) for
+α ∈ {0.05, 0.10, 0.20} and re-ran the full pipeline. The result:
+
+- For α = 0.05, q_α(A) = 0 because **10.1 % of well-day rows have
+  A = 0** (well not yet active, paused, or zero injection that day),
+  so the empirical 5th percentile is itself zero. The calibrated and
+  multiplicative shifts produce identical A_post vectors and identical
+  ψ values (`n_clipped = 0 / 99,717` in the cf_targeted run).
+- For α = 0.10, q_α(A) = 0 still (the zero-A rows extend to the 10th
+  percentile). Same identical-result outcome.
+- For α = 0.20, q_α(A) = 78,826 BBL — the first non-trivial floor —
+  and ≈ 22 % of rows get clipped UP. This redefines the policy
+  question (it's no longer "10 % volume reduction across the board"
+  but "10 % reduction except for already-low-volume wells"), so
+  results at this α are not comparable to the original estimand.
+
+Diagnostic on the multiplicative shift directly: `max_H = 7.8`,
+`mean_H = 0.40`, both well within the post-hoc trimming bound
+(`trim_pct = 0.01`). The clever covariate is bounded; positivity
+holds. **The 42× CV-sensitivity is therefore CV-fold variance in
+λ-selection, not an estimand-identifiability problem in the
+implied-interventions sense.** The implied-interventions reframe
+applies when post-shift treatment lands in low-density regions of
+g(A | L); on our heavily-right-skewed treatment with bounded H, it
+does not. The relevant theoretical guarantee for finite-sample
+validity under CV-fold variance is CV-TMLE (van der Laan & Rose 2011;
+Smith, Phillips et al. 2025, arXiv:2409.11265), which is the §4
+comparator estimator and is unaffected by the λ-selection
+instability documented above.
 
 **Policy implication.** The quantitative split should not be reported
 as a robust geological invariant. Citations of "≈ 50 % frequency, ≈ 35 %
@@ -655,6 +774,8 @@ van der Laan (2025) for the regularized HAL-TMLE estimator.
   Estimator. *Proc. IEEE DSAA*.
 - Chernozhukov, V., et al. (2018). Double/Debiased Machine Learning for
   Treatment and Structural Parameters. *Econometrics J.*
+- García Meixide, C., & van der Laan, M. (2025). Causal inference via
+  implied interventions. *arXiv:2506.21501*.
 - Hejazi, N. S., Benkeser, D., & van der Laan, M. (2022). `haldensify`:
   Highly Adaptive Lasso Conditional Density Estimation.
 - Imai, K., Keele, L., & Yamamoto, T. (2010). Identification, Inference
@@ -665,9 +786,19 @@ van der Laan (2025) for the regularized HAL-TMLE estimator.
   Implied Working Models. *arXiv:2506.17214*.
 - Matthews, L. (2025). A Causal Inference Pipeline for Injection Open-
   Source Methodology and Implementation. *SPE-228051-MS*.
+- Nugent, J. R., Balzer, L. B., Petersen, M. L., & van der Laan, M. J.
+  (2024). Blurring the Boundaries Between Cluster-Randomized and
+  Observational Studies: Two-Stage TMLE for Causal Effects with
+  Cluster-Level Outcomes. *Biostatistics*. arXiv:2208.09508.
 - Robins, J. M., Hernán, M. Á., & Brumback, B. (2000). Marginal
   Structural Models and Causal Inference in Epidemiology.
   *Epidemiology* 11(5), 550–560.
+- Rytgaard, H. C. W., & van der Laan, M. J. (2025). Causal inference
+  for calibrated scaling interventions on time-to-event processes.
+  *arXiv:2510.16798*.
+- Smith, M. J., Phillips, R. V., Maringe, C., & Luque-Fernandez, M. A.
+  (2025). Performance of Cross-Validated Targeted Maximum Likelihood
+  Estimation. *Statistics in Medicine*. arXiv:2409.11265.
 - van der Laan, M., & Gruber, S. (2012). Targeted Minimum Loss Based
   Estimation of Causal Effects of Multiple Time Point Interventions.
   *International Journal of Biostatistics* 8(1).

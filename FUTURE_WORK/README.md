@@ -17,17 +17,48 @@ science paper's application section.
 
 ## Active-set IRLS for full-n logistic HAL
 
-The current `cd_logistic.py` rebuilds the full weighted Gram every IRLS
-iteration. At n=451k, p=1564, density=28%, this is ~25-30 min per build,
-making the full-n hurdle fit infeasible (~3-4 weeks projected).
+The original `cd_logistic.py` rebuilds the full weighted Gram every
+IRLS iteration. At n=451k, p=1564, density=28%, this is ~25-30 min per
+build — the full-n hurdle fit infeasible at ~3-4 weeks of projected
+wall-time.
 
-The standard fix is **active-set IRLS**: only rebuild Gram on the active
-basis (~80-200 columns instead of 1564), with periodic KKT checks for
-violator coordinates. Expected speedup: 10-20×, putting full-n hurdle
-within range.
+**Status (2026-04-28):** A first working cut is committed at
+`gpu_hal/cd_logistic_active_set.py`. The implementation:
 
-This is ~2-3 days of careful implementation. Worth doing as a separate
-methodological contribution — but not for the science paper.
+- Phase 1: K_warm full-Gram IRLS iterations to seed an initial
+  active set S = {j : |β_j| > 0}.
+- Phase 2: For each subsequent IRLS iter, rebuild G_S = X_S^T diag(w)
+  X_S / n on the active columns only (|S| × |S|), run CD on the
+  smaller Gram, and KKT-check inactive coordinates by computing
+  c_j = (X^T diag(w) (z − X_S β_S))_j / n. Coordinates with
+  |c_j| > λ + kkt_tol are promoted to S; the iter is re-solved.
+- Phase 3: Final full-coordinate KKT check at convergence guarantees
+  equivalence to the full-Gram fixed point.
+
+Validated (`gpu_hal/tests/test_active_set_vs_full.py`) against the
+full-Gram baseline at λ ∈ {0.05, 0.01, 0.005} on synthetic data: 100%
+active-set agreement, rel-L2 ≤ 1.8 × 10⁻⁷, intercept agreement to
+1 × 10⁻⁷. Empirically matches full-Gram at convergence.
+
+**What still needs to be done:**
+
+1. **Full-n empirical benchmark.** Run on the n = 451k, p = 1564
+   induced-seismicity panel and confirm wall-time drops from
+   ~25 min/iter to ~30-60 sec/iter when |S| ≈ 100-200. Estimated:
+   ~1 day of CV-path tuning + benchmark.
+2. **Path solver for `logistic_lasso_active_set_path`.** Warm-start
+   across decreasing λ — the natural way to fit a regularization path
+   without paying the warmup cost at every λ. Estimated: 0.5 day.
+3. **Hurdle pipeline plumbing.** Wire the active-set solver into
+   `gpu_hal/hurdle_hal.py` behind a flag so users can choose
+   `solver={"full_gram", "active_set"}`. Estimated: 0.5 day.
+4. **JOSS submission writeup.** With active-set IRLS validated and
+   benchmarked, `gpu_hal` becomes "first full-n hurdle HAL-TMLE on
+   n = 451k well-days" — a concrete new-scale-estimand contribution
+   suitable for a JOSS short paper. Estimated: 1 day.
+
+Total remaining: ~2-3 days. The big risk item — solver correctness —
+is now closed.
 
 ## hal9001 basis screening
 

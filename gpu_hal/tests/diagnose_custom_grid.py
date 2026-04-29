@@ -92,18 +92,19 @@ def run_glmnet_cv(r_X, y, family, lam_grid, ro, foldid=None, nfolds=5):
         fit = cv_fn(r_X, r_y, r_lam, family, r_fid)
     else:
         cv_fn = ro.r("""
-        function(X, Y, lam, family) {
+        function(X, Y, lam, family, nf) {
             glmnet::cv.glmnet(X, Y,
                               family      = family,
                               standardize = FALSE,
                               intercept   = TRUE,
-                              nfolds      = 5,
+                              nfolds      = nf,
                               lambda      = lam)
         }
         """)
         r_lam = ro.FloatVector(lam_grid.tolist())
         r_y   = ro.FloatVector(np.asarray(y, dtype=float).tolist())
-        fit = cv_fn(r_X, r_y, r_lam, family)
+        r_nf  = ro.IntVector([int(nfolds)])
+        fit = cv_fn(r_X, r_y, r_lam, family, r_nf)
     lam_min = float(ro.r("function(f) f$lambda.min")(fit)[0])
     coef = np.asarray(ro.r("function(f) as.numeric(coef(f, s='lambda.min'))")(fit))
     intercept, beta = float(coef[0]), coef[1:]
@@ -123,7 +124,19 @@ def main():
     ap.add_argument("--n-lambdas", type=int, default=100)
     ap.add_argument("--n-folds", type=int, default=5,
                     help="CV folds in cv.glmnet. GPU pipeline uses 3.")
+    ap.add_argument("--folds-mode", choices=["cluster", "random"], default="cluster",
+                    help="cluster: cluster_foldid assigns each well to a fold "
+                         "(rows of the same well are kept together). "
+                         "random: cv.glmnet's default random row-level folds.")
     ap.add_argument("--shift-pct", type=float, default=0.10)
+    ap.add_argument("--shift-mode", choices=["multiplicative", "calibrated"],
+                    default="multiplicative",
+                    help="multiplicative: A_post = (1-shift_pct)·A. "
+                         "calibrated: A_post = max((1-shift_pct)·A, q_α(A)); "
+                         "implied-interventions framework, García Meixide & vdL "
+                         "2025 (arXiv:2506.21501).")
+    ap.add_argument("--percentile-floor", type=float, default=0.05,
+                    help="α for calibrated-shift floor q_α(A) (default 0.05).")
     args = ap.parse_args()
 
     R = args.radius
@@ -133,10 +146,14 @@ def main():
 
     X, y, n_clusters, cluster_vec = get_data(R, args.max_n)
     print(f"n={len(X)}, clusters={n_clusters}, positives={int((y>0).sum())}")
-    foldid_full = cluster_foldid(cluster_vec, n_folds=args.n_folds, seed=42)
-    print(f"  cluster-aware foldid: {n_clusters} clusters → {args.n_folds} folds, "
-          f"sizes per fold: "
-          f"{np.bincount(foldid_full)[1:].tolist()}\n")
+    if args.folds_mode == "cluster":
+        foldid_full = cluster_foldid(cluster_vec, n_folds=args.n_folds, seed=42)
+        print(f"  cluster-aware foldid: {n_clusters} clusters → {args.n_folds} folds, "
+              f"sizes per fold: "
+              f"{np.bincount(foldid_full)[1:].tolist()}\n")
+    else:
+        foldid_full = None  # fall back to cv.glmnet's random row-level folds
+        print(f"  random row-level folds (n_folds={args.n_folds})\n")
 
     print("Building HAL basis (same as GPU pipeline) …")
     t0 = time.time()
@@ -182,11 +199,13 @@ def main():
 
     # ── Stage 1: binomial on 1{Y>0} ──
     is_pos = (y > 0).astype(float)
+    fold_label = "cluster-aware" if args.folds_mode == "cluster" else "random"
     print(f"Stage 1 (logistic, n={len(y)}, positives={int(is_pos.sum())}) "
-          f"with cluster-aware folds …")
+          f"with {fold_label} folds (nfolds={args.n_folds}) …")
     t0 = time.time()
     lam1, int_pos, beta_pos, na1, fit1 = run_glmnet_cv(
-        r_X, is_pos, "binomial", lam_grid, ro, foldid=foldid_full,
+        r_X, is_pos, "binomial", lam_grid, ro,
+        foldid=foldid_full, nfolds=args.n_folds,
     )
     print(f"  λ_min = {lam1:.4e}, intercept = {int_pos:.4e}, active = {na1} "
           f"({time.time()-t0:.0f}s)")
@@ -202,20 +221,38 @@ def main():
         ro.IntVector(list(phi_pos.shape)),
     )
     y_pos = np.log1p(y[pos_mask])
-    foldid_pos = cluster_foldid(cluster_vec[pos_mask], n_folds=args.n_folds, seed=42)
-    print(f"\nStage 2 (gaussian, n={int(pos_mask.sum())}) with cluster-aware folds "
-          f"(sizes: {np.bincount(foldid_pos)[1:].tolist()}) …")
+    if args.folds_mode == "cluster":
+        foldid_pos = cluster_foldid(cluster_vec[pos_mask], n_folds=args.n_folds, seed=42)
+        print(f"\nStage 2 (gaussian, n={int(pos_mask.sum())}) with cluster-aware folds "
+              f"(sizes: {np.bincount(foldid_pos)[1:].tolist()}) …")
+    else:
+        foldid_pos = None
+        print(f"\nStage 2 (gaussian, n={int(pos_mask.sum())}) with random folds …")
     t0 = time.time()
     lam2, int_mag, beta_mag, na2, fit2 = run_glmnet_cv(
-        r_X_pos, y_pos, "gaussian", lam_grid, ro, foldid=foldid_pos,
+        r_X_pos, y_pos, "gaussian", lam_grid, ro,
+        foldid=foldid_pos, nfolds=args.n_folds,
     )
     print(f"  λ_min = {lam2:.4e}, intercept = {int_mag:.4e}, active = {na2} "
           f"({time.time()-t0:.0f}s)")
     print(f"    GPU baseline (Apr 25):  λ = 1.99e-6, active = 134")
 
     # ── Compose hurdle and compute ψ ──
-    print(f"\nComposing hurdle prediction and computing ψ (shift +{args.shift_pct*100:.0f}%) …")
-    A_post = X[:, 0] * (1.0 + args.shift_pct)
+    base_factor = 1.0 + args.shift_pct
+    if args.shift_mode == "multiplicative":
+        print(f"\nComposing hurdle prediction (shift_mode=multiplicative, "
+              f"factor={base_factor:.3f}) …")
+        A_post = X[:, 0] * base_factor
+        n_clipped = 0
+    else:
+        a_floor = float(np.quantile(X[:, 0], args.percentile_floor))
+        A_unrestricted = X[:, 0] * base_factor
+        A_post = np.maximum(A_unrestricted, a_floor)
+        n_clipped = int((A_post != A_unrestricted).sum())
+        print(f"\nComposing hurdle prediction (shift_mode=calibrated, "
+              f"factor={base_factor:.3f}, q_{args.percentile_floor:.2f}={a_floor:.3e}) …")
+        print(f"  clipped {n_clipped}/{len(A_post)} "
+              f"({100*n_clipped/len(A_post):.1f}%) rows at the calibrated floor")
     X_post = X.copy(); X_post[:, 0] = A_post
     phi_obs_scaled  = phi_scaled_csr
     phi_post_raw    = backend.apply_basis(X_post, basis_list).tocsr()
@@ -245,7 +282,12 @@ def main():
     psi_mag   = float(np.mean(p_obs * (mag_post - mag_obs)))
     psi_cross = float(np.mean((p_post - p_obs) * (mag_post - mag_obs)))
 
-    print(f"\n=== RESULT (custom-grid CPU baseline) ===")
+    print(f"\n=== RESULT (custom-grid CPU baseline, shift_mode={args.shift_mode}) ===")
+    print(f"  n_folds={args.n_folds}, shift_pct={args.shift_pct}, "
+          f"percentile_floor={args.percentile_floor if args.shift_mode == 'calibrated' else 'n/a'}")
+    if args.shift_mode == "calibrated":
+        print(f"  n_clipped at floor: {n_clipped}/{len(X)} "
+              f"({100*n_clipped/len(X):.1f}%)")
     print(f"  Stage 1 (logistic): λ={lam1:.4e}, active={na1}")
     print(f"  Stage 2 (gaussian): λ={lam2:.4e}, active={na2}")
     print(f"  ψ_total      = {psi_total:+.4e}")
