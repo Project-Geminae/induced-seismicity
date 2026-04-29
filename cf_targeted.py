@@ -63,6 +63,149 @@ def _norm_cdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 
+# ──────────────────────────────────────────────────────────────────
+# Shift functions
+# ──────────────────────────────────────────────────────────────────
+
+def multiplicative_shift(A: np.ndarray, factor: float = 0.9) -> np.ndarray:
+    """Standard multiplicative shift: A_post = factor · A.
+
+    For factor=0.9 this is the canonical 10% volume reduction. For
+    factor=1.10 a 10% increase. Does NOT respect positivity — wells
+    pushed into low-density regions of g(A|L) drive the clever-covariate
+    H = g(A_post|L)/g(A|L) to extreme values, manifesting as CV-
+    sensitivity in the targeted estimate (PAPER_DRAFT.md §5.2).
+    """
+    return np.asarray(A, dtype=float) * float(factor)
+
+
+def calibrated_shift_factor(
+    A: np.ndarray,
+    X: np.ndarray | None = None,
+    base_factor: float = 0.9,
+    percentile_floor: float = 0.05,
+    mode: str = "unconditional",
+    g_model=None,
+) -> np.ndarray:
+    """Calibrated shift respecting empirical positivity (van der Laan
+    "implied interventions" framework, García Meixide & vdL 2025
+    arXiv:2506.21501; Rytgaard & vdL 2025 arXiv:2510.16798).
+
+    For each observed treatment A_i, computes
+        d(A_i, L_i) = max(A_i · base_factor,  q_α(A | L_i))
+    where q_α is the α-quantile of the (conditional) treatment
+    distribution at L_i.  Wells whose post-shift volume would land
+    below the lowest-observed-volume floor at their L-stratum are
+    clipped UP to the floor — equivalently, the policy "doesn't
+    apply" to wells already injecting at the empirical floor.
+
+    The estimand E[Y_{d(A,L)}] − E[Y_A] is identifiable by construction:
+    every value the intervention places weight on lies in a region
+    where the propensity g(·|L) has positive support.
+
+    Parameters
+    ----------
+    A : array of shape (n,)
+        Observed treatment values.
+    X : array of shape (n, d) or None
+        Confounder design matrix. Required if mode == "conditional".
+    base_factor : float, default 0.9
+        Multiplier for the unrestricted shift (before clipping).
+    percentile_floor : float in (0, 1), default 0.05
+        α — the empirical quantile of A | L below which we don't shift.
+    mode : {"unconditional", "conditional"}
+        - "unconditional": use a single scalar α-quantile of A (across
+          the whole training set) as the floor for every row.  Simple,
+          robust, defensible.  Recommended default.
+        - "conditional": use g_model (KDEConditionalDensity) to compute
+          a per-row α-quantile of A | L_i.  More rigorous identifiability
+          guarantee but requires a fitted density model.
+    g_model : KDEConditionalDensity or None
+        Required when mode=="conditional".  Must expose `.predict_a_hat(X)`
+        (the regression mean) and `.residual_kde_` (a 1-D Gaussian KDE
+        on residuals A − Â(L)).  See tmle_core.KDEConditionalDensity.
+
+    Returns
+    -------
+    A_post : array of shape (n,)
+        Calibrated post-shift treatment vector.
+    """
+    A = np.asarray(A, dtype=float)
+    A_unrestricted = A * float(base_factor)
+
+    if mode == "unconditional":
+        floor_scalar = float(np.quantile(A, percentile_floor))
+        return np.maximum(A_unrestricted, floor_scalar)
+
+    if mode == "conditional":
+        if X is None or g_model is None:
+            raise ValueError("mode='conditional' requires X and a fitted g_model "
+                             "(typically a KDEConditionalDensity).")
+        # Per-row conditional α-quantile.
+        # KDEConditionalDensity in tmle_core fits A_hat = f(L) + KDE on residuals.
+        # We exploit the additive structure: q_α(A|L) ≈ Â(L) + q_α(residuals).
+        # If the KDE bandwidth is bw and residuals are Gaussian-like with mean ~0,
+        # q_α(residuals) is approximately the empirical α-quantile of training
+        # residuals, which we take from the fitted KDE's training data.
+        try:
+            A_hat = g_model.regressor_.predict(X)
+        except AttributeError:
+            raise ValueError("g_model must be a fitted KDEConditionalDensity "
+                             "(needs .regressor_).")
+        try:
+            train_residuals = g_model.residuals_
+        except AttributeError:
+            raise ValueError("g_model must expose .residuals_ — refit "
+                             "KDEConditionalDensity to capture residuals.")
+        residual_floor = float(np.quantile(train_residuals, percentile_floor))
+        floor_per_row = A_hat + residual_floor
+        return np.maximum(A_unrestricted, floor_per_row)
+
+    raise ValueError(f"Unknown mode={mode!r}; expected 'unconditional' or 'conditional'.")
+
+
+def _compute_a_post(
+    A: np.ndarray,
+    X: np.ndarray,
+    shift_mode: str,
+    shift_factor: float,
+    percentile_floor: float,
+    g_model=None,
+) -> tuple[np.ndarray, dict]:
+    """Dispatcher used by tmle_target_total and hurdle_decompose_total.
+    Returns (A_post, diagnostics_dict)."""
+    if shift_mode == "multiplicative":
+        A_post = multiplicative_shift(A, shift_factor)
+        diag = {
+            "shift_mode":    "multiplicative",
+            "shift_factor":  float(shift_factor),
+            "n_clipped":     0,
+            "n_total":       int(len(A)),
+        }
+    elif shift_mode == "calibrated":
+        A_unrestricted = A * float(shift_factor)
+        A_post = calibrated_shift_factor(
+            A, X=X,
+            base_factor=shift_factor,
+            percentile_floor=percentile_floor,
+            mode="unconditional" if g_model is None else "conditional",
+            g_model=g_model,
+        )
+        n_clipped = int((A_post != A_unrestricted).sum())
+        diag = {
+            "shift_mode":       "calibrated",
+            "shift_factor":     float(shift_factor),
+            "percentile_floor": float(percentile_floor),
+            "n_clipped":        n_clipped,
+            "n_total":          int(len(A)),
+            "frac_clipped":     n_clipped / max(len(A), 1),
+        }
+    else:
+        raise ValueError(f"Unknown shift_mode={shift_mode!r}; "
+                         f"expected 'multiplicative' or 'calibrated'.")
+    return A_post, diag
+
+
 def _to_X(cf_bundle, panel: pd.DataFrame) -> np.ndarray:
     """Build the confounder design matrix using the bundle's _to_X."""
     return cf_bundle._to_X(panel)
@@ -287,6 +430,8 @@ def tmle_target_total(
     treatment_col: str | None = None,
     outcome_col: str = COL_OUTCOME_MAX_ML,
     shift_factor: float = 0.90,
+    shift_mode: str = "multiplicative",
+    percentile_floor: float = 0.05,
     trim_pct: float = 0.01,
     subsample_n: int | None = 100_000,
     seed: int = 42,
@@ -346,7 +491,8 @@ def tmle_target_total(
     # KDE-based conditional density (smoother than histogram for zero-inflated A)
     g_model = KDEConditionalDensity(random_state=seed).fit(A, X)
     g_obs = g_model.density(A, X)
-    A_post = A * shift_factor
+    A_post, shift_diag = _compute_a_post(A, X, shift_mode, shift_factor,
+                                          percentile_floor, g_model=None)
 
     # For shift_factor = 0, we want E[Q(0, L)] (the "shut everything off"
     # counterfactual mean). The IF is the shift-mean canonical IF specialized
@@ -408,6 +554,7 @@ def tmle_target_total(
         "n_clusters":    int(pd.Series(clusters).nunique()),
         "max_H":         float(np.max(np.abs(H))),
         "mean_H":        float(np.mean(H)),
+        **shift_diag,
     }
 
 
@@ -439,6 +586,8 @@ def hurdle_decompose_total(
     treatment_col: str | None = None,
     outcome_col: str = COL_OUTCOME_MAX_ML,
     shift_factor: float = 0.0,
+    shift_mode: str = "multiplicative",
+    percentile_floor: float = 0.05,
 ) -> HurdleChannelResult:
     """Decompose population shift effect into frequency × magnitude channels.
 
@@ -465,7 +614,8 @@ def hurdle_decompose_total(
     A = df[treat_col].astype(float).to_numpy()
     clusters = df[well_id_col].astype(int).to_numpy()
     n = len(df)
-    A_post = A * shift_factor
+    A_post, _ = _compute_a_post(A, X_log, shift_mode, shift_factor,
+                                 percentile_floor, g_model=None)
 
     # Frequency channel: logistic CF predicts P(Y>0 | A, L). For a CausalForestDML
     # with a binary outcome via XGBClassifier model_y, .effect(X, T0, T1) gives
@@ -536,8 +686,18 @@ def main():
     p.add_argument("--panel", default=None, help="panel CSV (default: panel_with_faults_<R>km.csv)")
     p.add_argument("--out",   default=None, help="output JSON (default: cf_targeted_<R>km.json)")
     p.add_argument("--bootstrap-B", type=int, default=500)
-    p.add_argument("--shift-factor", type=float, default=0.0,
-                   help="A_post = shift_factor · A_obs; 0.0 = shut-off counterfactual")
+    p.add_argument("--shift-factor", type=float, default=0.9,
+                   help="A_post = shift_factor · A_obs (multiplicative) "
+                        "or A_post = max(shift_factor·A_obs, q_α) (calibrated). "
+                        "Default 0.9 = 10%% volume reduction.")
+    p.add_argument("--shift-mode", choices=["multiplicative", "calibrated"],
+                   default="multiplicative",
+                   help="multiplicative: A_post = shift_factor · A_obs (no clipping). "
+                        "calibrated: A_post clipped at the percentile_floor of A "
+                        "(implied-interventions framework, García Meixide & vdL 2025; "
+                        "Rytgaard & vdL 2025).")
+    p.add_argument("--percentile-floor", type=float, default=0.05,
+                   help="α for the calibrated-shift floor q_α(A); default 0.05.")
     args = p.parse_args()
 
     R = args.radius
@@ -570,14 +730,24 @@ def main():
     print(f"           boot CI95     = [{boot_out['ci_low']:+.3e}, {boot_out['ci_high']:+.3e}]")
     print(f"           boot SE       = {boot_out['boot_se']:.4e}")
 
-    print(f"\n[{R}km] TMLE-targeted (shift_factor={args.shift_factor}) …")
-    tmle_out = tmle_target_total(cf, panel, shift_factor=args.shift_factor)
+    print(f"\n[{R}km] TMLE-targeted (shift_mode={args.shift_mode}, "
+          f"shift_factor={args.shift_factor}, percentile_floor={args.percentile_floor}) …")
+    tmle_out = tmle_target_total(
+        cf, panel,
+        shift_factor=args.shift_factor,
+        shift_mode=args.shift_mode,
+        percentile_floor=args.percentile_floor,
+    )
     print(f"           psi_plugin    = {tmle_out['psi_plugin']:+.4e}")
     print(f"           psi_targeted  = {tmle_out['psi_targeted']:+.4e}")
     print(f"           epsilon       = {tmle_out['epsilon']:+.4e}")
     print(f"           se_cluster    = {tmle_out['se_cluster']:.4e}")
     print(f"           CI95          = [{tmle_out['ci_low']:+.3e}, {tmle_out['ci_high']:+.3e}]")
     print(f"           p             = {tmle_out['pval']:.3e}")
+    if args.shift_mode == "calibrated":
+        print(f"           n_clipped     = {tmle_out.get('n_clipped', 0)} / "
+              f"{tmle_out.get('n_total', 0)} "
+              f"({tmle_out.get('frac_clipped', 0)*100:.1f}%)")
 
     output = {
         "radius_km":         R,
@@ -592,8 +762,12 @@ def main():
             cf_log = pickle.load(f)
         with open(args.cf_magnitude, "rb") as f:
             cf_mag = pickle.load(f)
-        hurdle_out = hurdle_decompose_total(cf_log, cf_mag, panel,
-                                             shift_factor=args.shift_factor)
+        hurdle_out = hurdle_decompose_total(
+            cf_log, cf_mag, panel,
+            shift_factor=args.shift_factor,
+            shift_mode=args.shift_mode,
+            percentile_floor=args.percentile_floor,
+        )
         print(f"           psi_freq      = {hurdle_out.psi_freq:+.4e}  (SE {hurdle_out.se_freq:.3e})")
         print(f"           psi_mag       = {hurdle_out.psi_mag:+.4e}  (SE {hurdle_out.se_mag:.3e})")
         print(f"           psi_cross     = {hurdle_out.psi_cross:+.4e}  (SE {hurdle_out.se_cross:.3e})")
