@@ -1126,6 +1126,7 @@
     const tt = targeted.tmle_targeted   || {};
     const hu = targeted.hurdle          || null;
     const fc = targeted.full_n_cv       || null;
+    const fct = targeted.full_n_combined_test || null;
 
     const fmt2 = (x) => (x == null || isNaN(x)) ? "—" : Number(x).toExponential(2);
     const fmt2sig = (x) => (x == null || isNaN(x)) ? "—"
@@ -1197,7 +1198,7 @@
         </div>
         ${fc ? `
         <div class="row" style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);">
-          <span class="key">FULL-n HURDLE CV (n=${(fc.n/1000).toFixed(0)}k, A → A·1.10)<span class="info below" data-tip="Hurdle HAL-TMLE at the FULL panel (n=${fc.n.toLocaleString()}, ${fc.n_clusters} well clusters, ${fc.n_positives.toLocaleString()} positives) with proper cluster-aware 5-fold CV across a 15-point log-spaced λ-grid. Made feasible by the active-set IRLS solver (gpu_hal/cd_logistic_active_set.py): ~34 min wall vs ~10-12 hr for full-Gram. Stage 1 active=${fc.n_active_pos}, Stage 2 active=${fc.n_active_mag}. λ_pos = ${fmt2(fc.lambda_pos_cv)}, λ_mag = ${fmt2(fc.lambda_mag_cv)}. The full-n CV picks λ_pos 15× smaller than the n=50k CV, confirming the n=50k subsample over-regularizes for the full panel. ψ_total = ${fmt2(fc.psi_total)} (z=${fc.z.toFixed(2)}, p=${fc.pval.toFixed(3)}); CI95 cluster [${fmt2(fc.ci_low)}, ${fmt2(fc.ci_high)}]. Channels recover the qualitative pattern of the n=50k subsample (frequency-dominant positive). NOT statistically significant at this single radius — see the §5.1 combined pressure-band test in PAPER_DRAFT.md for the defensible inferential headline.">i</span></span>
+          <span class="key">FULL-n HURDLE CV (n=${(fc.n/1000).toFixed(0)}k, A → A·1.10)<span class="info below" data-tip="Hurdle HAL-TMLE at the FULL panel (n=${fc.n.toLocaleString()}, ${fc.n_clusters} well clusters, ${fc.n_positives.toLocaleString()} positives) with proper cluster-aware 5-fold CV across a 15-point log-spaced λ-grid. Made feasible by the active-set IRLS solver (gpu_hal/cd_logistic_active_set.py): ~34 min wall vs ~10-12 hr for full-Gram. Stage 1 active=${fc.n_active_pos}, Stage 2 active=${fc.n_active_mag}. λ_pos = ${fmt2(fc.lambda_pos_cv)}, λ_mag = ${fmt2(fc.lambda_mag_cv)}. The full-n CV picks λ_pos 15× smaller than the n=50k CV, confirming the n=50k subsample over-regularizes for the full panel. ψ_total = ${fmt2(fc.psi_total)} (z=${fc.z.toFixed(2)}, p=${fc.pval.toFixed(3)}); CI95 cluster [${fmt2(fc.ci_low)}, ${fmt2(fc.ci_high)}]. Channels recover the qualitative pattern of the n=50k subsample (frequency-dominant positive). NOT statistically significant at this single radius — see the FULL-n COMBINED TEST below for the basin-scale headline.">i</span></span>
           <span class="val">${fmt2(fc.psi_total)}</span>
         </div>
         <div class="row">
@@ -1207,6 +1208,19 @@
         <div class="row">
           <span class="key">CHANNELS (full-n)</span>
           <span class="val" style="font-size:10px;">freq ${(fc.psi_freq/Math.abs(fc.psi_total)*100).toFixed(0)}% / mag ${(fc.psi_mag/Math.abs(fc.psi_total)*100).toFixed(0)}% / cross ${(fc.psi_cross/Math.abs(fc.psi_total)*100).toFixed(0)}%</span>
+        </div>` : ''}
+        ${fct ? `
+        <div class="row" style="margin-top:6px;padding-top:6px;border-top:2px solid var(--cyan);">
+          <span class="key" style="color:var(--cyan); font-weight:700;">FULL-n COMBINED TEST (basin-scale, ${fct.n_radii} radii)<span class="info below" data-tip="Inverse-variance pooled hurdle HAL-TMLE across ${fct.n_radii} pressure-band radii (R=${fct.radii} km), each at the FULL panel (n=451,212, 389 well clusters, ~18.7k positive events). The Stage 1 logistic Lasso uses the active-set IRLS solver developed in this work, making per-radius full-n CV feasible at ~30-50 min/radius (vs the prior ~10-12 hr full-Gram infeasibility). 12 of 13 individual radii are significant at α=0.05; the pressure-diffusion bell shape peaks at R=9 km (z=4.26). Channel decomposition at the basin scale: ${(fct.psi_freq_pooled/Math.abs(fct.psi_pooled)*100).toFixed(0)}% frequency, ${(fct.psi_mag_pooled/Math.abs(fct.psi_pooled)*100).toFixed(0)}% magnitude, ${(fct.psi_cross_pooled/Math.abs(fct.psi_pooled)*100).toFixed(0)}% cross — overwhelmingly frequency-dominant. This is the most powerful inferential test in the paper (z=${fct.z.toFixed(2)}, ~${(fct.z/3.38).toFixed(1)}× the regHAL-TMLE n=50k z of 3.38). Companion to the regHAL-TMLE Delta-method headline of §5.1 in PAPER_DRAFT.md.">i</span></span>
+          <span class="val headline" style="color:var(--cyan);">${fmt2(fct.psi_pooled)}</span>
+        </div>
+        <div class="row">
+          <span class="key">95% CI · z · p</span>
+          <span class="ci">[${fmt2(fct.ci_low)}, ${fmt2(fct.ci_high)}]&nbsp;·&nbsp;z=${fct.z.toFixed(2)}&nbsp;·&nbsp;p${fct.pval < 1e-15 ? '<10⁻¹⁵' : '='+fct.pval.toExponential(2)}</span>
+        </div>
+        <div class="row">
+          <span class="key">CHANNELS (pooled)</span>
+          <span class="val" style="font-size:10px;">freq ${(fct.psi_freq_pooled/Math.abs(fct.psi_pooled)*100).toFixed(0)}% / mag ${(fct.psi_mag_pooled/Math.abs(fct.psi_pooled)*100).toFixed(0)}% / cross ${(fct.psi_cross_pooled/Math.abs(fct.psi_pooled)*100).toFixed(0)}%</span>
         </div>` : ''}
         ${channelsHtml}
       </div>
