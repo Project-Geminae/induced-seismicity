@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <title>SEISGO · ACCESS</title>
+  <link rel="preconnect" href="https://rsms.me/" />
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <style>
+    :root {
+      --bg: #000; --surface: #0a0a0a; --surface2: #111; --border: #222;
+      --amber: #ff9900; --amber-dim: #aa6600; --amber-glow: rgba(255,153,0,0.08);
+      --green: #00ff66; --red: #ff3030; --cyan: #00ddff;
+      --text: #e0e0e0; --text-bright: #fff; --text-dim: #888;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'IBM Plex Sans', 'Inter', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        linear-gradient(180deg, rgba(255,153,0,0.04) 0%, transparent 60%),
+        repeating-linear-gradient(0deg, rgba(255,153,0,0.02) 0 1px, transparent 1px 3px),
+        var(--bg);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .wrap {
+      width: 100%; max-width: 480px;
+      border: 1px solid var(--amber);
+      background: var(--surface);
+      box-shadow:
+        0 0 0 1px var(--bg),
+        0 0 60px rgba(255,153,0,0.08),
+        0 8px 30px rgba(0,0,0,0.6);
+    }
+    .head {
+      background: var(--amber); color: #000;
+      padding: 6px 14px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+      font-size: 11px; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+    }
+    .head .lhs { display: flex; gap: 10px; align-items: center; }
+    .head .pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+                   background: #000; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+    .head .timestamp { font-family: 'IBM Plex Mono', monospace; font-size: 10px; opacity: 0.85; }
+    .body { padding: 28px 28px 20px; }
+    .brand-title { font-family: 'IBM Plex Mono', monospace; font-size: 13px;
+                   color: var(--text-dim); letter-spacing: 0.18em;
+                   text-transform: uppercase; margin-bottom: 18px; }
+    .brand-title strong { color: var(--amber); }
+    h1 {
+      font-family: 'IBM Plex Mono', monospace;
+      color: var(--text-bright);
+      font-size: 1.5rem; font-weight: 700;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    h1 .cursor {
+      display: inline-block; width: 0.6ch; height: 1em;
+      background: var(--amber); margin-left: 4px; vertical-align: -2px;
+      animation: blink 1.05s steps(2) infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+    .lead { color: var(--text-dim); margin-bottom: 24px; line-height: 1.55; font-size: 13px; }
+    .lead .em { color: var(--amber); }
+    .field {
+      display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px;
+    }
+    .field label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--text-dim);
+    }
+    .field input {
+      font-family: 'IBM Plex Mono', monospace;
+      background: var(--bg); color: var(--text-bright);
+      border: 1px solid var(--border); border-left: 2px solid var(--amber);
+      padding: 11px 13px; font-size: 14px;
+      letter-spacing: 0.12em;
+      outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .field input:focus {
+      border-color: var(--amber);
+      box-shadow: 0 0 0 1px var(--amber-glow);
+    }
+    button {
+      font-family: 'IBM Plex Mono', monospace;
+      width: 100%;
+      background: var(--amber); color: #000;
+      border: none; padding: 12px 16px; font-size: 13px; font-weight: 700;
+      letter-spacing: 0.12em; text-transform: uppercase;
+      cursor: pointer; transition: background 0.15s;
+      margin-top: 4px;
+    }
+    button:hover { background: #ffaa22; }
+    button:active { background: #cc7a00; }
+    .err {
+      margin-top: 14px;
+      padding: 9px 12px;
+      background: rgba(255,48,48,0.08);
+      border: 1px solid var(--red);
+      border-left-width: 3px;
+      color: var(--red);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+    }
+    .access-block {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 1px dashed var(--border);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      line-height: 1.7;
+      letter-spacing: 0.05em;
+    }
+    .access-block .label {
+      display: inline-block; padding: 1px 6px;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--amber); font-size: 10px;
+      letter-spacing: 0.18em; text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .access-block a { color: var(--amber); text-decoration: none;
+                      border-bottom: 1px dotted var(--amber-dim); }
+    .access-block a:hover { color: #ffaa22; }
+    .foot {
+      padding: 8px 14px;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px;
+      color: var(--text-dim);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      display: flex; justify-content: space-between;
+    }
+    .foot .ok { color: var(--green); }
+  </style>
+</head>
+<body>
+  <main class="wrap" role="main">
+    <div class="head">
+      <span class="lhs"><span class="pulse"></span>SEISGO TERMINAL · RESTRICTED</span>
+      <span class="timestamp" id="ts">--:--:-- UTC</span>
+    </div>
+    <div class="body">
+      <div class="brand-title"><strong>SEIS</strong>GO &middot; INDUCED-SEISMICITY CAUSAL DASHBOARD</div>
+      <h1>ENTER PASSCODE<span class="cursor"></span></h1>
+      <p class="lead">
+        This is a <span class="em">private analytics terminal</span> for the
+        Permian Basin causal-inference research dashboard. Access is granted
+        on request; per-event well attribution and population-level TMLE
+        analyses are gated.
+      </p>
+
+      {% if error %}
+      <div class="err">✗ INVALID PASSCODE &middot; ATTEMPT LOGGED</div>
+      {% endif %}
+
+      <form method="post" action="/login" autocomplete="off">
+        <div class="field">
+          <label for="password">PASSCODE</label>
+          <input id="password" name="password" type="password"
+                 autofocus required minlength="1"
+                 spellcheck="false"
+                 autocomplete="current-password" />
+        </div>
+        <button type="submit">AUTHENTICATE &gt;</button>
+      </form>
+
+      <div class="access-block">
+        <div class="label">REQUEST ACCESS</div>
+        Need credentials? Email
+        <a href="mailto:lewis@projectgeminae.net?subject=SEISGO%20Dashboard%20Access%20Request">
+          lewis@projectgeminae.net
+        </a>
+        with a brief description of intended use (regulatory, academic, or
+        operator). Access is granted on a per-request basis.
+      </div>
+    </div>
+    <div class="foot">
+      <span>© 2026 PROJECT GEMINAE</span>
+      <span class="ok">▎ READY</span>
+    </div>
+  </main>
+  <script>
+    const ts = document.getElementById("ts");
+    function tick() {
+      const d = new Date();
+      const hh = String(d.getUTCHours()).padStart(2,"0");
+      const mm = String(d.getUTCMinutes()).padStart(2,"0");
+      const ss = String(d.getUTCSeconds()).padStart(2,"0");
+      ts.textContent = `${hh}:${mm}:${ss} UTC`;
+    }
+    tick(); setInterval(tick, 1000);
+  </script>
+</body>
+</html>
