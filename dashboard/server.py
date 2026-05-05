@@ -41,11 +41,12 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
+import secrets
 import time as _time
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import FastAPI, Form, HTTPException, Query, Request, Response
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -63,6 +64,20 @@ REPO_ROOT          = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR      = Path(__file__).resolve().parent / "templates"
 INDEX_HTML         = TEMPLATES_DIR / "index.html"
 METHODOLOGY_HTML   = TEMPLATES_DIR / "methodology.html"
+LOGIN_HTML         = TEMPLATES_DIR / "login.html"
+
+# ──────────────────── Auth ────────────────────────────────────────
+# Single-shared-passcode auth gating /, /map, /faq, /methodology, /analytics,
+# /api/* (except /api/health for the docker healthcheck). Set via the
+# DASHBOARD_PASSWORD env var at container start.
+DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "")
+_active_sessions: set[str] = set()
+COOKIE_NAME = "seis_session"
+COOKIE_MAX_AGE = 7 * 24 * 3600  # 7 days
+ACCESS_EMAIL = "lewis@projectgeminae.net"
+# Paths that bypass auth (login itself, healthcheck, static)
+_AUTH_FREE_EXACT = {"/login", "/api/health", "/favicon.ico"}
+_AUTH_FREE_PREFIX = ("/static",)
 
 EVENTS_CSV         = REPO_ROOT / "texnet_events_filtered.csv"
 EVENT_INDEX_JSON   = REPO_ROOT / "event_index.json"
@@ -327,6 +342,41 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(AccessLogMiddleware)
 
+# ──────────────────── Auth middleware ────────────────────────────
+class AuthMiddleware(BaseHTTPMiddleware):
+    """Gate access via session cookie validated against an in-memory set.
+
+    The `/login` page, `/api/health` (used by the docker healthcheck) and
+    `/static/*` bypass the gate. All other paths require a valid cookie;
+    unauthenticated browser requests get a 303 redirect to /login;
+    unauthenticated API requests get 401.
+    """
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if (path in _AUTH_FREE_EXACT
+            or any(path.startswith(p) for p in _AUTH_FREE_PREFIX)):
+            return await call_next(request)
+        token = request.cookies.get(COOKIE_NAME)
+        if token and token in _active_sessions:
+            return await call_next(request)
+        # Not authenticated.
+        if path.startswith("/api/"):
+            return JSONResponse(
+                {"error": "authentication required",
+                 "hint": f"GET /login or POST /login with passcode. "
+                         f"Email {ACCESS_EMAIL} for access."},
+                status_code=401,
+            )
+        return RedirectResponse(url="/login", status_code=303)
+
+# Only enable auth if DASHBOARD_PASSWORD is set; if empty, run wide open
+# (dev mode). This lets local dev use uvicorn without env vars.
+if DASHBOARD_PASSWORD:
+    app.add_middleware(AuthMiddleware)
+    log.info("🔒  Auth middleware ENABLED (DASHBOARD_PASSWORD set)")
+else:
+    log.warning("⚠️   DASHBOARD_PASSWORD env var not set — running WIDE OPEN")
+
 # ──────────────────── Rate limiting ──────────────────────────────
 def _get_real_ip(request: Request) -> str:
     """Extract the real client IP, respecting X-Forwarded-For from Tailscale Funnel."""
@@ -400,6 +450,65 @@ def _startup() -> None:
 LANDING_HTML = TEMPLATES_DIR / "landing.html"
 ANALYTICS_HTML = TEMPLATES_DIR / "analytics.html"
 
+# ──────────────────── Routes: Auth ───────────────────────────────
+@app.get("/login", response_class=HTMLResponse)
+def login_page(error: int = Query(0)) -> HTMLResponse:
+    """Render the Bloomberg-themed login page. `?error=1` shows the
+    invalid-passcode banner."""
+    if not LOGIN_HTML.exists():
+        return HTMLResponse(
+            f"<h1>Login</h1><p>Login template missing. "
+            f"Email {ACCESS_EMAIL} for access.</p>",
+            status_code=200,
+        )
+    html = LOGIN_HTML.read_text()
+    # Trivial template substitution so we don't pull in jinja2 just for this.
+    if error:
+        html = html.replace("{% if error %}", "").replace("{% endif %}", "")
+    else:
+        # Strip the {% if error %} ... {% endif %} block when not in error.
+        import re as _re
+        html = _re.sub(
+            r"\{%\s*if\s+error\s*%\}.*?\{%\s*endif\s*%\}",
+            "", html, flags=_re.DOTALL,
+        )
+    return HTMLResponse(html)
+
+
+@app.post("/login")
+def login_post(password: str = Form(...)):
+    """Validate the passcode and set a session cookie."""
+    if not DASHBOARD_PASSWORD:
+        # Auth disabled — just bounce home.
+        return RedirectResponse(url="/", status_code=303)
+    # Constant-time comparison.
+    if not secrets.compare_digest(password, DASHBOARD_PASSWORD):
+        return RedirectResponse(url="/login?error=1", status_code=303)
+    token = secrets.token_urlsafe(32)
+    _active_sessions.add(token)
+    response = RedirectResponse(url="/", status_code=303)
+    response.set_cookie(
+        COOKIE_NAME, token,
+        max_age=COOKIE_MAX_AGE,
+        httponly=True, secure=True, samesite="lax",
+        path="/",
+    )
+    log.info("🔑  login OK; sessions=%d", len(_active_sessions))
+    return response
+
+
+@app.post("/logout")
+@app.get("/logout")
+def logout(request: Request):
+    """Clear the current session (POST or GET both work for browser convenience)."""
+    token = request.cookies.get(COOKIE_NAME)
+    if token:
+        _active_sessions.discard(token)
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(COOKIE_NAME, path="/")
+    return response
+
+
 # ──────────────────── Routes: HTML ───────────────────────────────
 @app.get("/", response_class=HTMLResponse)
 def landing() -> HTMLResponse:
@@ -409,7 +518,7 @@ def landing() -> HTMLResponse:
     return HTMLResponse(LANDING_HTML.read_text())
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
+@app.get("/map", response_class=HTMLResponse)
 def dashboard_app() -> HTMLResponse:
     if not INDEX_HTML.exists():
         return HTMLResponse("<h1>dashboard not found</h1>", status_code=500)

@@ -226,7 +226,7 @@
   <a href="#tool">Tool</a>
   <a href="/faq">FAQ</a>
   <span class="spacer"></span>
-  <a href="/dashboard" class="cta">Enter Dashboard</a>
+  <a href="/map" class="cta">Enter Dashboard</a>
 </nav>
 
 <!-- ═══════════════════════════════════════════ METHODOLOGY UPDATE BANNER ═══ -->
@@ -246,7 +246,7 @@
     Built on doubly-robust TMLE and Causal Forest methods.
   </p>
   <div class="cta-row">
-    <a href="/dashboard" class="cta-btn primary">Enter Dashboard</a>
+    <a href="/map" class="cta-btn primary">Enter Dashboard</a>
     <a href="#primer" class="cta-btn">Learn How It Works</a>
     <a href="/faq" class="cta-btn">FAQ</a>
   </div>
@@ -481,10 +481,10 @@
   </div>
 
   <div class="preview-frame">
-    <iframe src="/dashboard" loading="lazy" title="Seismicity Dashboard"></iframe>
+    <iframe src="/map" loading="lazy" title="Seismicity Dashboard"></iframe>
     <div class="preview-caption">
       <span>SEIS Dashboard &mdash; interactive map + per-well causal attribution</span>
-      <a href="/dashboard" target="_blank">Open Full Screen &rarr;</a>
+      <a href="/map" target="_blank">Open Full Screen &rarr;</a>
     </div>
   </div>
 </section>
@@ -499,7 +499,7 @@
   </p>
   <div class="hero" style="padding:0;">
     <div class="cta-row">
-      <a href="/dashboard" class="cta-btn primary">Enter Dashboard</a>
+      <a href="/map" class="cta-btn primary">Enter Dashboard</a>
       <a href="/faq" class="cta-btn">FAQ</a>
       <a href="/methodology" class="cta-btn">Methodology</a>
     </div>
@@ -570,7 +570,7 @@ fetch('/api/health').then(r=>r.json()).then(h=>{
   });
 
   // Track CTA clicks
-  document.querySelectorAll('a[href="/dashboard"], a[href="/faq"], a[href="/methodology"]').forEach(a => {
+  document.querySelectorAll('a[href="/map"], a[href="/faq"], a[href="/methodology"]').forEach(a => {
     a.addEventListener('click', function() {
       beacon('cta_click', { href: this.getAttribute('href'), text: this.textContent.trim().slice(0,40) });
     });
