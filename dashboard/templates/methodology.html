@@ -193,7 +193,7 @@
     <a href="/docs" target="_blank"><span class="label">F3</span> API</a>
     <a href="https://github.com/Project-Geminae/induced-seismicity/tree/tmle-rebuild" target="_blank"><span class="label">F4</span> SRC</a>
   </nav>
-  <div class="right">METHODOLOGY · v0.2 · 2026-04-11</div>
+  <div class="right">METHODOLOGY · v0.3 · 2026-05-05</div>
 </header>
 
 <main>
@@ -201,9 +201,19 @@
 <h1>Per-event well attribution — methodology and disclaimers</h1>
 
 <p style="color:var(--muted); font-size:13px;">
-  Last updated 2026-04-11 • applies to the in-model g-computation displayed
+  Last updated 2026-05-05 • applies to the in-model g-computation displayed
   in the per-well attribution sidebar of the main dashboard.
 </p>
+
+<div style="margin: 14px 0; padding: 10px 14px; border: 1px solid var(--amber);
+            background: rgba(255,153,0,0.06); font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px; line-height: 1.7;">
+  <strong style="color: var(--amber); letter-spacing: 0.08em;">DATA FRESHNESS</strong><br>
+  &middot; <strong>Earthquake catalog (TexNet):</strong> events through <strong>2026-05-05 07:08 UTC</strong> (n = 7,581 events from 2017-02-10 onward, ML &ge; 1.0 final-evaluation, Permian Basin bbox)<br>
+  &middot; <strong>Saltwater disposal (RRC H-10 daily):</strong> injection records through <strong>2026-05-01</strong> (n = 918,720 well-day rows across 795 wells)<br>
+  &middot; <strong>Causal Forests retrained:</strong> 2026-05-05 (all 20 radii) on the refreshed panel<br>
+  &middot; <strong>Full-n hurdle HAL-TMLE:</strong> overnight 13-radius CV against the May 5 SWD refresh in flight (basin-scale combined-test will refresh on completion)
+</div>
 
 <div class="toc">
   <strong>Contents</strong>
@@ -362,9 +372,22 @@ The current rigorous causal headline uses the <strong>regularized HAL-TMLE</stro
 estimator of <a href="https://arxiv.org/abs/2506.17214">Li, Qiu, Wang &amp; van der Laan
 (arXiv:2506.17214, June 2025)</a>, Delta-method variant. This estimator operates within
 HAL's implied finite-dimensional working model via a ridge-regularized Newton step
-along the parametric efficient influence curve. We run on a cluster-aware subsample of
-n=49,519 rows (42 clusters) for tractable hal9001 fitting on CPU; a GPU HAL backend
-(in development) will enable full n=451,212.
+along the parametric efficient influence curve. The published Estimator A headline
+runs on a cluster-aware subsample of n=49,519 rows (42 clusters) for tractable hal9001
+fitting on CPU.
+</p>
+
+<p>
+<strong>Update (2026-04 → 2026-05):</strong> the GPU HAL backend with active-set IRLS
+(<code>gpu_hal/cd_logistic_active_set.py</code>) is now operational and brings the
+full-panel hurdle HAL-TMLE within reach &mdash; the Stage 1 logistic Lasso on
+<strong>n = 918,720</strong> well-days completes in ~5 minutes vs. the previously
+projected ~10–12 hour full-Gram infeasibility (a ~140&times; speedup). The full-n
+basin-scale combined test across 13 pressure-band radii (Estimator B in PAPER_DRAFT.md
+&sect;5.1) currently reports
+&psi;<sub>pooled</sub> = +4.81&times;10<sup>-4</sup>, z = 8.35, p &lt; 10<sup>-15</sup>
+&mdash; this number is being refreshed against the May 5 SWD update via an overnight
+2-GPU CV chain.
 </p>
 
 <table class="cmp-table" style="font-size:0.85rem;">
@@ -385,8 +408,9 @@ significant effects (both negative under max_degree=2 HAL). A basis-simplificati
 sensitivity check at R=1 (max_degree=1, main effects only) yields a null targeted
 estimate (&psi;=+7&times;10<sup>-5</sup>, CI crossing zero), indicating the
 near-field negative effect is a hurdle-with-interactions artifact at very low
-positive-outcome rates (823 positives in 451k rows at R=1). We therefore interpret
-near-field as inconclusive pending the GPU-HAL full-n analysis.
+positive-outcome rates (823 positives in 451k rows at R=1, now ~870 in 918k after
+the May 5 SWD refresh). We therefore interpret near-field as inconclusive pending
+the GPU-HAL full-n analysis (now available; see Estimator B above).
 </p>
 
 <h4 style="margin-top:1.5rem;">3.1.2 V5 Comparator: XGBoost-GPU plug-in with B=500</h4>
