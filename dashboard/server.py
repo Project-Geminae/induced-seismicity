@@ -644,9 +644,10 @@ def health() -> dict:
         "combined_test_headline": {
             "estimator":          "regHAL-TMLE Delta-method (arXiv:2506.17214)",
             "reference":          "Li, Qiu, Wang & van der Laan (June 2025)",
+            "vintage":            "2026-04 (published)",
             "n":                  49519,
             "n_clusters":         42,
-            "subsample_note":     "Cluster-aware subsample of full n=451,212; full-n GPU HAL backend in development.",
+            "subsample_note":     "Cluster-aware 50k subsample of the April 2026 panel (n=451,212). The April vintage is the published primary headline. May 2026 rerun is reported below as a data-freshness diagnostic.",
             "pressure_band_km":   [7, 19],
             "pressure_band": {
                 "psi":    7.65e-3,
@@ -667,6 +668,27 @@ def health() -> dict:
                 "z":      3.83,
                 "pval":   1.28e-4,
                 "note":   "XGBoost-GPU plug-in B=500 cluster bootstrap at full n=451k. Plug-in clusters at +5-7e-4; targeting (regHAL) at +7.7e-3. The 10x gap is methodology (3x targeting correction) plus sample size (3x at finite n).",
+            },
+            "may06_rerun_diagnostic": {
+                "vintage":         "2026-05-06",
+                "n":               49410,
+                "n_clusters":      41,
+                "panel_n":         918720,
+                "panel_growth_note": "May 2026 panel doubles the April panel (918k vs 451k well-day rows) by adding daily SWD through May 1 and TexNet events through May 5. The 50k subsample fraction therefore drops from ~11% to ~5%.",
+                "pressure_band": {
+                    "psi":    1.03e-3,
+                    "ci_low": -2.10e-3,
+                    "ci_high": 4.16e-3,
+                    "z":      0.644,
+                    "pval":   0.520,
+                },
+                "near_field": {
+                    "psi":    -6.79e-3,
+                    "z":      -1.446,
+                    "pval":   0.148,
+                },
+                "convergence_note": "Most radii hit max_iter=50 with the line-search stuck condition (the same convergence regime as the April vintage; iteration counts comparable). Per-radius point estimates similar to plug-in. Pooled signal weakens because the new month (Apr 11 - May 5) had 157 events with mean ML=1.51 and only 2 events at M3+ — quieter than recent baseline (1296 events / 13 M3+ in the prior 6 months).",
+                "interpretation": "Two non-mutually-exclusive explanations for the weaker May 6 signal: (a) one quieter month diluted the per-row population estimand, (b) injection volume controls implemented in 2024 may be attenuating the basin-scale coupling. Both warrant follow-up. Until then, the April vintage remains the published headline; the May 6 result is exposed here as a freshness flag, not as a competing claim.",
             },
         },
     }

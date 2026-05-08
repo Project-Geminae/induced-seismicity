@@ -57,9 +57,11 @@ def cv_stage1_logistic(phi_scaled, is_pos, foldid, lambdas, n_folds,
     within each fold for ≥2× speedup vs cold-start path.
 
     Returns: (cv_dev: array shape (n_folds, n_lambdas),
+              cv_nact: array shape (n_folds, n_lambdas) of active-set sizes,
               path_results: list[list[LogisticResult]])
     """
     cv_dev = np.zeros((n_folds, len(lambdas)))
+    cv_nact = np.zeros((n_folds, len(lambdas)), dtype=np.int64)
     path_results = [[None] * len(lambdas) for _ in range(n_folds)]
 
     folds_iter = [single_fold] if single_fold is not None else range(1, n_folds + 1)
@@ -100,6 +102,7 @@ def cv_stage1_logistic(phi_scaled, is_pos, foldid, lambdas, n_folds,
             cv_dev[f - 1, i] = dev
             path_results[f - 1][i] = res
             n_act = int(np.sum(np.abs(res.beta) > 1e-10))
+            cv_nact[f - 1, i] = n_act
             print(f"  fold {f} λ {i+1:2d}/{len(lambdas)} = {lam:.4e}: "
                   f"active={n_act:4d}, IRLS={res.n_irls:2d}, "
                   f"ho_dev={dev:.4e} ({time.time()-t_lam:.0f}s)", flush=True)
@@ -112,9 +115,10 @@ def cv_stage1_logistic(phi_scaled, is_pos, foldid, lambdas, n_folds,
                     "fold":   list(range(1, n_folds + 1)) * len(lambdas),
                     "lambda": np.repeat(lambdas, n_folds),
                     "dev":    cv_dev.T.flatten(),
+                    "n_active": cv_nact.T.flatten(),
                 }).to_csv(log_path, index=False)
 
-    return cv_dev, path_results
+    return cv_dev, cv_nact, path_results
 
 
 def cv_stage2_gaussian(phi_pos, y_pos_log, foldid_pos, lambdas, n_folds,
@@ -175,9 +179,15 @@ def main():
     ap.add_argument("--max-n", type=int, default=0,
                     help="Cluster-aware subsample size; 0 = full panel.")
     ap.add_argument("--n-folds", type=int, default=5)
-    ap.add_argument("--n-lambdas", type=int, default=15)
-    ap.add_argument("--lambda-ratio", type=float, default=1e-3,
-                    help="λ_min / λ_max ratio (default 1e-3).")
+    ap.add_argument("--n-lambdas", type=int, default=25)
+    ap.add_argument("--lambda-ratio", type=float, default=1e-5,
+                    help="λ_min / λ_max ratio (default 1e-5).")
+    ap.add_argument("--min-active", type=int, default=5,
+                    help="Stage-1 λ-selection floor: prefer the smallest "
+                         "mean-CV-deviance λ where median(n_active) >= "
+                         "min_active across folds. Prevents the frequency "
+                         "channel from collapsing to no active basis "
+                         "(which forces ψ_freq = 0).")
     ap.add_argument("--shift-pct", type=float, default=0.10)
     ap.add_argument("--max-irls", type=int, default=15,
                     help="Max IRLS iters per fit; lower for CV speed.")
@@ -266,7 +276,7 @@ def main():
         print(f"\n=== Stage 1 CV: FOLD-ONLY mode, running fold {f}/{args.n_folds} ===", flush=True)
         t_s1_cv = time.time()
         # Run only the requested fold by masking foldid
-        cv_dev, _ = cv_stage1_logistic(
+        cv_dev, cv_nact, _ = cv_stage1_logistic(
             phi_scaled, is_pos, foldid_full, lambdas1, args.n_folds,
             max_irls=args.max_irls, log_path=None,
             single_fold=f,
@@ -280,6 +290,7 @@ def main():
             "lambda_idx": list(range(len(lambdas1))),
             "lambda": lambdas1,
             "dev": cv_dev[f - 1],
+            "n_active": cv_nact[f - 1],
         }).to_csv(fold_csv, index=False)
         print(f"\nStage 1 fold {f} done in {s1_cv_time/60:.1f} min, "
               f"wrote {fold_csv}", flush=True)
@@ -327,20 +338,63 @@ def main():
         # Pivot to (n_folds, n_lambdas)
         cv_dev = s1_all.pivot(index="fold", columns="lambda_idx", values="dev").to_numpy()
         cv_mse = s2_all.pivot(index="fold", columns="lambda_idx", values="mse").to_numpy()
+        if "n_active" in s1_all.columns:
+            cv_nact = s1_all.pivot(index="fold", columns="lambda_idx", values="n_active").to_numpy()
+        else:
+            cv_nact = None  # legacy fold CSVs without n_active — disable floor
         # Skip stage 1 CV; jump directly to aggregation
         s1_cv_time = 0.0  # already done in parallel
     else:
         print(f"\n=== Stage 1: logistic CV (active-set IRLS, warm-starts, sequential folds) ===", flush=True)
         t_s1_cv = time.time()
-        cv_dev, _ = cv_stage1_logistic(
+        cv_dev, cv_nact, _ = cv_stage1_logistic(
             phi_scaled, is_pos, foldid_full, lambdas1, args.n_folds,
             max_irls=args.max_irls, log_path=s1_log,
         )
         s1_cv_time = time.time() - t_s1_cv
 
     mean_dev = cv_dev.mean(axis=0)
-    min_idx1 = int(np.argmin(mean_dev))
-    lambda_pos = float(lambdas1[min_idx1])
+    raw_idx1 = int(np.argmin(mean_dev))
+    raw_lambda_pos = float(lambdas1[raw_idx1])
+
+    # Active-floor selection: prefer the smallest mean-dev λ where the
+    # median active-set size across folds is >= min_active. This
+    # prevents the frequency channel from collapsing to n_active = 0
+    # (which would force ψ_freq = 0 by construction).
+    if cv_nact is not None and args.min_active > 0:
+        median_nact = np.median(cv_nact, axis=0)  # per-λ median across folds
+        feasible = median_nact >= args.min_active
+        if feasible.any():
+            # Among feasible λs, pick the one with smallest mean dev
+            mean_dev_feasible = np.where(feasible, mean_dev, np.inf)
+            min_idx1 = int(np.argmin(mean_dev_feasible))
+            lambda_pos = float(lambdas1[min_idx1])
+            if min_idx1 != raw_idx1:
+                print(f"\nStage 1 active-floor: raw CV picked idx {raw_idx1} "
+                      f"(λ={raw_lambda_pos:.4e}, median n_active="
+                      f"{median_nact[raw_idx1]:.0f} < {args.min_active}); "
+                      f"falling back to idx {min_idx1} "
+                      f"(λ={lambda_pos:.4e}, median n_active="
+                      f"{median_nact[min_idx1]:.0f})", flush=True)
+            else:
+                print(f"\nStage 1 active-floor: CV pick idx {min_idx1} "
+                      f"already has median n_active="
+                      f"{median_nact[min_idx1]:.0f} >= {args.min_active}",
+                      flush=True)
+        else:
+            # No feasible λ — fall back to smallest λ in grid (heaviest fit)
+            min_idx1 = len(lambdas1) - 1
+            lambda_pos = float(lambdas1[min_idx1])
+            print(f"\nStage 1 active-floor: NO λ in grid satisfies "
+                  f"median n_active >= {args.min_active}. Max median "
+                  f"n_active across grid = {int(median_nact.max())}. "
+                  f"Falling back to smallest λ in grid (idx {min_idx1}, "
+                  f"λ={lambda_pos:.4e}, median n_active="
+                  f"{median_nact[min_idx1]:.0f}).", flush=True)
+    else:
+        min_idx1 = raw_idx1
+        lambda_pos = raw_lambda_pos
+
     print(f"\nStage 1 CV: λ_pos = {lambda_pos:.4e} (idx {min_idx1}), "
           f"min mean dev = {mean_dev[min_idx1]:.4e}\n", flush=True)
 

@@ -193,7 +193,7 @@
     <a href="/docs" target="_blank"><span class="label">F3</span> API</a>
     <a href="https://github.com/Project-Geminae/induced-seismicity/tree/tmle-rebuild" target="_blank"><span class="label">F4</span> SRC</a>
   </nav>
-  <div class="right">METHODOLOGY · v0.3 · 2026-05-05</div>
+  <div class="right">METHODOLOGY · v0.4 · 2026-05-08</div>
 </header>
 
 <main>
@@ -201,7 +201,7 @@
 <h1>Per-event well attribution — methodology and disclaimers</h1>
 
 <p style="color:var(--muted); font-size:13px;">
-  Last updated 2026-05-05 • applies to the in-model g-computation displayed
+  Last updated 2026-05-08 • applies to the in-model g-computation displayed
   in the per-well attribution sidebar of the main dashboard.
 </p>
 
@@ -212,7 +212,20 @@
   &middot; <strong>Earthquake catalog (TexNet):</strong> events through <strong>2026-05-05 07:08 UTC</strong> (n = 7,581 events from 2017-02-10 onward, ML &ge; 1.0 final-evaluation, Permian Basin bbox)<br>
   &middot; <strong>Saltwater disposal (RRC H-10 daily):</strong> injection records through <strong>2026-05-01</strong> (n = 918,720 well-day rows across 795 wells)<br>
   &middot; <strong>Causal Forests retrained:</strong> 2026-05-05 (all 20 radii) on the refreshed panel<br>
-  &middot; <strong>Full-n hurdle HAL-TMLE:</strong> overnight 13-radius CV against the May 5 SWD refresh in flight (basin-scale combined-test will refresh on completion)
+  &middot; <strong>Full-n hurdle HAL-TMLE (Estimator B):</strong> patched 13-radius CV completed 2026-05-08 06:15 CDT &mdash; pooled &psi; = +8.83&times;10<sup>-4</sup>, z = +4.25, p = 2.15&times;10<sup>-5</sup> (uniformly positive across all 13 radii after the &lambda;-grid + active-floor patch).<br>
+  &middot; <strong>regHAL-TMLE Delta-method (Estimator A) on May 6 panel:</strong> non-significant (&psi; = +1.03&times;10<sup>-3</sup>, p = 0.52). The published April vintage (&psi; = +7.65&times;10<sup>-3</sup>, p = 7.2&times;10<sup>-4</sup>) remains the primary headline; the May 6 result is exposed as a freshness diagnostic in <code>/api/health &rarr; combined_test_headline.may06_rerun_diagnostic</code>.
+</div>
+
+<div style="margin: 14px 0; padding: 10px 14px; border: 1px solid var(--cyan);
+            background: rgba(0,170,221,0.06); font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px; line-height: 1.7;">
+  <strong style="color: var(--cyan); letter-spacing: 0.08em;">2026-05-06 &rarr; 05-08 PIPELINE PATCH</strong><br>
+  An initial overnight CV refresh against the May SWD data produced a sign-flip artifact at R=11&ndash;15 km (frequency-channel collapsed to <code>n_active_pos = 0</code>, forcing &psi;_freq = 0 and pooling to a near-null). Diagnosis: the Stage&nbsp;1 logistic CV was selecting a &lambda; large enough to prune all active basis. Patch applied to <code>run_hurdle_full_n_cv.py</code>:
+  <ol style="margin:6px 0 6px 18px; padding:0;">
+    <li>&lambda;-grid widened from <code>lambda_ratio = 1e-3</code> to <code>1e-5</code> and densified from 15 to 25 log-spaced points.</li>
+    <li>&lambda;-selection replaced with an active-floor rule: among CV candidates, pick the smallest mean-deviance &lambda; subject to <code>median(n_active) &ge; 5</code>.</li>
+  </ol>
+  Patched chain reran 2026-05-06 21:20 to 2026-05-08 06:15 CDT (~33 hr on alphanet GPU 0 + GPU 2). All 13 radii now have stable Stage&nbsp;1 active sets in [1365, 1407] (vs prior [0, 37]) and per-radius &psi; uniformly positive (z &isin; [+0.60, +1.69]). Pooled &psi; = +8.83&times;10<sup>-4</sup>, z = +4.25 &mdash; channel split essentially 100&nbsp;% frequency-dominant, qualitatively identical to the April finding. CHANGES.md (2026-05-08 entry) has the full per-radius table.
 </div>
 
 <div class="toc">
@@ -382,12 +395,24 @@ fitting on CPU.
 (<code>gpu_hal/cd_logistic_active_set.py</code>) is now operational and brings the
 full-panel hurdle HAL-TMLE within reach &mdash; the Stage 1 logistic Lasso on
 <strong>n = 918,720</strong> well-days completes in ~5 minutes vs. the previously
-projected ~10–12 hour full-Gram infeasibility (a ~140&times; speedup). The full-n
-basin-scale combined test across 13 pressure-band radii (Estimator B in PAPER_DRAFT.md
-&sect;5.1) currently reports
-&psi;<sub>pooled</sub> = +4.81&times;10<sup>-4</sup>, z = 8.35, p &lt; 10<sup>-15</sup>
-&mdash; this number is being refreshed against the May 5 SWD update via an overnight
-2-GPU CV chain.
+projected ~10–12 hour full-Gram infeasibility (a ~140&times; speedup).
+</p>
+
+<p>
+The full-n basin-scale combined test across 13 pressure-band radii (Estimator B in
+PAPER_DRAFT.md &sect;5.1) was refreshed against the May 5 SWD data on 2026-05-08
+under the patched CV chain (<code>lambda_ratio = 1e-5</code>, <code>n_lambdas = 25</code>,
+active-floor &lambda;-selection requiring <code>median(n_active) &ge; 5</code>):
+&psi;<sub>pooled</sub> = <strong>+8.83&times;10<sup>-4</sup></strong>,
+z = <strong>+4.25</strong>, p = <strong>2.15&times;10<sup>-5</sup></strong>.
+All 13 radii are uniformly positive (z &isin; [+0.60, +1.69]) with stable Stage&nbsp;1
+active sets [1365, 1407]; channel decomposition is essentially 100&nbsp;% frequency-
+dominant (&psi;_freq &asymp; +9.16&times;10<sup>-4</sup>, &psi;_mag &asymp; &minus;3.78&times;10<sup>-5</sup>,
+&psi;_cross &asymp; +4.59&times;10<sup>-6</sup>) &mdash; qualitatively identical to the April vintage. The
+April pre-patch number (&psi; = +4.81&times;10<sup>-4</sup>, z = 8.35) was inflated by
+a CV pathology in which the Stage&nbsp;1 frequency-channel &lambda; collapsed the active set
+to zero in the mid-band; the patched CV is the defensible Estimator B headline going
+forward.
 </p>
 
 <table class="cmp-table" style="font-size:0.85rem;">

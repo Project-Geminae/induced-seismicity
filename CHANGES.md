@@ -9,6 +9,127 @@ why, and gives a side-by-side of the OLD and NEW headline results.
 
 ---
 
+## 2026-05-06: May SWD refresh, R rebuild, CV chain rerun, basin headline flip
+
+### Pipeline state
+- Refreshed against TexNet events through 2026-05-05 (7,581 events) and
+  RRC daily SWD through 2026-05-01 (panel = 918,720 well-day rows).
+- Rebuilt R 4.6.0 + Rcpp / RcppEigen / hal9001 v0.4.6 from source on
+  alphanet (prior overnight chain crashed silently because rpy2 had no R).
+- Reran the 13-radius full-n CV chain (R=7..19) on alphanet GPU 0 + GPU 2,
+  ~115 min/radius (5 cluster-aware folds × 14 min + ~40 min aggregate).
+- All 13 per-radius CSVs + pooled `hurdle_full_n_combined_test.csv` regenerated.
+
+### Headline (basin-scale, full-n inverse-variance pool)
+| Vintage | ψ_pooled | z | p | Estimator |
+|---------|----------|---|---|-----------|
+| Apr 30 | +4.815e-04 | +8.35 | <10⁻¹⁵ | hurdle_gpu_hal_active_set_full_n_cv_pooled |
+| **May 6** | **−6.65e-06** | **−1.44** | **0.150** | hurdle_gpu_hal_active_set_full_n_cv_pooled |
+
+### Per-radius pattern (the diagnostic)
+
+The pooled near-null masks a sharp spatial pattern:
+
+| R band | z | n_active_pos | direction |
+|--------|---|--------------|-----------|
+| R=7 | +3.0 | **0** (collapsed) | mag-only positive |
+| R=8-10 | +1.2 to +4.8 | 0–9 | freq-dominated positive |
+| **R=11-15** | **−1.8 to −4.2** | **0–8 (freq channel collapses)** | **mag-only negative** |
+| R=16-19 | +0.1 to +7.5 | 12–37 | freq-dominated strongly positive |
+
+**This is a CV-sensitivity artifact, not a clean physical signal.** Two
+layered pathologies:
+
+1. The Stage 1 (frequency) λ-grid CV picks a λ_pos high enough to wipe
+   out the active basis at R=11, R=12 (n_active_pos = 0). With no Stage 1
+   active basis, ψ_freq = 0 by construction, leaving ψ_mag as the only
+   signal — and that magnitude signal runs negative in the mid-band.
+2. Even at R=13, R=14, R=15 where n_active_pos > 0, ψ_freq still
+   computes to exactly zero — the active bases happen to be
+   treatment-independent (calibrated shift produces no change in Q̂_freq).
+
+### Implications
+- **R=7 single-radius headline (`/api/headline/targeted` → `full_n_cv`)
+  is unaffected**: ψ=+3.01e-05, z=+3.04, p=0.0023 (still significantly
+  positive, magnitude-channel-only).
+- **The basin-scale pooled headline is currently unreliable** until the
+  λ-grid is tightened (denser sampling below 1e-5) or Stage 1 is replaced
+  with an explicit-grid sweep that excludes λ values that prune the
+  treatment basis.
+- The **regHAL-TMLE n=49k subsample headline** at `/api/health` is still
+  Apr-vintage (ψ=+0.00765, z=+3.38, p=0.00072) — that pipeline has not
+  been re-run against the May data.
+
+### Deployed
+- `/opt/dashboard-docker/cf_targeted_7km.json` updated with the May 6
+  blocks (preserving cluster_robust / cluster_bootstrap / tmle_targeted /
+  hurdle / full_n_cv / full_n_combined_test).
+- Container rebuilt as `seis-dashboard:may06-cv` with the same hardened
+  flags (read-only fs, non-root, cap-drop=ALL, --memory=6g).
+- Live at https://alphanet.tail098a15.ts.net/ (HTTP 200 on /api/health).
+
+---
+
+## 2026-05-08: Patched-CV chain recovers signal; pathology confirmed
+
+### Pipeline
+- Patched `run_hurdle_full_n_cv.py` (Stage 1 λ-grid widened from
+  `lambda_ratio = 1e-3 → 1e-5`, densified from 15 → 25 log-spaced
+  points, λ-selection rule replaced with active-floor: pick smallest
+  mean-CV-deviance λ where `median(n_active) ≥ 5`). Patched script
+  also writes `n_active` per (fold, λ) into the per-fold CSVs so
+  the aggregate step can apply the floor.
+- Reran 13-radius CV chain on alphanet GPU 0 + GPU 2 (started
+  2026-05-06 21:20 CDT, finished 2026-05-08 06:15 CDT — ~33 hr wall
+  with the wider grid). Per-radius wall time grew from ~115 min to
+  ~140-170 min as expected from the 1.7× λ-grid expansion.
+- Ran Estimator A regHAL-TMLE sweep against May panel in parallel
+  (CPU, NBATCH=8, 32 min total).
+
+### Result: patched CV chain recovered the basin-scale signal
+
+| Vintage | ψ pooled | z | p | Active set range |
+|---|---:|---:|---:|---:|
+| April | +4.81 × 10⁻⁴ | +8.35 | < 10⁻¹⁵ | 11–331 (mixed) |
+| May 6 v1 (broken CV) | −6.65 × 10⁻⁶ | −1.44 | 0.150 | 0–37 (collapsed) |
+| **May 8 v2 (patched CV)** | **+8.83 × 10⁻⁴** | **+4.25** | **2.15 × 10⁻⁵** | **1365–1407 (uniform)** |
+
+All 13 radii now positive (z ranging +0.60 to +1.69, all individually
+non-significant but uniformly positive). Inverse-variance pooling
+gives a clean z = 4.25. Channel split: ψ_freq ≈ 104% of total,
+ψ_mag ≈ −4%, ψ_cross ≈ +0.5% — qualitatively identical to the April
+finding (frequency-channel-dominant). The active-floor + denser
+λ-grid eliminated the n_active_pos = 0 collapse that plagued v1.
+
+### Estimator A May-vintage diagnostic (regHAL-TMLE, n = 49k subsample)
+- Pressure band ψ = +1.03 × 10⁻³, z = 0.64, p = 0.52 (non-significant
+  under the new vintage). Convergence pattern matches April (most
+  radii hit `max_iter = 50` with line-search-stuck — a regime
+  characteristic of overcomplete HAL bases, not unique to the May
+  data).
+- Driver of weakening: 157 added events (Apr 11 → May 5) had mean
+  ML = 1.51 and only 2 events at M3+ vs 13 M3+ in the prior 6 months.
+  Quieter month diluted the per-row population estimand.
+
+### Disposition
+- The published April Estimator A headline (ψ = +7.65 × 10⁻³,
+  p = 7.2 × 10⁻⁴) remains the primary inference in `/api/health`.
+- The May-vintage A pooled diagnostic is exposed as
+  `combined_test_headline.may06_rerun_diagnostic` (with explanatory
+  notes on convergence + panel growth).
+- The patched Estimator B (ψ = +8.83 × 10⁻⁴, z = +4.25, p = 2.15 × 10⁻⁵)
+  is live in the dashboard's POPULATION CONTEXT panel. CV-sensitivity
+  flag no longer triggers (no radius has n_active_pos = 0).
+- PAPER_DRAFT.md §5.1.1 updated with the patched results table.
+
+### Deployed
+- `seis-dashboard:may08-patched` running on alphanet:127.0.0.1:8766,
+  forwarded via Tailscale Funnel to https://alphanet.tail098a15.ts.net/.
+- All hardened-container flags retained (read-only fs, non-root,
+  cap-drop=ALL, --memory=6g).
+
+---
+
 ## 2026-04-13: Dashboard tooltips, CATE waterfall redesign, presentation
 
 ### Dashboard (`dashboard/templates/index.html`)

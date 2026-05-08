@@ -467,6 +467,128 @@ seismicity). The full-n hurdle is the more powerful test (8.4σ vs
 priority for direct max-ML inference because that is what regulators
 ultimately care about.
 
+### 5.1.1 May 2026 data refresh: per-radius sign flip and CV-pathology diagnosis
+
+The per-radius and pooled Estimator-B numbers in §5.1 were computed on
+the April 2026 data vintage (TexNet events through 2026-04-10, RRC
+daily SWD through 2026-04-08, 451,212 well-day rows). On 2026-05-06 we
+refreshed against TexNet through 2026-05-05 and SWD through 2026-05-01
+(918,720 well-day rows; 7,581 events) and reran the patched 13-radius
+CV chain. The pooled Estimator-B headline shifted materially:
+
+| Vintage | ψ pooled (R = 7–19 km) | z | p |
+|---|---:|---:|---:|
+| April 2026 (§5.1 above) | +4.81 × 10⁻⁴ | +8.35 | < 10⁻¹⁵ |
+| **May 2026 (refresh)** | **−6.65 × 10⁻⁶** | **−1.44** | **0.150** |
+
+The per-radius profile under the May 2026 refresh shows a sharp
+spatial sign pattern that the April vintage did not exhibit:
+
+| R band | z range | Stage 1 active set | direction |
+|---|---|---|---|
+| R = 7 | +3.0 | 0 (collapsed) | mag-only positive |
+| R = 8–10 | +1.2 to +4.8 | 0–9 | freq-dominated positive |
+| **R = 11–15** | **−1.8 to −4.2** | **0–8 (frequency channel collapses)** | **mag-only negative** |
+| R = 17–19 | +0.1 to +7.5 | 12–37 | freq-dominated strongly positive |
+
+**Diagnosis: this is a finite-sample CV-selection pathology, not a
+genuine spatial sign change.** Two layered failures of the Stage 1
+(frequency-channel) λ-selection produce the negative band:
+
+1. At R = 11 and R = 12, the cluster-aware 5-fold CV picks a Stage 1
+   λ_pos large enough that *every* basis function shrinks to zero
+   (`n_active_pos = 0`). With no Stage 1 active basis, the calibrated
+   shift produces no change in Q̂_freq, so ψ_freq = 0 by construction.
+2. At R = 13, R = 14, R = 15 the active-set CV does retain bases
+   (`n_active_pos ∈ {6, 7, 8}`), but those bases happen to be
+   treatment-independent at the chosen λ — again forcing ψ_freq = 0.
+
+In both pathologies the magnitude channel is left as the entire
+estimand. The mid-band magnitude signal is small but negative under
+the May 2026 panel, and inverse-variance pooling 13 correlated
+radii — five with the "ψ_freq = 0" pathology, eight without — produces
+the near-null pooled headline.
+
+**Remediation.** Two changes to `run_hurdle_full_n_cv.py` were made
+on 2026-05-06 and the chain reran overnight on 2026-05-07 to 08:
+(a) the Stage 1 λ-grid was widened from `lambda_ratio = 1e-3` to
+`1e-5` and densified from 15 to 25 log-spaced points, so the lower
+end of the path explores the smaller λ values where the active set
+is non-empty; and (b) λ-selection was replaced by an active-floor
+rule: among the candidate λs, pick the one with smallest mean CV
+deviance subject to `median(n_active) ≥ 5` across folds. If no λ
+in the grid satisfies the floor, the smallest λ in grid is used
+and the run is flagged.
+
+**Result of the patched chain (2026-05-08, n = 459,105, 390 well
+clusters, 13 radii pooled).** All 13 radii now have stable Stage 1
+active sets in the range 1365–1407 (vs the prior 0–37 range), and
+all per-radius point estimates are positive:
+
+| R(km) | ψ_total | SE_cluster | z | active_pos / active_mag |
+|---:|---:|---:|---:|---:|
+|  7 | +7.13 × 10⁻⁴ | 7.01 × 10⁻⁴ | +1.02 | 1365 / 28 |
+|  8 | +1.23 × 10⁻³ | 9.24 × 10⁻⁴ | +1.33 | 1377 / 41 |
+|  9 | +1.49 × 10⁻³ | 8.83 × 10⁻⁴ | +1.69 | 1375 / 43 |
+| 10 | +1.01 × 10⁻³ | 8.83 × 10⁻⁴ | +1.15 | 1378 / 49 |
+| 11 | +1.07 × 10⁻³ | 7.53 × 10⁻⁴ | +1.43 | 1371 / 48 |
+| 12 | +4.65 × 10⁻⁴ | 5.78 × 10⁻⁴ | +0.80 | 1377 / 33 |
+| 13 | +1.09 × 10⁻³ | 6.98 × 10⁻⁴ | +1.56 | 1372 / 35 |
+| 14 | +9.06 × 10⁻⁴ | 7.24 × 10⁻⁴ | +1.25 | 1377 / 34 |
+| 15 | +8.29 × 10⁻⁴ | 6.93 × 10⁻⁴ | +1.20 | 1381 / 61 |
+| 16 | +9.81 × 10⁻⁴ | 7.19 × 10⁻⁴ | +1.36 | 1387 / 40 |
+| 17 | +8.46 × 10⁻⁴ | 7.70 × 10⁻⁴ | +1.10 | 1385 / 63 |
+| 18 | +4.86 × 10⁻⁴ | 8.09 × 10⁻⁴ | +0.60 | 1405 / 50 |
+| 19 | +8.95 × 10⁻⁴ | 8.31 × 10⁻⁴ | +1.08 | 1397 / 53 |
+
+**Pooled Estimator B headline (May 2026, patched CV):**
+
+| Quantity | Value |
+|---|---|
+| **ψ pooled (pressure band 7–19 km)** | **+8.83 × 10⁻⁴ ML** |
+| 95 % CI | [+4.76 × 10⁻⁴, +1.29 × 10⁻³] |
+| z | +4.25 |
+| p | **2.15 × 10⁻⁵** |
+| ψ_freq | +9.16 × 10⁻⁴ (~104 %) |
+| ψ_mag | −3.78 × 10⁻⁵ (~ −4 %) |
+| ψ_cross | +4.59 × 10⁻⁶ (~ +0.5 %) |
+
+The patched headline is roughly 2× the April vintage (+8.83 × 10⁻⁴ vs
++4.81 × 10⁻⁴) but still substantially below the 8.4σ April figure
+because the per-radius z-scores are smaller and more uniform: no
+single radius dominates, but the inverse-variance pool across 13
+correlated radii is z = 4.25, p ≈ 2 × 10⁻⁵. The channel split is
+now essentially **100 % frequency-dominant**, qualitatively
+identical to the April finding and quantitatively more robust under
+the active-floor CV rule.
+
+The Estimator A regHAL-TMLE sweep against the May 2026 panel
+(rerun 2026-05-06, 32 min CPU wall) gives a non-significant pooled
+result (ψ = +1.03 × 10⁻³, z = 0.64, p = 0.52). This rerun used the
+same `max_iter = 50` and same n = 49k subsample as the published
+April vintage — most radii hit the line-search-stuck condition just
+as in April. The weakening therefore reflects the data shift rather
+than a Newton-iteration regime change. Two non-mutually-exclusive
+explanations: (a) the new month (Apr 11 → May 5) added 157 events
+with mean ML = 1.51 and only 2 events at M3+ — quieter than the
+prior 6-month baseline (1296 events, 13 M3+) — diluting the
+population estimand; (b) RRC volume controls implemented in 2024 may
+be attenuating the basin-scale coupling. The Estimator B patched-CV
+recovery (ψ now positive and significant after fixing the λ-grid)
+is consistent with explanation (a) being dominant — the data are
+still informative under a properly identified working model, just
+noisier per-radius.
+
+**Disposition.** The published Estimator A headline (§5.1 Table A:
+ψ = +7.65 × 10⁻³, p = 7.2 × 10⁻⁴) remains the primary inference
+because that estimator is what regulators are tracking; the Estimator
+B patched-CV result is now operational and exposed in the dashboard's
+POPULATION CONTEXT panel. The dashboard `/api/health` endpoint surfaces
+the April-vintage A as primary and the May-vintage A as a `may06_rerun_diagnostic` subfield. The CV-sensitivity flag in the
+POPULATION CONTEXT panel triggers only when a radius has
+`n_active_pos = 0` or `ψ_freq = 0` — a condition that no longer holds
+after the patch.
+
 ### 5.2 Frequency / magnitude decomposition
 
 At R = 7 km, n = 50,000, the GPU hurdle HAL fit produces:
