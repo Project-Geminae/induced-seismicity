@@ -153,7 +153,7 @@ def main():
             continue
         elapsed = time.time() - t0
 
-        z = result.psi_targeted / result.se_cluster if result.se_cluster else np.nan
+        z = result.psi_targeted / result.se_if if result.se_if else np.nan
         rows.append({
             "window_start":  start.date(),
             "window_end":    end.date(),
@@ -164,7 +164,7 @@ def main():
             "n_basis":       result.n_basis,
             "psi_plugin":    result.psi_plugin,
             "psi_targeted":  result.psi_targeted,
-            "se_cluster":    result.se_cluster,
+            "se_cluster":    result.se_if,
             "z":             float(z),
             "pval":          result.pval,
             "converged":     result.converged,
