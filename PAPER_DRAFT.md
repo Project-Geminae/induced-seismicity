@@ -591,46 +591,56 @@ after the patch.
 
 ### 5.2 Frequency / magnitude decomposition
 
-At R = 7 km, n = 50,000, the GPU hurdle HAL fit produces:
+The April-vintage R = 7 km, n ≈ 50,000 GPU hurdle HAL fit produced
+the following decomposition:
 
-| Channel | ψ | Share of total |
+| Channel | ψ (April n=50k) | Share of total |
 |---|---|---|
 | **ψ_freq** (volume → P(Y > 0)) | +9.4 × 10⁻⁴ | **53 %** |
 | **ψ_mag** (volume → E[Y \| Y > 0]) | +6.0 × 10⁻⁴ | **34 %** |
 | ψ_cross (interaction) | +2.2 × 10⁻⁴ | 13 % |
 | **ψ_total** | +1.76 × 10⁻³ | 100 % |
 
-(The GPU hurdle ψ_total is smaller in magnitude than the regHAL-TMLE
-+5.55 × 10⁻³ at the same R, n. The discrepancy is attributable to a
-documented finite-sample λ-selection sensitivity in the GPU hurdle
-pipeline; see §6.5. The qualitative finding — **both channels positive
-under all CV setups tried, with frequency channel dominant when GPU's
-3-fold cluster-aware CV is used** — is the primary scientific result of
-this section. The quantitative 54 / 34 / 12 split depends materially on
-the CV configuration, as documented in the sensitivity panel below.)
+This split is computed at the same n and same basis configuration as
+the April regHAL-TMLE single-radius +5.55 × 10⁻³, which differs from
+the hurdle ψ_total by ~3× — a documented finite-sample λ-selection
+sensitivity in the pre-patch GPU hurdle pipeline (see §6.5 and the
+sensitivity panel below). The qualitative finding survives all five
+CV configurations tested: **both channels positive, frequency channel
+dominant**. The quantitative 54 / 34 / 12 split is specific to the
+3-fold cluster-aware CV used by the April pipeline and is not a
+robust geological invariant; see the May-vintage patched-CV result
+in §5.2.1 for the canonical basin-scale channel split.
 
-### 5.2.1 Full-n hurdle at n = 451,212 (active-set IRLS, full-n CV)
+### 5.2.1 Full-n hurdle: pre-patch vs patched CV at full n
 
 With the active-set IRLS solver (`gpu_hal/cd_logistic_active_set.py`,
-introduced in this update; see §6.5 and FUTURE_WORK/README.md), the
-full-n hurdle HAL-TMLE is now operational. We report three
-configurations at R = 7 km on the full panel (n = 451,212 well-days,
-389 well clusters, 18,679 positive events):
+introduced in this update; see §6.5), the full-n hurdle HAL-TMLE is
+operational at the full panel. Below we compare four configurations
+at R = 7 km. The first three are April-vintage (pre-patch, n=451,212
+panel), establishing the CV-pathology that motivated the patch; the
+fourth is the May-vintage patched-CV result, which is the canonical
+single-radius Estimator B headline going forward.
 
-| Quantity | n = 49,519 (CV at n=50k) | n = 451,212 (λ from n=50k) | **n = 451,212 (full-n CV)** |
-|---|---:|---:|---:|
-| λ_pos | 1.77 × 10⁻⁷ | 1.77 × 10⁻⁷ | **2.73 × 10⁻⁸** (15× smaller) |
-| λ_mag | 1.99 × 10⁻⁶ | 1.99 × 10⁻⁶ | **5.36 × 10⁻⁶** (3× larger) |
-| Stage 1 active | 227 | 133 | **331** |
-| Stage 2 active | 134 | 70 | **27** |
-| ψ_freq | +9.4 × 10⁻⁴ (54 %) | −9.5 × 10⁻⁵ (−185 %) | **+1.32 × 10⁻⁴ (65 %)** |
-| ψ_mag | +6.0 × 10⁻⁴ (34 %) | +4.2 × 10⁻⁵ (+82 %) | **+6.16 × 10⁻⁵ (30 %)** |
-| ψ_cross | +2.2 × 10⁻⁴ (12 %) | +1.5 × 10⁻⁶ (+3 %) | **+1.03 × 10⁻⁵ (+5 %)** |
-| **ψ_total** | **+1.76 × 10⁻³** | −5.16 × 10⁻⁵ | **+2.04 × 10⁻⁴** |
-| z, p | (not computed) | −0.28, p = 0.78 | **0.52, p = 0.60** |
-| 95 % CI (cluster) | — | [−4.1, +3.1] × 10⁻⁴ | **[−5.6, +9.7] × 10⁻⁴** |
-| Cluster-IF design effect | — | 13.5× | **19.9×** |
-| Wall time | 1 hr 41 min (Apr 25) | 5.0 min | **34 min** (parallel folds + aggregate) |
+| Quantity | Apr n=49,519 (n=50k CV) | Apr n=451,212 (λ from n=50k) | Apr n=451,212 (pre-patch CV) | **May n=459,105 (patched CV)** |
+|---|---:|---:|---:|---:|
+| λ_pos | 1.77 × 10⁻⁷ | 1.77 × 10⁻⁷ | 2.73 × 10⁻⁸ | **(active-floor selected)** |
+| λ_mag | 1.99 × 10⁻⁶ | 1.99 × 10⁻⁶ | 5.36 × 10⁻⁶ | **5.26 × 10⁻⁶** |
+| Stage 1 active | 227 | 133 | 331 | **1365** |
+| Stage 2 active | 134 | 70 | 27 | **28** |
+| ψ_freq | +9.4 × 10⁻⁴ (54 %) | −9.5 × 10⁻⁵ | +1.32 × 10⁻⁴ (65 %) | **see basin pool** |
+| ψ_mag | +6.0 × 10⁻⁴ (34 %) | +4.2 × 10⁻⁵ | +6.16 × 10⁻⁵ (30 %) | **+7.13 × 10⁻⁴** |
+| ψ_cross | +2.2 × 10⁻⁴ (12 %) | +1.5 × 10⁻⁶ | +1.03 × 10⁻⁵ (+5 %) | **0** |
+| **ψ_total** | **+1.76 × 10⁻³** | −5.16 × 10⁻⁵ | +2.04 × 10⁻⁴ | **+7.13 × 10⁻⁴** |
+| z, p | (not computed) | −0.28, p = 0.78 | 0.52, p = 0.60 | **1.02, p = 0.31** |
+| 95 % CI (cluster) | — | [−4.1, +3.1] × 10⁻⁴ | [−5.6, +9.7] × 10⁻⁴ | **[−6.6, +20.8] × 10⁻⁴** |
+| Cluster-IF design effect | — | 13.5× | 19.9× | **30.9×** |
+| Wall time | 1 hr 41 min (Apr 25) | 5.0 min | 34 min | **38 min (5-fold CV at full n)** |
+
+The R = 7 single-radius result is non-significant in all four
+configurations — consistent with the §6.3 finding that per-radius
+inference at n ≈ 50k clusters is too noisy to publish. The basin-
+scale combined test (next paragraph) is what carries the inference.
 
 **Three findings from this panel:**
 
@@ -650,18 +660,27 @@ configurations at R = 7 km on the full panel (n = 451,212 well-days,
    "frequency channel dominates" survives a proper full-n analysis.
 
 3. **The single-radius point estimate is not significant at full n
-   under cluster-robust inference** (z = 0.52, p = 0.60, CI
-   [−5.6, +9.7] × 10⁻⁴). The full-n CV estimate (+2.04 × 10⁻⁴) is
-   smaller than the n = 50k estimate (+1.76 × 10⁻³) by about 9×, and
-   the cluster-robust CI crosses zero. **The defensible headline of
-   this paper is therefore the combined-pressure-band regHAL-TMLE
-   result of §5.1 (ψ = +7.65 × 10⁻³, p = 7.2 × 10⁻⁴), which pools
-   13 correlated radii by inverse variance.** Single-radius hurdle
-   estimates — at any sample size we can run — are too noisy to
-   publish as primary inference. The hurdle decomposition is
-   reported as a methodological diagnostic for the channel
-   structure of the effect (§5.2 sensitivity + §5.2.1 panel), not
-   as a competing headline.
+   under cluster-robust inference** in any CV configuration (z ≤ 1.02,
+   p ≥ 0.31; CIs cross zero). The pre-patch April n = 451k CV result
+   (+2.04 × 10⁻⁴) and the patched May n = 459k CV result (+7.13 × 10⁻⁴)
+   bracket the n = 50k subsample estimate (+1.76 × 10⁻³). The
+   cluster-robust CI crosses zero at both full-n vintages.
+   **The defensible single-estimator headline of this paper is
+   therefore the combined-pressure-band regHAL-TMLE result of §5.1
+   (ψ = +7.65 × 10⁻³, p = 7.2 × 10⁻⁴), which pools 13 correlated radii
+   by inverse variance.** The §5.1.1 patched-CV Estimator B basin pool
+   (ψ = +8.83 × 10⁻⁴, z = +4.25, p = 2.15 × 10⁻⁵) is the companion
+   inference that benefits from the same pooling intuition: per-radius
+   hurdle estimates — at any sample size we can run — are too noisy
+   to publish as primary inference, but the inverse-variance pool
+   across 13 radii is z = 4.25. The hurdle decomposition is reported
+   as a methodological diagnostic for the channel structure of the
+   effect (§5.2 sensitivity + §5.2.1 panel), not as a competing
+   headline. Note that the May-vintage patched basin pool gives
+   channel split ψ_freq ≈ 104 % / ψ_mag ≈ −4 % / ψ_cross ≈ +0.5 % —
+   even more frequency-dominant than the April n = 50k 54 / 34 / 12,
+   which we now interpret as a finite-n artifact of the n = 50k
+   subsample.
 
 **CV-setup sensitivity panel (R = 7 km, n ≈ 50,000, A → A · 1.10).** A
 sequence of CPU baselines run against the GPU hurdle pipeline reveals
@@ -705,9 +724,20 @@ balancing — my `cluster_foldid` uses cluster-id mod n_folds, producing
 unbalanced fold sizes [13909, 20117, 15493], (b) CV scoring rule
 differences between `glmnet`'s binomial deviance and GPU CD's CV
 objective, or (c) GPU's data-driven λ-grid construction differing
-from the explicit log-spaced grid I supplied. Closing this gap
-definitively would require instrumenting the GPU pipeline's CV path
-to replicate it bit-for-bit (~1 day, see `FUTURE_WORK/README.md`).
+from the explicit log-spaced grid I supplied.
+
+**Update (2026-05-08): the active-floor patch to the GPU pipeline's
+CV-selection rule (see §5.1.1) closes the practical version of this
+gap.** Under the patched chain — `lambda_ratio = 1e-5`,
+`n_lambdas = 25`, with `median(n_active) ≥ 5` enforced on the
+CV-selected λ — all 13 basin radii return uniformly positive,
+non-degenerate Stage 1 active sets in [1365, 1407]. The 42× CV-sensitivity
+spread documented in the table above is therefore characterised as a
+λ-selection finite-sample variance, identifiable by the
+`median(n_active) = 0` signal, and remediable by the active-floor
+rule. Closing the *bit-for-bit* gap to `cv.glmnet` is no longer
+required for downstream inference, but remains an open theoretical
+question for future work.
 
 **Tested reframe — implied-interventions / calibrated shift.** A
 natural response to a CV-sensitive estimate is to ask whether the

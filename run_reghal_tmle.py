@@ -35,6 +35,13 @@ def main():
     p.add_argument("--ridge-eta", type=float, default=1e-4)
     p.add_argument("--max-iter", type=int, default=100)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--max-date", type=str, default=None,
+                   help="Filter panel to rows with 'Date of Injection' <= "
+                        "max-date (YYYY-MM-DD). Used to recreate a prior "
+                        "panel vintage from the current data.")
+    p.add_argument("--out", type=str, default=None,
+                   help="Output CSV path (defaults to "
+                        "reghal_shift_<R>km.csv).")
     args = p.parse_args()
 
     R = args.radius
@@ -42,6 +49,11 @@ def main():
     print(f"regHAL-TMLE Delta-method at R={R}km (max_n={args.max_n})", flush=True)
 
     panel = cc.load_panel(f"panel_with_faults_{R}km.csv", radius_km=R)
+    if args.max_date:
+        n_before = len(panel)
+        panel = panel[panel["Date of Injection"] <= args.max_date].copy()
+        print(f"  date-filter: {n_before:,} -> {len(panel):,} rows "
+              f"(<= {args.max_date})", flush=True)
     agg = cc.aggregate_panel_to_event_level(panel, R, window_days=365)
     data, W, P, S, confs, cluster = cc.build_design_matrix(agg, R, window_days=365)
     data = data.copy()
@@ -114,7 +126,7 @@ def main():
         "elapsed_sec":    result.elapsed_sec,
         "estimator":      "reghal_tmle_delta",
     }
-    outfile = f"reghal_shift_{R}km.csv"
+    outfile = args.out or f"reghal_shift_{R}km.csv"
     pd.DataFrame([out]).to_csv(outfile, index=False)
     print(f"\nWrote {outfile}", flush=True)
 
