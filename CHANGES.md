@@ -70,6 +70,79 @@ layered pathologies:
 
 ---
 
+## 2026-05-27: Estimator A diagnosis — panel backfill + rolling-window convergence
+
+### Disambiguating why the May 6 Estimator A weakened
+- Hypothesis (a): "the May 2026 added 30 days of quieter data diluted
+  the signal." Tested with `run_reghal_tmle.py --max-date 2026-04-08`
+  to filter the panel back to April. Result: pooled
+  ψ_pressure_band = +1.030e-3, z = +0.644, p = 0.520 — **identical to
+  the unfiltered May sweep**. Filter dropped only 336 of 918,720
+  panel rows.
+- Panel-date audit revealed the actual data shift: the May 5 daily-
+  injection CSV contained **2016-onward historical SWD rows** that
+  the April panel didn't have. The panel doubled from 451k → 918k
+  via historical backfill, not new May rows. Year counts: 2024 went
+  from a few hundred thousand to 202,714 rows; 2025 from comparable
+  → 209,784; 2026 has only 43,247 rows (and only 13,534 dated after
+  2026-03-02). The retroactively-added 2016-2024 SWD records change
+  the basis fit on the n=49k cluster-subsample and therefore the
+  targeted point estimate.
+- Disposition: PAPER_DRAFT.md §5.1.1 already calls the May 6 result
+  a "freshness diagnostic" rather than a competing claim. This
+  diagnostic note clarifies that the data shift is panel composition,
+  not the recent month per se.
+
+### Rolling-window time-trend test (R=7 km, 540-day windows × 90-day step)
+- 26 windows from window_end ∈ [2020-01-01, 2026-02-28].
+- **5 of 26 windows converged**; 21 hit `max_iter = 50` with the
+  line-search-stuck regime. The converged 5 give:
+  | window_end | n_pos | ψ | z | p |
+  |---|---:|---:|---:|---:|
+  | 2020-03 | 101 | +1.16e-3 | +0.10 | 0.92 |
+  | 2020-09 | 632 | −1.45e-4 | −0.01 | 0.99 |
+  | 2022-03 | 3018 | +5.86e-2 | +1.04 | 0.30 |
+  | 2025-09 | 8462 | +1.24e-2 | +0.94 | 0.35 |
+  | 2026-02 | 8968 | −4.55e-3 | −0.32 | 0.75 |
+- All five converged windows give **|z| < 1.1 / p > 0.29**. No
+  rolling window — at any time period — shows a statistically
+  significant single-radius Estimator A signal. The 21 non-converged
+  windows produce wildly variable estimates (|z| ranges 0.01 to
+  21.96) reflecting where the Newton targeting stalled, not real
+  signal.
+- Conclusion: the April-published Estimator A headline
+  (ψ = +7.65e-3, p = 7.2e-4) is **emergent from inverse-variance
+  pooling across 13 correlated radii**, not from any single radius
+  having a detectable signal. The basin-scale Estimator B patched-CV
+  pool (§5.1.1, ψ = +8.83e-4, z = +4.25, p = 2.15e-5) — which has
+  stable per-radius active sets and well-behaved CV selection — is
+  the more robust and reproducible inference.
+- The "RRC volume controls attenuating basin coupling" question
+  cannot be answered at single-radius single-window granularity by
+  this estimator. The right test would be the pooled 13-radius
+  basin combined test computed for each window (13× more compute);
+  scheduled as future work.
+
+### Causal Forest retrain on patched May panel
+- All 20 per-radius CausalForestDML models retrained 2026-05-27
+  against the patched panel (n = 918,720 well-day rows). Total wall
+  time: 6.0 minutes (10 workers, ProcessPoolExecutor). New CFs
+  copied into `/opt/dashboard-docker/` and deployed as
+  `seis-dashboard:may27-cf`. Dashboard `/api/health` now reports
+  `causal_forest_date: 2026-05-27`.
+
+### Other housekeeping
+- Pruned 4 stale dashboard images on alphanet
+  (may05-meth, may05-swd, may05, alphanet-v1); only
+  `seis-dashboard:may27-cf` remains (5.64 GB).
+- Added `gpu_hal/tests/test_active_floor.py` — 6 unit tests on the
+  active-floor λ-selection rule that closed the May 6 CV pathology.
+  All pass.
+- Added `scripts/pool_apriltest.py`, `scripts/pool_reghal.py`,
+  `run_reghal_sweep_aprilonly.sh`, `run_reghal_rolling.py`.
+
+---
+
 ## 2026-05-08: Patched-CV chain recovers signal; pathology confirmed
 
 ### Pipeline

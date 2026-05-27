@@ -927,6 +927,36 @@ combined pressure-band test gives ψ = +6.08 × 10⁻⁴, z = 3.83, p = 1.3 ×
 (positive, significant, concentrated at pressure-diffusion distances),
 at smaller absolute magnitude reflecting the plug-in vs targeting gap.
 
+### 6.6.1 Rolling-window non-identifiability at single-radius granularity
+
+To test whether the basin-scale coupling has drifted over time (e.g.
+in response to RRC volume controls implemented in 2024), we ran
+`run_reghal_rolling.py` at R = 7 km with 540-day windows stepping
+90 days from window_end = 2020-01-01 to 2026-02-28 (26 windows;
+each window uses a fresh cluster-aware ≤ 40k subsample). **Only 5
+of 26 windows converged**; the other 21 hit max_iter = 50 with the
+line-search-stuck regime characteristic of overcomplete HAL bases.
+
+The 5 converged windows give ψ ∈ [−4.55 × 10⁻³, +5.86 × 10⁻²] but
+**all 5 have |z| < 1.1 and p > 0.29 under cluster-robust inference**
+— no single rolling window, at any time period 2020–2026, shows a
+statistically significant Estimator A signal. The 21 non-converged
+windows produce a wide |z| range (0.01 to 21.96) reflecting where
+the Newton targeting iteration stalled rather than any underlying
+signal.
+
+The April-published Estimator A pressure-band headline (ψ = +7.65 ×
+10⁻³, p = 7.2 × 10⁻⁴) is therefore **emergent from inverse-variance
+pooling across 13 correlated radii** within a single fixed window;
+it is not detectable at any single-radius single-window slice. The
+basin-scale Estimator B patched-CV pool of §5.1.1 (ψ = +8.83 × 10⁻⁴,
+z = +4.25, p = 2.15 × 10⁻⁵), which has uniformly stable per-radius
+active sets and a well-behaved CV-selection rule, is the more robust
+and reproducible inference. A pooled-13-radii rolling test (13× the
+compute of the single-radius rolling sweep here) is the natural
+follow-up if the time-attenuation question becomes load-bearing for
+a regulatory decision.
+
 ### 6.7 Other limitations carried over from SPE-228051
 
 - Isotropic search radius (Midland Basin has anisotropic stress)
