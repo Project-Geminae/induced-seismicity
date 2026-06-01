@@ -132,9 +132,9 @@
     background: var(--bg);
   }
   #map { width: 100%; height: 100%; background: var(--bg); }
-  /* Heavy invert + amber tint to match Bloomberg geo charts */
+  /* Light amber tint over CartoCDN dark basemap to match Bloomberg theme */
   .leaflet-tile-pane {
-    filter: invert(1) hue-rotate(180deg) brightness(0.55) contrast(1.15) sepia(0.4) hue-rotate(-30deg) saturate(1.4);
+    filter: sepia(0.35) hue-rotate(-10deg) saturate(1.2) brightness(0.95);
   }
   .leaflet-control-attribution {
     background: rgba(0,0,0,0.85) !important;
@@ -889,10 +889,34 @@
     preferCanvas: true,
     zoomControl: true,
   });
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: '&copy; OpenStreetMap contributors',
-    maxZoom: 18,
-  }).addTo(map);
+  // CartoCDN dark basemap (more reliable for dashboards than OSM tile.openstreetmap.org,
+  // which is aggressively rate-limited and often blocked by ad-blockers). Subdomains a-d for
+  // load-balancing. Fallback to OSM if CartoCDN fails.
+  const cartoTiles = L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> ' +
+        'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: "abcd",
+      maxZoom: 19,
+    }
+  );
+  const osmTiles = L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 18,
+    }
+  );
+  cartoTiles.on("tileerror", () => {
+    if (!map.hasLayer(osmTiles)) {
+      map.removeLayer(cartoTiles);
+      osmTiles.addTo(map);
+      console.warn("[map] CartoCDN tile error, falling back to OSM tiles");
+    }
+  });
+  cartoTiles.addTo(map);
 
   // ──────────────────── Color helpers ──────────────────────────
   function mlColor(ml) {
