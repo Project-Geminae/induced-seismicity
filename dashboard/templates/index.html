@@ -760,6 +760,18 @@
   </div>
 
   <aside id="sidebar">
+    <div class="panel-section" id="well-search-section">
+      <div class="panel-header"><span>WELLS<span class="info below" data-tip="Well-first navigation. Search by API number, operator name, or lease name. Each result shows the well's current 365-day cumulative volume and its basin percentile. Click a result to locate the well on the map; from there you can pull its volume-threshold position report (PDF) — the compliance artifact for permit applications, insurers, and proactive risk management.">i</span></span><span class="meta">[F5]</span></div>
+      <div class="panel-body" style="padding:6px 8px;">
+        <input id="well-search" type="text" placeholder="API # / operator / lease…"
+               autocomplete="off"
+               style="width:100%; box-sizing:border-box; background:var(--bg); border:1px solid var(--border);
+                      color:var(--white); font-family:'IBM Plex Mono',monospace; font-size:11px;
+                      padding:5px 7px; outline:none;">
+        <div id="well-search-results" style="max-height:180px; overflow-y:auto; margin-top:4px;"></div>
+      </div>
+    </div>
+
     <div class="panel-section">
       <div class="panel-header"><span>EVENT DETAIL<span class="info below" data-tip="Click any earthquake on the map to see its details: event ID, date, magnitude (ML), location (lat/lon), hypocentral depth (km below mean sea level), and the number of SWD wells within your search radius. Depth matters — deeper events (>8 km) are closer to basement faults. The event date is used to look up each well's injection history on that day.">i</span></span><span class="meta">[F6]</span></div>
       <div id="event-detail" class="panel-body empty">
@@ -880,7 +892,24 @@
     wellMarkers: {},    // {api: L.circleMarker} — for hover highlight
     eventMarker: null,  // the currently-selected event marker (for hover pulse)
     radiusCircle: null,
+    demoMode:  window.location.pathname === "/demo",
+    plainEnglish: false, // POPULATION CONTEXT render mode
+    sraLayer:  null,     // SRA overlay layer group
+    sraOn:     false,
+    searchMarker: null,  // well-search highlight marker
   };
+
+  // Curated event for the public demo (kept in sync with server DEMO_EVENT_ID)
+  const DEMO_EVENT_ID = "texnet2025edml";
+
+  // RRC Seismic Response Areas — APPROXIMATE illustrative boundaries for the
+  // blanket-vs-targeted comparison. Not authoritative; link to RRC GIS for
+  // official extents.
+  const SRA_AREAS = [
+    { name: "Gardendale SRA",              lat: 31.99, lon: -102.28, r_km: 20 },
+    { name: "Stanton SRA",                 lat: 32.13, lon: -101.79, r_km: 18 },
+    { name: "N. Culberson-Reeves SRA",     lat: 31.62, lon: -104.35, r_km: 40 },
+  ];
 
   // ──────────────────── Map setup ──────────────────────────────
   const map = L.map("map", {
@@ -917,6 +946,54 @@
     }
   });
   cartoTiles.addTo(map);
+
+  // ──────────────────── SRA overlay (blanket-vs-targeted) ──────
+  function buildSraLayer() {
+    const g = L.layerGroup();
+    for (const s of SRA_AREAS) {
+      L.circle([s.lat, s.lon], {
+        radius: s.r_km * 1000,
+        color: "#f85149",
+        weight: 1.5,
+        dashArray: "8 6",
+        fill: true,
+        fillColor: "#f85149",
+        fillOpacity: 0.04,
+      }).bindTooltip(
+        `${s.name}<br><span style="color:#999">approximate boundary — ` +
+        `blanket curtailment zone under current RRC protocol</span>`,
+        { sticky: true }
+      ).addTo(g);
+    }
+    return g;
+  }
+  const SraControl = L.Control.extend({
+    options: { position: "topleft" },
+    onAdd: function () {
+      const div = L.DomUtil.create("div", "leaflet-bar");
+      const a = L.DomUtil.create("a", "", div);
+      a.href = "#";
+      a.title = "Toggle Seismic Response Area overlay (approximate RRC boundaries)";
+      a.innerHTML = "SRA";
+      a.style.cssText = "font-size:9px; font-weight:700; letter-spacing:0.05em; line-height:26px;";
+      L.DomEvent.on(a, "click", (e) => {
+        L.DomEvent.preventDefault(e);
+        state.sraOn = !state.sraOn;
+        if (state.sraOn) {
+          if (!state.sraLayer) state.sraLayer = buildSraLayer();
+          state.sraLayer.addTo(map);
+          a.style.background = "#ff9900";
+          a.style.color = "#000";
+        } else {
+          if (state.sraLayer) map.removeLayer(state.sraLayer);
+          a.style.background = "";
+          a.style.color = "";
+        }
+      });
+      return div;
+    },
+  });
+  map.addControl(new SraControl());
 
   // ──────────────────── Color helpers ──────────────────────────
   function mlColor(ml) {
@@ -1119,6 +1196,16 @@
           <span class="key">ESTIMAND</span>
           <span class="val">${attribution.estimand || "CATE-DML (plug-in)"}<span class="info below" data-tip="The per-well number shown here is a Causal Forest DML plug-in: τ̂(L_i) · A_i with no targeting step and no cluster correction. The TMLE-targeted shift mean and cluster-robust population CI are in POPULATION CONTEXT below — use those for inference, not the per-well sum.">i</span></span>
         </div>
+        ${(() => {
+          const ws = attribution.wells || [];
+          const resolved = ws.filter(w => (w.cate_ci_low ?? -1) > 0).length;
+          if (!ws.length) return "";
+          return `
+        <div class="top-line" style="margin-top:4px; padding-top:4px; border-top:1px dashed var(--border);">
+          <span class="key" style="color:var(--red);">BLANKET VS TARGETED</span>
+          <span class="val" style="font-size:10px;">SRA-style curtailment: <strong>${ws.length}</strong> wells in radius · attribution resolves <strong style="color:${resolved > 0 ? 'var(--green)' : 'var(--muted-bright)'};">${resolved}</strong> with CI &gt; 0<span class="info below" data-tip="The policy comparison at the heart of this dashboard. Current RRC Seismic Response Area protocol would curtail every disposal well inside the radius circle equally. Per-well causal attribution distinguishes wells whose contribution the data can resolve (95% CI above zero) from wells where it cannot. A targeted instrument reviews the resolved wells first instead of penalizing all of them identically. Toggle the SRA button on the map to see current approximate response-area boundaries.">i</span></span>
+        </div>`;
+        })()}
         <div class="disclaimer" style="display:flex; justify-content:space-between;">
           <a href="/methodology" target="_blank">Methodology →</a>
           <a href="/api/event/${attribution.event.id}/report?radius_km=${attribution.radius_km}" target="_blank" style="color:var(--green);">↓ Download Report</a>
@@ -1151,6 +1238,43 @@
     const hu = targeted.hurdle          || null;
     const fc = targeted.full_n_cv       || null;
     const fct = targeted.full_n_combined_test || null;
+
+    // ── Plain-English mode: the same data rendered as sentences ──
+    if (state.plainEnglish) {
+      const freqShare = fct && Math.abs(fct.psi_pooled) > 1e-30
+        ? (fct.psi_freq_pooled / Math.abs(fct.psi_pooled)) * 100 : null;
+      const sig = fct && fct.pval != null && fct.pval < 0.05;
+      el.innerHTML = `
+        <div class="header-bar">
+          <span>POPULATION CONTEXT @ ${radiusKm} KM</span>
+          <span class="right" style="cursor:pointer;" id="pe-toggle">[TECHNICAL]</span>
+        </div>
+        <div class="body" style="font-size:11px; line-height:1.75; padding:10px;">
+          ${fct ? `
+          <p style="margin:0 0 8px;"><strong style="color:var(--cyan);">The basin-scale finding:</strong>
+          pooling all ${fct.n_radii} distances in the pressure-diffusion band (7–19 km),
+          higher injection volumes <strong>${sig ? "cause" : "are estimated to cause"}</strong> more
+          seismic activity. ${sig
+            ? `If injection had no effect, data like ours would occur roughly ${fct.pval < 1e-4 ? "less than once in ten thousand tries" : "less than once in twenty tries"} — this finding is statistically solid.`
+            : `The current data vintage does not resolve this at conventional statistical thresholds.`}</p>` : ""}
+          ${freqShare != null && freqShare > 60 ? `
+          <p style="margin:0 0 8px;"><strong style="color:var(--amber);">The mechanism:</strong>
+          essentially all of the effect operates on <strong>how often</strong> earthquakes happen,
+          not how large they are. Cutting volumes is an event-rate-reduction tool — it reduces the
+          number of felt events that trigger today's reactive curtailment.</p>` : ""}
+          <p style="margin:0 0 8px;"><strong>This event's wells:</strong> the per-well numbers in the
+          panel above are model estimates with uncertainty ranges. A well whose range includes zero is
+          not "cleared" — the data simply can't resolve its individual contribution.</p>
+          <p style="margin:0; color:var(--muted-bright); font-size:10px;">
+            Plain-language guide: <a href="/manual/reading-the-numbers.html" target="_blank" style="color:var(--amber);">Reading the Numbers</a> ·
+            full revision history: <a href="/manual/evidence-scoreboard.html" target="_blank" style="color:var(--amber);">Evidence Scoreboard</a></p>
+        </div>`;
+      el.querySelector("#pe-toggle").addEventListener("click", () => {
+        state.plainEnglish = false;
+        renderPopulationContext(targeted, radiusKm);
+      });
+      return;
+    }
 
     const fmt2 = (x) => (x == null || isNaN(x)) ? "—" : Number(x).toExponential(2);
     const fmt2sig = (x) => (x == null || isNaN(x)) ? "—"
@@ -1198,7 +1322,10 @@
     }
 
     el.innerHTML = `
-      <div class="header-bar">POPULATION CONTEXT @ ${radiusKm} KM</div>
+      <div class="header-bar">
+        <span>POPULATION CONTEXT @ ${radiusKm} KM</span>
+        <span class="right" style="cursor:pointer;" id="pe-toggle">[PLAIN ENGLISH]</span>
+      </div>
       <div class="body">
         <div class="row">
           <span class="key">Σ CATE (cluster-robust)<span class="info below" data-tip="Σ_i τ̂(L_i) · A_i over all ${cr.n ? cr.n.toLocaleString() : '~200k'} well-days in the training panel, with cluster-robust standard error at the well level (${cr.n_clusters || '~389'} wells). Same point estimate as the per-well sum above; CI now accounts for within-well dependence (Liang–Zeger 1986). This is the headline inferential statistic.">i</span></span>
@@ -1263,6 +1390,11 @@
         ${channelsHtml}
       </div>
     `;
+    const peToggle = el.querySelector("#pe-toggle");
+    if (peToggle) peToggle.addEventListener("click", () => {
+      state.plainEnglish = true;
+      renderPopulationContext(targeted, radiusKm);
+    });
   }
 
   function renderWells(data) {
@@ -1825,6 +1957,71 @@
     renderEvents();
   });
 
+  // ──────────────────── Well-first search ──────────────────────
+  (function () {
+    const input = document.getElementById("well-search");
+    const results = document.getElementById("well-search-results");
+    const section = document.getElementById("well-search-section");
+    if (state.demoMode) {
+      // Demo API scope doesn't include /api/wells — replace with CTA
+      results.innerHTML = `<div style="font-size:10px; color:var(--muted-bright); padding:4px 2px;">
+        Well search requires full access — email <a href="mailto:lewis@projectgeminae.net" style="color:var(--amber);">lewis@projectgeminae.net</a></div>`;
+      input.disabled = true;
+      return;
+    }
+    let debounce = null;
+    input.addEventListener("input", () => {
+      clearTimeout(debounce);
+      const q = input.value.trim();
+      if (q.length < 2) { results.innerHTML = ""; return; }
+      debounce = setTimeout(async () => {
+        const r = await fetch(`/api/wells?q=${encodeURIComponent(q)}&limit=15`);
+        if (!r.ok) { results.innerHTML = `<div style="font-size:10px;color:var(--red);">search unavailable</div>`; return; }
+        const j = await r.json();
+        if (!j.wells.length) { results.innerHTML = `<div style="font-size:10px;color:var(--muted-bright);padding:4px 2px;">no matches</div>`; return; }
+        results.innerHTML = j.wells.map(w => `
+          <div class="well-search-row" data-api="${w.api}" data-lat="${w.lat}" data-lon="${w.lon}"
+               style="padding:5px 6px; border-bottom:1px solid var(--border); cursor:pointer; font-size:10px; line-height:1.5;">
+            <div style="display:flex; justify-content:space-between;">
+              <strong style="color:var(--amber);">API ${w.api}</strong>
+              <span style="color:${w.vol_pctile >= 0.9 ? 'var(--red)' : w.vol_pctile >= 0.6 ? 'var(--amber)' : 'var(--green)'};">
+                ${(w.vol_pctile * 100).toFixed(0)}th pct</span>
+            </div>
+            <div style="color:var(--muted-bright);">${w.operator || "—"} · ${w.lease || ""}</div>
+            <div style="color:var(--white);">365d: ${fmtVol(w.cum_vol_365d_BBL)} BBL
+              <a href="/api/wells/${w.api}/report?radius_km=${state.radius}" target="_blank"
+                 onclick="event.stopPropagation()"
+                 style="float:right; color:var(--green); text-decoration:none;">↓ REPORT</a>
+            </div>
+          </div>`).join("");
+        results.querySelectorAll(".well-search-row").forEach(row => {
+          row.addEventListener("click", () => {
+            const lat = parseFloat(row.dataset.lat), lon = parseFloat(row.dataset.lon);
+            map.flyTo([lat, lon], 11, { duration: 0.6 });
+            if (state.searchMarker) map.removeLayer(state.searchMarker);
+            state.searchMarker = L.circleMarker([lat, lon], {
+              radius: 10, color: "#00aadd", weight: 2.5, fillColor: "#00aadd", fillOpacity: 0.25,
+            }).bindTooltip(`API ${row.dataset.api}`, { permanent: false }).addTo(map);
+          });
+        });
+      }, 250);
+    });
+  })();
+
+  // ──────────────────── Demo mode ──────────────────────────────
+  if (state.demoMode) {
+    const banner = document.createElement("div");
+    banner.style.cssText =
+      "position:fixed; top:0; left:0; right:0; z-index:10000; background:#ff9900; color:#000;" +
+      "font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:700; letter-spacing:0.06em;" +
+      "padding:5px 12px; display:flex; justify-content:space-between;";
+    banner.innerHTML =
+      `<span>DEMO MODE — one curated event (M4.8, ${DEMO_EVENT_ID}). Live data and well search are gated.</span>` +
+      `<span><a href="/manual/" style="color:#000;">FIELD MANUAL</a> · <a href="/login" style="color:#000;">FULL ACCESS →</a></span>`;
+    document.body.prepend(banner);
+    document.body.style.paddingTop = "26px";
+  }
+
   // ──────────────────── Boot ───────────────────────────────────
   (async () => {
     try {
@@ -1843,6 +2040,10 @@
       state.events = await fetchEvents();
       renderEvents();
       updateTicker();
+      if (state.demoMode) {
+        const demoEv = state.events.find(e => e.id === DEMO_EVENT_ID);
+        if (demoEv) await selectEvent(demoEv);
+      }
     } catch (e) {
       console.error("Boot failed:", e);
       const el = document.getElementById("event-detail");

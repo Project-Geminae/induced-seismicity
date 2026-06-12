@@ -229,12 +229,14 @@
   <a href="/map" class="cta">Enter Dashboard</a>
 </nav>
 
-<!-- ═══════════════════════════════════════════ METHODOLOGY UPDATE BANNER ═══ -->
-<div style="background:#102215; border-bottom:1px solid #3a6b4c; padding:0.6rem 1rem; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:0.75rem; color:#9fd8b3; line-height:1.4;">
-  <strong style="color:#7ee5a3;">✓ V6 ESTIMATOR:</strong>
-  regHAL-TMLE (Li, Qiu, Wang &amp; van der Laan 2025; arXiv:2506.17214), n=50k cluster-aware subsample.
-  Pressure-band (7&ndash;19 km) pooled &psi; = <strong>+7.7&times;10<sup>-3</sup></strong>, CI [+3.2, +12.1]&times;10<sup>-3</sup>, <em>z</em>=3.38, <em>p</em>=7.2&times;10<sup>-4</sup>.
-  &mdash; see <a href="/methodology" style="color:#ffd27f; text-decoration:underline;">methodology</a> for the cross-estimator comparison.
+<!-- ═══════════════════════════════════════════ HEADLINE BANNER (live) ═══ -->
+<div style="background:#102215; border-bottom:1px solid #3a6b4c; padding:0.6rem 1rem; text-align:center; font-family:'IBM Plex Mono',monospace; font-size:0.78rem; color:#9fd8b3; line-height:1.5;">
+  <strong style="color:#7ee5a3;">THE FINDING:</strong>
+  Cutting injection volumes measurably reduces <em>how often</em> earthquakes happen
+  within 7&ndash;19 km of disposal wells.
+  <span id="banner-stat" style="color:#ffd27f;"></span>
+  &mdash; <a href="/manual/" style="color:#ffd27f; text-decoration:underline;">field manual</a>
+  &middot; <a href="/methodology" style="color:#ffd27f; text-decoration:underline;">methodology</a>
 </div>
 
 <!-- ═══════════════════════════════════════════ HERO ═══ -->
@@ -247,8 +249,8 @@
   </p>
   <div class="cta-row">
     <a href="/map" class="cta-btn primary">Enter Dashboard</a>
-    <a href="#primer" class="cta-btn">Learn How It Works</a>
-    <a href="/faq" class="cta-btn">FAQ</a>
+    <a href="/demo" class="cta-btn">Try the Demo (no login)</a>
+    <a href="/manual/" class="cta-btn">Field Manual</a>
   </div>
   <div class="meta">
     <strong>SPE-228051</strong> &nbsp; L. Matthews &nbsp;|&nbsp; 2025<br>
@@ -376,7 +378,7 @@
       <tr><td><strong>Per-well effects</strong></td><td><span class="tag tag-r">Not available</span></td><td><span class="tag tag-g">Causal Forest CATE + honest CI at all 20 radii</span></td></tr>
       <tr><td><strong>Spatial interference</strong></td><td><span class="tag tag-r">Not addressed</span></td><td><span class="tag tag-g">Neighbor well volumes controlled (VIF 1.12)</span></td></tr>
       <tr><td><strong>Dose-response</strong></td><td><span class="tag tag-r">Straight line</span></td><td><span class="tag tag-g">Nonparametric curve with extrapolation warnings</span></td></tr>
-      <tr><td><strong>Pressure band (7&ndash;19 km), regHAL-TMLE</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">&psi;=+7.7&times;10<sup>-3</sup>, <em>p</em>=7.2&times;10<sup>-4</sup></span></td></tr>
+      <tr><td><strong>Pressure band (7&ndash;19 km), regHAL-TMLE</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">&psi;=+7.7&times;10<sup>-3</sup>, <em>p</em>=7.2&times;10<sup>-4</sup> (April 2026 vintage; see <a href="/manual/evidence-scoreboard.html" style="color:inherit;">scoreboard</a>)</span></td></tr>
       <tr><td><strong>Pressure band (7&ndash;19 km), XGBoost-GPU</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-g">&psi;=+6.1&times;10<sup>-4</sup>, <em>p</em>=1.3&times;10<sup>-4</sup> (plug-in)</span></td></tr>
       <tr><td><strong>Near-field (1&ndash;6 km)</strong></td><td><span class="tag tag-a">Not tested</span></td><td><span class="tag tag-a">Inconclusive (basis-sensitive)</span></td></tr>
       <tr><td><strong>Confidence intervals</strong></td><td><span class="tag tag-a">Assumes equal variance</span></td><td><span class="tag tag-g">Bessel-corrected cluster IF SEs</span></td></tr>
@@ -460,12 +462,24 @@
   </div>
 
   <div class="stat-row">
-    <div class="stat"><div class="val">7,424</div><div class="lbl">Earthquakes (TexNet)</div></div>
-    <div class="stat"><div class="val">1,056</div><div class="lbl">SWD Wells (RRC)</div></div>
-    <div class="stat"><div class="val">+7.7e-3</div><div class="lbl">Pressure-band &psi; (regHAL-TMLE, <em>p</em>=7.2e-4)</div></div>
-    <div class="stat"><div class="val">100</div><div class="lbl">Dose-response Points (5 levels &times; 20 radii, all sig.)</div></div>
-    <div class="stat"><div class="val">3&times;</div><div class="lbl">GPUs (XGB-GPU sweep in 1 hr)</div></div>
+    <div class="stat"><div class="val" id="st-events">…</div><div class="lbl">Earthquakes (TexNet, live)</div></div>
+    <div class="stat"><div class="val" id="st-panel">…</div><div class="lbl">Well-days (RRC daily H-10)</div></div>
+    <div class="stat"><div class="val" id="st-vintage">…</div><div class="lbl">Latest catalogued event in model</div></div>
+    <div class="stat"><div class="val" id="st-models">…</div><div class="lbl">Causal Forest radii (1&ndash;20 km)</div></div>
+    <div class="stat"><div class="val">~100%</div><div class="lbl">Of the causal effect is event <em>frequency</em>, not magnitude</div></div>
   </div>
+  <script>
+    fetch("/api/health").then(r => r.json()).then(h => {
+      const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.textContent = v; };
+      set("st-events", (h.n_events || 0).toLocaleString());
+      set("st-panel", h.n_panel >= 1e6 ? (h.n_panel/1e6).toFixed(2) + "M" : (h.n_panel || 0).toLocaleString());
+      set("st-vintage", h.latest_event_date || "—");
+      set("st-models", h.n_cate_models || "—");
+      const b = h.combined_test_headline && h.combined_test_headline.pressure_band;
+      const el = document.getElementById("banner-stat");
+      if (b && el) el.textContent = `(pooled test across 13 distances: p = ${Number(b.pval).toExponential(1)}; April-vintage published headline)`;
+    }).catch(() => {});
+  </script>
 </section>
 
 <hr>
@@ -481,10 +495,10 @@
   </div>
 
   <div class="preview-frame">
-    <iframe src="/map" loading="lazy" title="Seismicity Dashboard"></iframe>
+    <iframe src="/demo" loading="lazy" title="Seismicity Dashboard (demo)"></iframe>
     <div class="preview-caption">
-      <span>SEIS Dashboard &mdash; interactive map + per-well causal attribution</span>
-      <a href="/map" target="_blank">Open Full Screen &rarr;</a>
+      <span>SEIS Dashboard &mdash; live demo on the M4.8 curated event (full version requires access)</span>
+      <a href="/demo" target="_blank">Open Full Screen &rarr;</a>
     </div>
   </div>
 </section>

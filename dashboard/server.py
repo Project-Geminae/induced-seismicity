@@ -76,8 +76,19 @@ COOKIE_NAME = "seis_session"
 COOKIE_MAX_AGE = 7 * 24 * 3600  # 7 days
 ACCESS_EMAIL = "lewis@projectgeminae.net"
 # Paths that bypass auth (login itself, healthcheck, static)
-_AUTH_FREE_EXACT = {"/login", "/api/health", "/favicon.ico"}
+_AUTH_FREE_EXACT = {"/", "/login", "/demo", "/api/health", "/favicon.ico"}
 _AUTH_FREE_PREFIX = ("/static",)
+
+# Demo mode: one curated event is fully browsable without authentication so
+# the public manual can link a working example. Everything else stays gated.
+DEMO_EVENT_ID = "texnet2025edml"
+_DEMO_FREE_EXACT = {
+    "/api/events",                 # public-source TexNet catalog (map dots)
+    "/api/headline/targeted",      # population-context panel
+    "/api/tmle/summary",
+    f"/api/event/{DEMO_EVENT_ID}",
+}
+_DEMO_FREE_PREFIX = (f"/api/event/{DEMO_EVENT_ID}/",)
 
 EVENTS_CSV         = REPO_ROOT / "texnet_events_filtered.csv"
 EVENT_INDEX_JSON   = REPO_ROOT / "event_index.json"
@@ -356,6 +367,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if (path in _AUTH_FREE_EXACT
             or any(path.startswith(p) for p in _AUTH_FREE_PREFIX)):
             return await call_next(request)
+        # Demo-scoped API access (read-only GETs for the curated event)
+        if (request.method == "GET"
+            and (path in _DEMO_FREE_EXACT
+                 or any(path.startswith(p) for p in _DEMO_FREE_PREFIX))):
+            return await call_next(request)
         token = request.cookies.get(COOKIE_NAME)
         if token and token in _active_sessions:
             return await call_next(request)
@@ -412,6 +428,7 @@ class State:
     tmle_summary:  dict[int, dict]
     attribution_q: dict[int, object]  # per-radius AttributionQ models
     targeted:      dict[int, dict]    # per-radius cf_targeted_<R>km.json
+    well_registry: dict[str, dict]    # API Number -> operator/position/volume
     loaded_at:     datetime
 
 
@@ -434,6 +451,13 @@ def _startup() -> None:
     state.tmle_summary  = _load_tmle_summary()
     state.attribution_q = _load_causal_forests()
     state.targeted      = _load_targeted_headlines()
+    registry_path = REPO_ROOT / "well_registry.json"
+    if registry_path.exists():
+        state.well_registry = json.loads(registry_path.read_text())
+        log.info("📄  Loaded well_registry.json (%d wells)", len(state.well_registry))
+    else:
+        state.well_registry = {}
+        log.warning("well_registry.json missing — /api/wells search disabled")
     state.loaded_at     = datetime.now()
     log.info("✅  Dashboard ready (loaded at %s)", state.loaded_at.isoformat())
     log.info("    %d attribution Q models available: %s",
@@ -522,6 +546,13 @@ def landing() -> HTMLResponse:
 def dashboard_app() -> HTMLResponse:
     if not INDEX_HTML.exists():
         return HTMLResponse("<h1>dashboard not found</h1>", status_code=500)
+    return HTMLResponse(INDEX_HTML.read_text())
+
+
+@app.get("/demo", response_class=HTMLResponse)
+def demo() -> HTMLResponse:
+    """Public read-only demo: same map UI; front-end detects /demo and locks
+    to the curated event. API access is scoped by AuthMiddleware."""
     return HTMLResponse(INDEX_HTML.read_text())
 
 
@@ -1119,6 +1150,206 @@ def headline_targeted(radius_km: int = Query(7, ge=1, le=20)) -> dict:
 def headline_targeted_all() -> dict:
     """All available targeted headlines, keyed by radius."""
     return state.targeted
+
+
+@app.get("/api/wells")
+@ratelimit("60/minute")
+def list_wells(
+    request: Request,
+    q:        Optional[str] = Query(None, description="Search: API number prefix or operator/lease substring"),
+    operator: Optional[str] = Query(None, description="Exact operator name filter"),
+    sort:     str           = Query("volume", description="volume | pctile | api"),
+    limit:    int           = Query(50, ge=1, le=800),
+) -> dict:
+    """Well-first navigation: search wells by API number or operator name.
+
+    Returns registry metadata + current 365-day volume position for each
+    match. This powers the WELLS search panel and operator portfolio view.
+    """
+    if not state.well_registry:
+        raise HTTPException(503, "well registry not loaded")
+
+    rows = []
+    qn = q.strip().lower() if q else None
+    for api, w in state.well_registry.items():
+        if operator and (w.get("operator") or "") != operator:
+            continue
+        if qn:
+            hay = f"{api} {(w.get('operator') or '').lower()} {(w.get('lease') or '').lower()}"
+            if qn not in hay:
+                continue
+        rows.append({"api": api, **w})
+
+    if sort == "pctile":
+        rows.sort(key=lambda r: -(r.get("vol_pctile") or 0))
+    elif sort == "api":
+        rows.sort(key=lambda r: r["api"])
+    else:
+        rows.sort(key=lambda r: -(r.get("cum_vol_365d_BBL") or 0))
+
+    return {"count": len(rows), "wells": rows[:limit]}
+
+
+@app.get("/api/operators")
+@ratelimit("30/minute")
+def list_operators(request: Request) -> dict:
+    """Operator portfolio index: well counts + total current 365d volume."""
+    if not state.well_registry:
+        raise HTTPException(503, "well registry not loaded")
+    agg: dict[str, dict] = {}
+    for api, w in state.well_registry.items():
+        op = w.get("operator") or "UNKNOWN"
+        a = agg.setdefault(op, {"operator": op, "n_wells": 0,
+                                "total_vol_365d_BBL": 0.0, "max_pctile": 0.0})
+        a["n_wells"] += 1
+        a["total_vol_365d_BBL"] += w.get("cum_vol_365d_BBL") or 0
+        a["max_pctile"] = max(a["max_pctile"], w.get("vol_pctile") or 0)
+    ops = sorted(agg.values(), key=lambda r: -r["total_vol_365d_BBL"])
+    return {"count": len(ops), "operators": ops}
+
+
+@app.get("/api/wells/{api_number}/report")
+@ratelimit("10/minute")
+def well_report(
+    request: Request,
+    api_number: int,
+    radius_km:  int = Query(7, ge=1, le=20),
+) -> Response:
+    """Per-well threshold-position report (PDF): the compliance artifact an
+    operator hands to a regulator or insurer. One page: well identity,
+    current volume vs threshold curve, position verdict, data vintage,
+    and the standing disclaimers."""
+    import io
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors as rl_colors
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+    )
+
+    api_str = str(api_number)
+    reg = state.well_registry.get(api_str)
+    if reg is None:
+        raise HTTPException(404, f"API {api_number} not in well registry")
+
+    # Threshold curve at the well's latest panel date
+    panel_date = reg["last_panel_date"]
+    try:
+        thr = well_threshold(request, api_number, radius_km=radius_km,
+                             event_date=panel_date, n_points=25,
+                             max_vol=0, cate_threshold=0.03)
+    except HTTPException as e:
+        raise HTTPException(503, f"threshold curve unavailable: {e.detail}")
+
+    current_vol = thr["current_vol"]
+    threshold_vol = thr["threshold_vol"]
+    below = (threshold_vol is None) or (current_vol < threshold_vol)
+
+    # ── Curve figure ──
+    fig, ax = plt.subplots(figsize=(6.5, 3.2), dpi=150)
+    vols = [p["vol"] / 1e6 for p in thr["curve"]]
+    cates = [p["cate"] for p in thr["curve"]]
+    lo = [p["ci_low"] for p in thr["curve"]]
+    hi = [p["ci_high"] for p in thr["curve"]]
+    ax.fill_between(vols, lo, hi, alpha=0.25, color="#C47000", linewidth=0)
+    ax.plot(vols, cates, color="#C47000", lw=2)
+    ax.axhline(thr["cate_threshold"], color="#CC2222", ls="--", lw=1,
+               label=f"risk tolerance ({thr['cate_threshold']} ML)")
+    ax.axvline(current_vol / 1e6, color="#008A52" if below else "#CC2222",
+               ls="-", lw=1.5, label="current 365-day volume")
+    if threshold_vol:
+        ax.axvline(threshold_vol / 1e6, color="#CC2222", ls=":", lw=1.5,
+                   label="volume threshold")
+    ax.set_xlabel("Cumulative 365-day volume (million BBL)")
+    ax.set_ylabel("Estimated CATE (ML)")
+    ax.legend(fontsize=7, loc="upper left")
+    ax.grid(alpha=0.25)
+    fig.tight_layout()
+    img_buf = io.BytesIO()
+    fig.savefig(img_buf, format="png")
+    plt.close(fig)
+    img_buf.seek(0)
+
+    # ── PDF ──
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter,
+                            leftMargin=0.6*inch, rightMargin=0.6*inch,
+                            topMargin=0.6*inch, bottomMargin=0.6*inch)
+    styles = getSampleStyleSheet()
+    AMBER = rl_colors.HexColor("#C47000")
+    h1 = ParagraphStyle("h1", parent=styles["Title"], fontSize=15,
+                        textColor=rl_colors.HexColor("#222222"))
+    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=7.5,
+                           textColor=rl_colors.HexColor("#666666"))
+
+    verdict_txt = ("BELOW THRESHOLD — current volume is within the supported "
+                   "region and beneath the risk-tolerance crossing."
+                   if below else
+                   "ABOVE THRESHOLD — current volume exceeds the level at "
+                   "which estimated marginal contribution crosses the stated "
+                   "risk tolerance.")
+    verdict_color = rl_colors.HexColor("#008A52") if below else rl_colors.HexColor("#CC2222")
+
+    story = [
+        Paragraph("Injection Risk Triage — Well Threshold Position Report", h1),
+        Spacer(1, 6),
+        Table([
+            ["API Number", api_str, "Operator", reg.get("operator") or "—"],
+            ["Lease", reg.get("lease") or "—", "UIC", reg.get("uic") or "—"],
+            ["Location", f"{reg['lat']:.4f}, {reg['lon']:.4f}",
+             "Perf depth", f"{reg.get('perf_depth_ft') or '—'} ft"],
+            ["Current 365-day volume", f"{current_vol:,.0f} BBL",
+             "Basin percentile", f"{(reg.get('vol_pctile') or 0)*100:.0f}th"],
+            ["Volume threshold (est.)",
+             f"{threshold_vol:,.0f} BBL" if threshold_vol else "not crossed in supported region",
+             "Analysis radius", f"{radius_km} km"],
+        ], colWidths=[1.6*inch, 2.1*inch, 1.4*inch, 2.0*inch],
+           style=TableStyle([
+               ("FONTSIZE", (0, 0), (-1, -1), 8),
+               ("TEXTCOLOR", (0, 0), (0, -1), AMBER),
+               ("TEXTCOLOR", (2, 0), (2, -1), AMBER),
+               ("GRID", (0, 0), (-1, -1), 0.4, rl_colors.HexColor("#CCCCCC")),
+               ("TOPPADDING", (0, 0), (-1, -1), 3),
+               ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+           ])),
+        Spacer(1, 10),
+        Paragraph(f"<b>Position:</b> <font color='{verdict_color.hexval()}'>{verdict_txt}</font>",
+                  styles["Normal"]),
+        Spacer(1, 8),
+        Image(img_buf, width=6.5*inch, height=3.2*inch),
+        Spacer(1, 8),
+        Paragraph(
+            "Reading this report: the curve is the well-specific dose-response "
+            "estimated by an honest causal forest at this well's covariate "
+            "profile (depth, fault distance, fault density, well age, "
+            "formation), with a 95% confidence band. The threshold is where "
+            "the estimate crosses the stated risk tolerance. Estimates beyond "
+            "the supported data region are not rendered. Rankings and "
+            "threshold positions are the stable outputs of this pipeline; "
+            "point magnitudes vary with data vintage — see the Evidence "
+            "Scoreboard in the IRT Field Manual.", small),
+        Spacer(1, 4),
+        Paragraph(
+            f"Data vintage: panel through {panel_date}; report generated "
+            f"{datetime.now().strftime('%Y-%m-%d %H:%M')} UTC. "
+            f"Method: CausalForestDML per-well CATE with cluster-honest "
+            f"inference. This is a model-based estimate with stated "
+            f"uncertainty, not a deterministic attribution. "
+            f"Full methodology: alphanet.tail098a15.ts.net/manual/ · "
+            f"github.com/Project-Geminae/induced-seismicity", small),
+    ]
+    doc.build(story)
+    buf.seek(0)
+    return Response(
+        content=buf.read(),
+        media_type="application/pdf",
+        headers={"Content-Disposition":
+                 f"inline; filename=irt_well_{api_str}_threshold_report.pdf"},
+    )
 
 
 @app.get("/api/wells/{api_number}/timeseries")
