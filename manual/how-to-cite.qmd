@@ -1,0 +1,40 @@
+---
+title: "How to Cite"
+unnumbered: true
+---
+
+## This manual
+
+> Matthews, L. (2026). *Injection Risk Triage (IRT) Field Manual: A
+> causal-inference pipeline for induced-seismicity management in the
+> Permian Basin.* Project Geminae.
+> https://github.com/Project-Geminae/induced-seismicity
+
+## The technical paper
+
+The methods contribution (regHAL-TMLE Delta-method inference for shift
+interventions on injection volume, and the GPU active-set solver for
+full-panel highly-adaptive-lasso estimation) is described in the paper
+draft in the repository (`PAPER_DRAFT.md`), which extends:
+
+> Matthews, L. et al. SPE-228051: *Targeted Maximum Likelihood Estimation
+> for Induced Seismicity Attribution.*
+
+## Key methods literature
+
+- Li, Z., Qiu, H., Wang, G., & van der Laan, M. (2025). Delta-method
+  inference for regularized HAL. arXiv:2506.17214.
+- van der Laan, M. & Rose, S. (2011). *Targeted Learning.* Springer.
+- Nugent, J. et al. (2024). Two-Stage TMLE. arXiv:2208.09508.
+- Xiao, et al. (2025). MSM-IPTW for induced seismicity under time-varying
+  confounding. arXiv:2510.16360. (The complementary longitudinal
+  approach; see the Methods Defense appendix for positioning.)
+
+## Data sources
+
+- **TexNet Earthquake Catalog**, Bureau of Economic Geology, UT Austin.
+- **Railroad Commission of Texas**, H-10 injection filings (daily
+  volumes).
+
+Both are public. The processed panel and all derived artifacts regenerate
+from the repository pipeline.

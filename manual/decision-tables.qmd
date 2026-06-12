@@ -1,0 +1,44 @@
+---
+title: "Decision Tables"
+subtitle: "What an operator, a regulator, or an insurer does with this — by situation"
+---
+
+This chapter translates the pipeline's outputs into actions. Each table is
+keyed to a situation, names the dashboard artifact that informs it, and
+states what the evidence does and does not support.
+
+## For operators
+
+| Situation | Dashboard artifact | Supported action | Not supported |
+|---|---|---|---|
+| Planning a new disposal well | Dose-response curve at candidate location's radius band | Site/size the well below the volume where marginal seismicity contribution becomes material | Treating the curve as a guarantee — it is a population estimate with CIs |
+| Felt event near your well | Per-event attribution panel (click the event) | Check your well's ranked contribution and CI before assuming liability; wells with CI crossing zero have no resolvable contribution | Using a low ranking as proof of no contribution |
+| Approaching a threshold | Per-well volume-threshold curve (click your well) | Trim volumes to re-enter the supported region; document the action | Extrapolating the curve beyond the red-shaded support region |
+| Insurance / ESG reporting | Threshold-curve compliance over time | Causal-standard evidence of proactive risk management | Claims about magnitude reduction (the effect is frequency-channel) |
+| SRA curtailment dispute | Attribution + threshold curve for the curtailed well | Evidence that a specific well's contribution is/isn't resolvable from data | Re-litigating the SRA itself — that's the regulator's instrument |
+
+## For regulators
+
+| Situation | Artifact | Supported action | Not supported |
+|---|---|---|---|
+| Permit application in active area | Dose-response curve, radius band of application | Volume schedule conditioned on the curve's supported region | Conditions tied to a single point estimate (use percentile bands) |
+| Post-event response | Per-event attribution ranking | Targeted review of high-attribution wells instead of (or before) blanket-radius curtailment | Enforcement against a single well on attribution alone |
+| Annual SRA review | Refreshed combined test + per-radius profile | Evidence-based widening/narrowing of response areas | Near-field (<7 km) rule-making from this data — inconclusive |
+| Rule-making record | Evidence Scoreboard + Methods Defense | A documented, reproducible causal standard with stated failure modes | Presenting any single ψ as settled magnitude |
+
+## For insurers and lenders
+
+| Situation | Artifact | Supported use |
+|---|---|---|
+| Underwriting an operator | Portfolio of per-well threshold positions | Risk-differentiate premiums on causal exposure, not just well count and location |
+| Post-event claim | Attribution panel with CIs | Independent, model-based estimate of contribution, with uncertainty, from public data |
+| Portfolio stress test | Dose-response curves by radius band | What a basin-wide volume-growth scenario implies for event frequency |
+
+## The one rule that governs every table
+
+**Rankings and thresholds are robust; point magnitudes are not.** The
+[Evidence Scoreboard](evidence-scoreboard.qmd) documents how the pooled
+effect size moved across data vintages while the direction, mechanism, and
+spatial structure held. Every action in these tables is therefore designed
+to depend on *which wells*, *which direction*, and *which side of a
+threshold* — never on the third decimal of ψ.

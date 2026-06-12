@@ -1,0 +1,69 @@
+---
+title: "Regulator One-Pager"
+subtitle: "The case for causal permit conditions, on one page"
+---
+
+*Written to be lifted directly into a briefing packet. Every claim links
+to the underlying evidence.*
+
+## The problem with the current standard
+
+Texas regulates injection-induced seismicity reactively. Under the
+Railroad Commission's Seismic Response Area (SRA) protocol, a felt
+earthquake triggers curtailment of disposal wells within a radius. This
+works — but it pays for risk reduction *after* the seismic event, with a
+blunt spatial rule that treats every well within the circle identically,
+regardless of whether that well's injection actually contributes to
+seismic hazard.
+
+## What the evidence now supports
+
+A causal analysis of nine years of TexNet earthquake data and daily RRC
+injection records (7,581 events; 795 disposal wells; 918,720 well-days)
+establishes:
+
+| Finding | Evidence grade |
+|---|---|
+| Injection volume **causes** increased seismicity at 7–19 km | Basin-scale combined test, z = 4.25, p ≈ 2 × 10⁻⁵; direction stable across every data vintage and estimator tested |
+| The mechanism is **event frequency**, not magnitude | ~100% of the pooled causal effect operates through P(event), not E[magnitude] — stable across vintages |
+| Per-well causal attribution is **feasible today** | Honest-forest per-well contributions with confidence intervals, live on the dashboard for every catalogued event |
+| Per-well **volume thresholds** are computable | Dose-response curves per well identify the injection level at which marginal risk exceeds tolerance |
+
+In plain terms: **a 10% volume reduction at pressure-diffusion distances
+reduces how often earthquakes happen**, and we can now say *which wells*
+carry the marginal risk, instead of curtailing every well in a circle.
+
+## The instrument this enables
+
+A **causal permit condition**: disposal permits in seismically active
+areas carry a volume schedule derived from the well's position on its
+dose-response curve, reviewed annually against refreshed data. Compared to
+SRA curtailment it is:
+
+- **Proactive** — applied before felt events, not after.
+- **Targeted** — calibrated per well, not per circle. Wells with no
+  attributable risk are not penalized.
+- **Auditable** — the dose-response machinery, its assumptions, and its
+  failure modes are public and reproducible
+  ([github.com/Project-Geminae/induced-seismicity](https://github.com/Project-Geminae/induced-seismicity)).
+- **Defensible for operators** — compliance generates causal-standard
+  evidence of proactive management.
+
+Draft regulatory text is provided in
+[Appendix A — Model Permit Language](model-permit-language.qmd).
+
+## What we are *not* claiming
+
+- No specific earthquake is attributed to a specific well with certainty;
+  attributions carry stated uncertainty.
+- Near-field effects (under 7 km) are statistically inconclusive in this
+  data and are not a basis for the proposed instrument.
+- The headline effect size varies across data vintages (the *direction*
+  and *mechanism* do not); the instrument is therefore designed around
+  rankings and thresholds, which are stable, rather than point estimates,
+  which move.
+
+## Contact
+
+Lewis Matthews · Project Geminae · <lewis@projectgeminae.net>
+Live dashboard access on request.

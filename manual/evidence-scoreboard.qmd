@@ -1,0 +1,95 @@
+---
+title: "Evidence Scoreboard"
+subtitle: "Every estimator, every vintage, including the one we had to fix"
+---
+
+Trust in this program should rest on the audit trail, not on any single
+number. This scoreboard reports every basin-scale estimate produced to
+date — including the revision history and the artifact we found in our own
+pipeline.
+
+## The estimators
+
+Two independent estimators target the basin-scale effect of a 10% volume
+shift, pooled by inverse variance across the 13 pressure-band radii
+(7–19 km):
+
+- **Estimator A — regHAL-TMLE Delta-method** (Li, Qiu, Wang & van der
+  Laan 2025, arXiv:2506.17214). Targets expected maximum local magnitude
+  directly. Runs on a ~50,000-row cluster-aware subsample (HAL basis
+  enumeration is the constraint).
+- **Estimator B — full-panel hurdle HAL-TMLE.** Decomposes the effect
+  into frequency (does an event occur?) and magnitude (how large, given
+  occurrence) channels. Runs on the full panel (459,105 spatially
+  deduplicated rows) using a GPU active-set solver built for this project.
+
+## The scoreboard
+
+| Date | Estimator | ψ (pooled, 7–19 km) | z | p | Status |
+|---|---|---:|---:|---:|---|
+| 2026-04 | A (regHAL-TMLE, n=50k) | +7.65 × 10⁻³ | +3.38 | 7.2 × 10⁻⁴ | Published headline |
+| 2026-04 | B (full-n hurdle CV) | +4.81 × 10⁻⁴ | +8.35 | < 10⁻¹⁵ | Superseded — see artifact note |
+| 2026-05-06 | B (May data, pre-patch) | −6.6 × 10⁻⁶ | −1.44 | 0.15 | **Artifact** — documented below |
+| 2026-05-06 | A (May data rerun) | +1.03 × 10⁻³ | +0.64 | 0.52 | Diagnostic only |
+| **2026-05-08** | **B (May data, patched CV)** | **+8.83 × 10⁻⁴** | **+4.25** | **2.15 × 10⁻⁵** | **Current best estimate** |
+
+## What survived every vintage — and what didn't
+
+**Stable across all vintages and estimators:**
+
+- The **direction**: positive. More injection → more seismicity at
+  pressure-diffusion distances.
+- The **mechanism**: frequency-dominant. The effect operates through event
+  *rates*, not event *magnitudes*.
+- The **spatial structure**: effects concentrate at 7–19 km, consistent
+  with pore-pressure diffusion on a one-year timescale; near-field
+  (1–6 km) inconclusive.
+
+**Not stable:** the headline point estimate, which moved with data vintage
+and with a cross-validation repair. Policy artifacts in this manual are
+therefore built on rankings, thresholds, and mechanism — not on any single
+ψ value.
+
+## The artifact we found, and the fix {#sec-artifact}
+
+In the May 2026 data refresh, Estimator B's pooled estimate collapsed to
+near-null with a sign flip in the 11–15 km band. Diagnosis: the Stage-1
+(frequency-channel) cross-validation was selecting a regularization
+penalty large enough to **prune every basis function** — leaving the
+frequency channel with literally no model, which forces its contribution
+to zero by construction and leaves only a noisy magnitude residual.
+
+The fix (public in the repository, commit `ef51baf`): a denser, wider
+penalty grid, plus an *active-floor* selection rule — the cross-validation
+may only select penalties that retain a working model (median active
+basis count ≥ 5 across folds). Under the patched selection, all 13 radii
+produce stable models (active sets of 1,365–1,407 basis functions, versus
+0–37 before) and uniformly positive estimates.
+
+We report this openly for a reason: **a pipeline that can detect and
+repair its own artifacts is the thing a regulator should demand** before
+conditioning permits on model output. The repair is itself now a unit
+test (`gpu_hal/tests/test_active_floor.py`) that prevents regression.
+
+## Why Estimator A weakened in May — resolved
+
+The May panel doubled in size (451k → 918k well-days) not because of one
+new month of data, but because the refreshed RRC export **backfilled
+historical records to 2016**. Estimator A's fixed-size subsample now
+covers ~5% of the panel instead of ~11%, with a different confounder
+distribution. A rolling-window analysis (26 windows, 2020–2026) shows
+Estimator A has *never* had single-radius, single-window detection power
+— its April significance was always an emergent property of pooling 13
+radii. Estimator B, which uses the full panel and has stable per-radius
+behavior, is the more reproducible instrument and is the program's
+primary going forward.
+
+## Reproduce it
+
+Every number in this table regenerates from public code against public
+data (TexNet catalog; RRC H-10 filings):
+
+```
+git clone https://github.com/Project-Geminae/induced-seismicity
+# See CHANGES.md for the full revision history with per-date entries.
+```

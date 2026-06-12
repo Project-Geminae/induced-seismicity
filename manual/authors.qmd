@@ -1,0 +1,72 @@
+---
+title: "About the Author"
+subtitle: "Who wrote this — and why the numbers can be trusted"
+unnumbered: true
+---
+
+## Lewis Matthews (Corresponding Author)
+
+Lewis Matthews is the analyst of record for the causal-inference pipeline
+this manual is built on: the confounder model, the targeted-learning
+estimators, the GPU solver that made full-panel analysis feasible, and the
+negative-control and sensitivity suites. Why those numbers should be
+trusted is a question of track record — and his runs through the three
+fields this project deliberately fuses:
+
+- **Petroleum engineering, first-hand.** A working petroleum engineer in
+  the Permian Basin. The wells in this dataset are not abstractions to the
+  author; the operational realities of saltwater disposal — what a volume
+  cut costs, what a permit condition means in practice, what operators can
+  and cannot control — inform every policy translation in this book.
+- **Industry data science.** Five years (2016–2021) as Senior Data
+  Scientist at CrownQuest Operating, building statistical and
+  machine-learning systems inside an operator and translating them for
+  non-technical decision-makers — the same translation this manual
+  attempts.
+- **Causal methods.** Founder of Project Geminae (applying causal
+  inference to industrial optimization problems) and corresponding author
+  on SPE-228051, the targeted-maximum-likelihood analysis this pipeline
+  extends. The estimators in this book are drawn from the current
+  targeted-learning literature (van der Laan group, 2024–2025) and were
+  implemented and validated against reference implementations before any
+  result was reported.
+
+Contact: <lewis@projectgeminae.net>.
+
+## A disclosure, made deliberately
+
+The author is a petroleum engineer with long-standing industry
+relationships, publishing evidence that supports *limits on injection*.
+That dual position is disclosed here because it is the right frame for
+reading this work: the analysis was built by someone with the domain
+knowledge to get the engineering right and no incentive to overstate the
+seismicity risk. Where the evidence is weak or unstable, this manual says
+so explicitly — see the [Evidence Scoreboard](evidence-scoreboard.qmd),
+which documents estimate revisions across data vintages, including an
+artifact we found in our own cross-validation machinery and the fix.
+
+No funding was received from any operator, regulator, or advocacy
+organization for this analysis.
+
+## Project Geminae
+
+Project Geminae is an independent research effort applying modern causal
+inference — targeted learning, the highly adaptive lasso, and
+double-machine-learning methods — to high-stakes industrial decision
+problems. The induced-seismicity program produces:
+
+- **This field manual** — the policy and operations translation.
+- **The IRT dashboard** — per-event, per-well causal attribution on live
+  data.
+- **The technical paper** — the SPE-facing methods contribution
+  (regHAL-TMLE Delta-method inference and a GPU active-set solver for
+  full-panel highly-adaptive-lasso estimation).
+- **The codebase** — open at
+  <https://github.com/Project-Geminae/induced-seismicity>.
+
+## A note on attribution
+
+This manual is one part of a research program in active development. Where
+future editions include findings produced with external collaborators,
+methods reviewers, or partner institutions, the author block will reflect
+that. For the current edition, the authorship is Matthews.

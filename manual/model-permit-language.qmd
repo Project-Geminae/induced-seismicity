@@ -1,0 +1,80 @@
+---
+title: "Appendix A — Model Permit-Condition Language"
+---
+
+*Draft regulatory text for a causal volume condition on saltwater-disposal
+permits. Written for adaptation by Commission staff or legislative
+counsel; bracketed terms are policy choices, not analytical outputs.*
+
+## A.1 Definitions
+
+**Dose-response curve.** For a disposal well, the estimated relationship
+between 365-day cumulative injection volume and expected seismicity within
+[7–19] km, produced by a targeted-learning estimator meeting the standards
+of §A.4, with 95% confidence bands, evaluated only within the supported
+data region (volumes at or below the 99th percentile of observed
+well-volumes).
+
+**Volume threshold.** The lowest 365-day cumulative volume at which the
+lower bound of the well's dose-response confidence band exceeds [the
+Commission-adopted risk tolerance].
+
+**Attributable-risk ranking.** For a catalogued seismic event, the ranking
+of wells within [19] km by estimated causal contribution, with confidence
+intervals.
+
+## A.2 Permit condition (new and amended permits)
+
+1. For any disposal permit within [a Seismic Response Area or a
+   Commission-designated monitoring area], the permitted 365-day
+   cumulative volume shall not exceed the well's volume threshold as most
+   recently computed under §A.4.
+2. Where the well's dose-response curve does not resolve a threshold
+   within the supported data region, the permit shall instead carry [the
+   area's standard volumetric condition], and the well shall be
+   re-evaluated at each annual refresh.
+3. A permittee may at any time submit volumes below the threshold as
+   evidence of proactive seismic-risk management in any Commission
+   proceeding.
+
+## A.3 Event response (complement to existing SRA protocol)
+
+1. Upon a catalogued event of [M3.0]+ within a monitored area, Commission
+   staff shall obtain the attributable-risk ranking for the event.
+2. Wells whose contribution interval excludes zero shall receive priority
+   review. Curtailment of wells whose interval includes zero may proceed
+   under existing protocol but shall be flagged for threshold
+   re-evaluation rather than presumptive contribution.
+
+## A.4 Evidence standards
+
+A dose-response curve or attribution is cognizable under this section only
+if produced by a method that:
+
+1. **Adjusts for confounding** between injection volume and location
+   (minimally: fault distance, formation depth, well age, and neighboring
+   injection) using a doubly-robust estimator with published convergence
+   guarantees;
+2. **Publishes its uncertainty** — confidence intervals constructed with
+   cluster-robust variance at the well level;
+3. **Declares its supported region** and renders no operative estimate by
+   extrapolation;
+4. **Is reproducible** — code and processed data sufficient to regenerate
+   every operative number are available to the Commission and, [save for
+   trade-secret well identifiers], to the public;
+5. **Maintains a revision record** documenting every material change in
+   estimates across data refreshes, including artifacts detected and
+   repaired.
+
+*Note: standard 5 is deliberate. The program maintaining this manual has
+itself detected and repaired a cross-validation artifact (see the
+[Evidence Scoreboard](evidence-scoreboard.qmd)); a method without a
+revision record has not been tested hard enough to be load-bearing in a
+permit.*
+
+## A.5 Annual refresh
+
+Thresholds and rankings shall be recomputed against refreshed TexNet and
+H-10 data at least annually. A permittee whose threshold rises may apply
+the increase immediately; a threshold reduction takes effect at the next
+permit anniversary, with [180 days] notice.

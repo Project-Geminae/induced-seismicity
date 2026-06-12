@@ -1,0 +1,76 @@
+---
+title: "Appendix B — Methods Defense"
+subtitle: "The hard questions, answered before they're asked"
+---
+
+This appendix collects the strongest objections to the analysis and the
+program's answers. The full technical treatment is in the repository's
+`PAPER_DRAFT.md` (§6, *Diagnostics, sensitivity, and limitations*); this
+is the briefing-room version.
+
+## "Correlation isn't causation — wells sit where the faults are."
+
+That is precisely the problem the estimator class is built for. Targeted
+learning adjusts for fault distance, fault-segment density, formation
+depth, well age, and neighborhood injection before comparing volumes. The
+residual question — unmeasured confounding — is addressed by negative
+controls and by the spatial signature: the effect concentrates at
+pore-pressure-diffusion distances (7–19 km) and vanishes in the far field,
+which is the physical fingerprint of a real mechanism, not of geographic
+confounding.
+
+## "Your headline number changed. Why should anyone rely on it?"
+
+Because we publish the revision record and design the policy instruments
+around what *didn't* change. Across every data vintage and estimator: the
+direction (positive), the mechanism (frequency-channel), and the spatial
+band (7–19 km) held. The pooled magnitude moved — and the
+[Evidence Scoreboard](evidence-scoreboard.qmd) documents each movement,
+including a cross-validation artifact we found and repaired ourselves.
+The model permit language (§A.4.5) makes a revision record an evidence
+*requirement* for exactly this reason.
+
+## "The per-radius estimates aren't individually significant."
+
+Correct, and disclosed. Individual radii carry z ≈ 1; the basin-scale
+result is the inverse-variance pool of 13 correlated radii agreeing in
+direction. This is the appropriate inference for a mechanism that operates
+across a distance band, and it is why the policy artifacts use rankings
+and thresholds rather than single-radius point estimates.
+
+## "You don't model operators reacting to earthquakes." {#sec-feedback}
+
+True, and it is the program's most important open limitation. If operators
+cut volumes after nearby events, a cross-sectional estimator can
+*understate* the true effect (the feedback loop biases toward null). Xiao
+et al. (2025, arXiv:2510.16360) demonstrate this longitudinal bias in the
+Fort Worth Basin with marginal structural models. Note the direction:
+correcting for the feedback loop would most plausibly *strengthen* the
+causal case for volume management, not weaken it. A longitudinal (LTMLE)
+extension is the program's next methods milestone.
+
+## "Why should a 50,000-row subsample or a GPU solver be trusted?"
+
+The two estimators cross-check each other. Estimator A (subsample,
+reference R implementation of HAL) and Estimator B (full panel, our GPU
+solver) agree on direction, mechanism, and spatial structure. The GPU
+solver was validated to 7-digit agreement against the reference
+implementation on synthetic problems before any production use, and its
+cross-validation selection rule carries a regression test born from the
+one artifact it produced.
+
+## "Near-field is where the public worries. Why no claim under 7 km?"
+
+Because the data don't support one. At 1–6 km, positive-event counts are
+small and the basis machinery is demonstrably unstable (sign flips under
+basis-degree changes, documented in `PAPER_DRAFT.md` §6.4). Reporting a
+fragile near-field number would be the fastest way to discredit the
+stable pressure-band result. The program reports what holds and labels
+what doesn't.
+
+## "Who paid for this?"
+
+No operator, regulator, or advocacy organization. See
+[About the Author](authors.qmd) for the dual-role disclosure: a petroleum
+engineer publishing evidence that supports injection limits, with the
+incentive structure that implies.

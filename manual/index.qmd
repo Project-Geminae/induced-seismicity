@@ -1,0 +1,47 @@
+# Welcome {.unnumbered}
+
+This is the field manual for **Injection Risk Triage (IRT)** — a
+causal-inference pipeline that answers, with regulatory-grade evidence
+standards, the question every saltwater-disposal permit decision in the
+Permian Basin implicitly turns on:
+
+> *If this well injects less, does the earthquake risk actually go down —
+> and by how much?*
+
+The manual is the translation layer between the technical work (a
+targeted-learning analysis of 7,581 TexNet earthquakes and 918,720
+well-days of Railroad Commission injection records) and the three
+audiences who can act on it:
+
+- **Regulators** — who today curtail injection *after* felt events, using
+  spatial-proximity rules, and who could instead condition permits on
+  causal dose-response evidence *before* events occur.
+- **Operators** — who need to know which of their wells carry attributable
+  risk, what a volume reduction buys, and how to demonstrate proactive
+  management to regulators and insurers.
+- **Researchers** — who need the methods to be auditable, the failure modes
+  documented, and the estimates reproducible.
+
+## How to read this book
+
+If you have five minutes, read the [Executive Summary](exec-summary.qmd).
+If you advise a regulator or legislator, the
+[Regulator One-Pager](regulator-onepager.qmd) is written to be lifted
+directly into a briefing packet. If you operate disposal wells, start with
+the [Decision Tables](decision-tables.qmd). If you intend to attack the
+methods — please do — start with the
+[Evidence Scoreboard](evidence-scoreboard.qmd) and the
+[Methods Defense](methods-defense.qmd) appendix, which document not only
+the estimates but the artifacts we found in our own pipeline and how we
+fixed them.
+
+## The live system
+
+This manual describes a running system, not a one-time study:
+
+- **Interactive dashboard** — per-event well attribution, dose-response
+  curves, and per-well volume-threshold curves, refreshed against live
+  TexNet and RRC data: <https://alphanet.tail098a15.ts.net/> (access on
+  request: <lewis@projectgeminae.net>)
+- **Source code** — the full pipeline, paper draft, and change log:
+  <https://github.com/Project-Geminae/induced-seismicity>

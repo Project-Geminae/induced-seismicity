@@ -1,0 +1,76 @@
+---
+title: "Executive Summary"
+unnumbered: true
+---
+
+## The one-sentence version
+
+Cutting saltwater-disposal injection volumes measurably reduces earthquake
+*frequency* — how often quakes happen — within 7–19 km of disposal wells
+in the Permian Basin, and the evidence for this meets a causal standard
+that the current regulatory process does not require but should.
+
+## The five-minute version
+
+**What we did.** We linked every TexNet-catalogued earthquake in the
+Permian Basin (7,581 events, 2017–2026) to every saltwater-disposal well
+within 20 km (795 wells, 918,720 well-days of daily Railroad Commission
+injection records) and asked a counterfactual question: *what would
+seismicity have been if each well had injected 10% less?* Answering that
+question credibly requires controlling for the things that make
+high-injection wells different from low-injection wells — fault proximity,
+formation depth, well age, neighborhood injection — and we use targeted
+learning, the same family of methods used in FDA-grade epidemiology, to do
+it.
+
+**What we found.**
+
+1. **The effect is real and positive at pressure-diffusion distances.**
+   Pooled across the 7–19 km band — the distances where pore-pressure
+   diffusion operates on a one-year timescale — a 10% volume increase
+   causes a statistically significant increase in expected seismicity
+   (basin-scale combined test: z = 4.25, p ≈ 2 × 10⁻⁵ under the current
+   data vintage; significant in every vintage tested once a documented
+   cross-validation artifact was repaired).
+
+2. **The mechanism is frequency, not magnitude.** Essentially all of the
+   causal effect operates through *how often* events occur, not *how
+   large* a given event is. A volume cap is therefore an
+   event-rate-reduction tool. This is the single most policy-relevant
+   finding: it means volume management reduces the number of
+   felt-event triggers that today's reactive curtailment responds to.
+
+3. **Per-well attribution is operational.** For any catalogued event, the
+   pipeline ranks every well within radius by its causal contribution,
+   with honest confidence intervals — and for any well, it produces a
+   volume-threshold curve: the injection level above which that specific
+   well's marginal contribution to expected seismicity exceeds a chosen
+   risk tolerance.
+
+4. **Near-field estimates (1–6 km) are inconclusive** and we say so. At
+   very short distances the positive-event counts are too small for the
+   basis-function machinery to behave stably; we document the sensitivity
+   rather than reporting a fragile number.
+
+**What it means for policy.** The Railroad Commission's current Seismic
+Response Area protocol is reactive: events happen, then injection is
+curtailed nearby. The evidence in this manual supports a complementary
+*proactive* instrument: permit conditions tied to causal dose-response
+thresholds, applied before events occur, targeted at the wells whose
+attribution and threshold curves identify them as marginal-risk carriers.
+[Model permit-condition language](model-permit-language.qmd) is provided
+in the appendix.
+
+**What it means for operators.** The same pipeline that supports
+regulation also supports defense: an operator whose wells sit below their
+threshold curves has auditable, causal-standard evidence of proactive risk
+management — for regulators, insurers, and litigation.
+
+## What this evidence is not
+
+It is not a claim that any specific earthquake was caused by any specific
+well; per-event attributions are model-based estimates with stated
+uncertainty. It is not a near-field (under 7 km) claim. And it does not
+yet model the operator-feedback loop (operators reducing volumes in
+response to nearby events), which is the program's next methodological
+step — documented openly in the [Methods Defense](methods-defense.qmd).

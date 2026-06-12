@@ -1,0 +1,81 @@
+---
+title: "Reading the Numbers"
+subtitle: "A plain-language guide to the statistics in this book"
+---
+
+This chapter is for readers who want to follow the evidence without a
+statistics background. It covers the five concepts that appear throughout
+the manual and the dashboard.
+
+## "Causal" versus "correlated"
+
+Wells that inject more sit in different places than wells that inject
+less — closer to faults, in different formations, with different
+neighbors. A correlation between injection and earthquakes could just be
+geography. A **causal** estimate answers a different question: *for the
+same well, in the same place, what changes if only the volume changes?*
+The methods in this pipeline (targeted learning) adjust for the measurable
+differences between high- and low-injection wells — fault distance, depth,
+well age, neighborhood injection — so that the comparison is
+volume-against-volume, not place-against-place.
+
+## ψ ("psi") — the effect size
+
+ψ is the answer to a specific what-if: *if every well in the band had
+injected 10% more, how much would expected seismicity change?* It is
+measured in units of expected local magnitude per well-day, which makes
+the raw number small (e.g. +8.8 × 10⁻⁴) — but small-per-well-day across
+800 wells and nine years is a material amount of seismicity. What matters
+for decisions is the **sign** (positive = more injection, more quakes),
+the **confidence interval** (does it exclude zero?), and the
+**comparison across wells** (which wells carry the effect).
+
+## z and p — how sure are we?
+
+The z-score counts how many standard errors the estimate sits away from
+zero; the p-value translates that into the probability of seeing such an
+estimate if the true effect were zero. The current basin-scale result
+(z = 4.25, p ≈ 2 × 10⁻⁵) means: if injection truly had no effect, data
+like ours would occur about twice in a hundred thousand tries. Individual
+radii are weaker (z around 1); the strength comes from 13 radii agreeing
+in direction — which is itself the expected signature of a real physical
+mechanism operating across a distance band.
+
+## Frequency versus magnitude — the mechanism
+
+Total seismicity can change two ways: more events, or bigger events. The
+pipeline separates these. The finding — stable in every data vintage — is
+that volume operates almost entirely on **frequency**: more injection
+means *more* earthquakes, not *larger* ones. For policy this is good news:
+event frequency is exactly what reactive curtailment programs trigger on,
+so volume management reduces the thing the existing system is built to
+respond to.
+
+## Confidence intervals on the dashboard
+
+Every per-well attribution carries a 95% confidence interval. Reading
+them honestly:
+
+- **CI entirely above zero** — the data resolve a positive contribution
+  from this well.
+- **CI crossing zero** — the data cannot distinguish this well's
+  contribution from nothing. This is not evidence of innocence; it is
+  absence of resolvable evidence.
+- **Red-shaded regions** on dose-response curves mark volumes beyond the
+  99th percentile of observed data. Estimates there are extrapolation and
+  are displayed only to show where the supported region ends.
+
+## What would change our minds
+
+Good evidence states its falsifiers. The program's standing list:
+
+1. A data vintage in which the patched pipeline produces a *negative*
+   pooled pressure-band estimate with stable active sets.
+2. A demonstration that the operator-feedback loop (operators cutting
+   volume after nearby events) reverses the sign when modeled
+   longitudinally — this is the next planned methods step.
+3. A negative-control failure: detectable "effects" of injection on
+   earthquakes too distant or too early for any physical mechanism.
+
+None of these has occurred. The day one does, the
+[Evidence Scoreboard](evidence-scoreboard.qmd) reports it.

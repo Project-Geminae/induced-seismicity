@@ -1,0 +1,39 @@
+project:
+  type: book
+  output-dir: _book
+
+book:
+  title: "Injection Risk Triage (IRT) Field Manual"
+  subtitle: "A causal-inference pipeline for induced-seismicity management in the Permian Basin"
+  author:
+    - name: "Lewis Matthews"
+      affiliation: "Project Geminae"
+      email: lewis@projectgeminae.net
+      corresponding: true
+  date: "2026-06-02"
+  chapters:
+    - index.qmd
+    - authors.qmd
+    - exec-summary.qmd
+    - part: "The Evidence at a Glance"
+      chapters:
+        - regulator-onepager.qmd
+        - evidence-scoreboard.qmd
+        - decision-tables.qmd
+    - part: "Using This Work"
+      chapters:
+        - reading-the-numbers.qmd
+        - how-to-cite.qmd
+  appendices:
+    - model-permit-language.qmd
+    - methods-defense.qmd
+
+format:
+  html:
+    theme:
+      light: cosmo
+      dark: darkly
+    toc: true
+    toc-depth: 3
+    fig-cap-location: bottom
+    tbl-cap-location: top
