@@ -11,6 +11,7 @@ book:
       email: lewis@projectgeminae.net
       corresponding: true
   date: "2026-06-02"
+  downloads: [pdf]
   chapters:
     - index.qmd
     - authors.qmd
@@ -37,3 +38,33 @@ format:
     toc-depth: 3
     fig-cap-location: bottom
     tbl-cap-location: top
+  pdf:
+    documentclass: scrbook
+    # open=any drops the forced blank-verso before each short front-matter
+    # chapter (Welcome, Exec Summary, One-Pager, Scoreboard, Decision Tables).
+    classoption:
+      - open=any
+    papersize: letter
+    fontsize: 11pt
+    toc: true
+    toc-depth: 2
+    fig-cap-location: bottom
+    tbl-cap-location: top
+    tbl-colwidths: auto
+    geometry:
+      - margin=1in
+      - top=1.25in
+      - bottom=1.25in
+    colorlinks: true
+    linkcolor: NavyBlue
+    urlcolor: NavyBlue
+    citecolor: NavyBlue
+    include-in-header:
+      # Wide decision/scoreboard tables: render at footnotesize and let LaTeX
+      # work harder to break long cells so 4-5 column tables fit the text block.
+      - text: |
+          \usepackage{etoolbox}
+          \AtBeginEnvironment{longtable}{\footnotesize\sloppy\setlength{\emergencystretch}{3em}}
+          \AtBeginEnvironment{tabular}{\footnotesize\sloppy\setlength{\emergencystretch}{3em}}
+          \setlength{\LTleft}{0pt}
+          \setlength{\LTright}{0pt}
