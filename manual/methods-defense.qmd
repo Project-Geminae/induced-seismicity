@@ -71,6 +71,7 @@ what doesn't.
 ## "Who paid for this?"
 
 No operator, regulator, or advocacy organization. See
-[About the Author](authors.qmd) for the dual-role disclosure: a petroleum
-engineer publishing evidence that supports injection limits, with the
-incentive structure that implies.
+[About the Author](authors.qmd) for the dual-role disclosure: an analyst
+who spent five years inside a Permian Basin operator, publishing evidence
+that supports injection limits, with the incentive structure that
+implies.
